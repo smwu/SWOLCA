@@ -12,11 +12,11 @@ The parameters of the wsOFMM model are estimated using a two-step sampling algor
 This repo contains the following MATLAB files for creating simulated data and running the wsOFMM model:
 
 - `wsOFMM_main.m`: This includes main and local functions needed to run the wsOFMM model. To run the example data, one of the simulated data files, titled "simdata...." is needed.
-- `sim_wsRPC_scen1.m': Code to generate simulation data and weights where sampling follows Scenario 1: equal subpopulations; sample 100\% from each subpopulation (full population sampled).
-- `sim_wsRPC_scen2.m': Code to generate simulation data and weights where sampling follows Scenario 2: unequal subpopulations; sample 100\% from each subpopulation (full population sampled).
-- `sim_wsRPC_scen3.m': Code to generate simulation data and weights where sampling follows Scenario 3: equal subpopulations; sample 5\% from each subpopulation (proportional allocation).
-- `sim_wsRPC_scen4.m': Code to generate simulation data and weights where sampling follows Scenario 4: unequal subpopulations; sample 5\% from each subpopulation (proportional allocation).
-- `sim_wsRPC_scen5.m': Code to generate simulation data and weights where sampling follows Scenario 5: unequal subpopulations; sample 1000 from each subpopulation (equal allocation).
+- `sim_wsRPC_scen1.m`: Code to generate simulation data and weights where sampling follows Scenario 1: equal subpopulations; sample 100\% from each subpopulation (full population sampled).
+- `sim_wsRPC_scen2.m`: Code to generate simulation data and weights where sampling follows Scenario 2: unequal subpopulations; sample 100\% from each subpopulation (full population sampled).
+- `sim_wsRPC_scen3.m`: Code to generate simulation data and weights where sampling follows Scenario 3: equal subpopulations; sample 5\% from each subpopulation (proportional allocation).
+- `sim_wsRPC_scen4.m`: Code to generate simulation data and weights where sampling follows Scenario 4: unequal subpopulations; sample 5\% from each subpopulation (proportional allocation).
+- `sim_wsRPC_scen5.m`: Code to generate simulation data and weights where sampling follows Scenario 5: unequal subpopulations; sample 1000 from each subpopulation (equal allocation).
 - `simdata_wsRPC_scen1_iter1.mat`: One simulated dataset for Scenario 1.
 - `simdata_wsRPC_scen2_iter1.mat`: One simulated dataset for Scenario 2.
 - `simdata_wsRPC_scen3_iter1.mat`: One simulated dataset for Scenario 3.
