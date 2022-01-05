@@ -26,7 +26,7 @@ This repo contains the following MATLAB files for creating simulated data and ru
 The "simdata..." datasets contain the following variables:
 - `subpop_samp`: Subpopulation assignment for all sampled individuals
 - `true_Ci`: True global class memberships for all sampled individuals
-- 'true_Li`: True subpopualtion-specific local class memberships for all sampled individuals
+- `true_Li`: True subpopualtion-specific local class memberships for all sampled individuals
 - `sample_wt`: Survey weights for all sampled individuals
 - `norm_const`: Normalization constants for the weights in each subpopulation
 - `true_global_patterns`: True consumption patterns for global classes
