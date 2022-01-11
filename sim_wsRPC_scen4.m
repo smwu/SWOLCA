@@ -119,7 +119,8 @@ for sim_n = 1:num_sims                     % For each simulation iteration
     true_y = binornd(1, true_Phi);          % True outcome for sampled indivs
     
     % Save simulated data
-    save(strcat('simdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), 'subpop_samp', 'true_Ci', 'true_Li', 'sample_wt', 'norm_const', 'true_global_patterns', 'true_local_patterns', 'global_thetas', 'local_thetas', 'nu', 'true_G', 'sample_data', 'true_xi', 'true_Phi', 'true_y');
+    true_K = K;
+    save(strcat('simdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), 'subpop_samp', 'true_Ci', 'true_Li', 'sample_wt', 'norm_const', 'true_global_patterns', 'true_local_patterns', 'global_thetas', 'local_thetas', 'nu', 'true_G', 'sample_data', 'true_xi', 'true_Phi', 'true_y', 'true_K');
 end
 
 
