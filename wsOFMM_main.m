@@ -479,9 +479,11 @@ function analysis = analyze_results(post_MCMC_out, data_vars, q_dem, S, sim_n, s
         % 1) median(loglik): calculate log-lik at each MCMC iter then get the median
         % 2) loglik_mean: get posterior estimates of each param, then use these to calculate the log-lik
     analysis.dic = -4 * median(analysis.loglik) + 2 * sum(analysis.loglik_mean);    
+    % DIC-6 adaptation that penalizes overfitting
+    analysis.dic6 = -6 * median(analysis.loglik) + 4 * sum(analysis.loglik_mean);    
     
     % Save parameter estimates and analysis results
-    save(strcat('wsOFMM_Results','_',num2str(scenario),'_',num2str(sim_n)), 'post_MCMC_out', 'analysis');
+    save(strcat('wsOFMM_Results','_scen',num2str(scenario),'_iter',num2str(sim_n)), 'post_MCMC_out', 'analysis');
 end
 
 % drchrnd generates a random sample from a Dirichlet distribution
