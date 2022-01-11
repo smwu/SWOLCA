@@ -22,6 +22,9 @@ This repo contains the following MATLAB files for creating simulated data and ru
 - `simdata_wsRPC_scen3_iter1.mat`: One simulated dataset for Scenario 3.
 - `simdata_wsRPC_scen4_iter1.mat`: One simulated dataset for Scenario 4.
 - `simdata_wsRPC_scen5_iter1.mat`: One simulated dataset for Scenario 5.
+- `wsOFMM_MCMC_out_4_1.mat`: Example MCMC output when running `wsOFMM_main.m` for Scenario 4.
+- `wsOFMM_Results_4_1.mat`: Example post-processed results after running `wsOFMM_main.m` for Scenario 4.
+- `sim_summary_wsOFMM.m`: Code to summarize results after running the wsOFMM model. To run this, model output files titled "wsOFMM_Results..." and simulation data files titles "simdata..." are required.
 
 The "simdata..." datasets contain the following variables:
 - `subpop_samp`: Subpopulation assignment for all sampled individuals
