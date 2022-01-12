@@ -14,7 +14,7 @@
 % subpopulation-specific local pattern.
 
 clear; clc;
-num_sims = 1;  % Number of simulation sets
+num_sims = 100;  % Number of simulation sets
 scen = 1;      % Scenario
 rng(53188)     % Set seed
 

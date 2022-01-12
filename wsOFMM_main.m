@@ -7,7 +7,7 @@
 clear; clc;
 
 %% Load simulated data
-sim_n = 1;     % Simulation number
+sim_n = bb;    % Simulation number. 'bb' created through 'job_array.sh' script
 scenario = 1;  % Weighting scenario
 samp_data = importdata(strcat('simdata_wsRPC_scen', num2str(scenario), '_iter',num2str(sim_n),'.mat'));
 
@@ -237,7 +237,7 @@ function [MCMC_out, OFMM_params, probit_params] = run_MCMC(data_vars, OFMM_param
     MCMC_out.loglik = MCMC_out.loglik((burn / thin) + 1:end); 
     
     % Save output
-    save(strcat('wsOFMM_MCMC_out','_',num2str(scenario),'_',num2str(sim_n)), 'MCMC_out');
+    save(strcat('wsOFMM_MCMC_out','_scen',num2str(scenario),'_iter',num2str(sim_n)), 'MCMC_out');
 end
 
 % MCMC_update updates the posterior distributions of the parameters and variables
@@ -412,6 +412,7 @@ end
 %   Phi_med: estimated probit model mean using posterior median estiates 
 %   loglik_mean: Log-lik using posterior median estimates of all params
 %   dic: Assesses model goodness-of-fit
+%   dic6: Assesses model goodness-of-fit with adaptation that penalizes overfitting
 function analysis = analyze_results(post_MCMC_out, data_vars, q_dem, S, sim_n, scenario)
     % Calculate posterior median estimates across MCMC runs
     analysis.pi_med = median(post_MCMC_out.pi);  % Vector of median class probs 
