@@ -66,8 +66,8 @@ analysis = analyze_results(post_MCMC_out, data_vars, q_dem, S, sim_n, scenario);
 
 % get_data_vars takes in sample data and outputs relevant variables
 % Inputs: samp_data structural array with at least the following columns:
-%   sample_data: food intake data as a matrix
-%   true_y: outcome data as a vector
+%   X_data: food intake data as a matrix
+%   Y_data: outcome data as a vector
 %   sample_wt: survey weights as a vector
 % Outputs: data_vars structural array with the following fields:
 %   food: matrix of food intake data
@@ -80,11 +80,11 @@ analysis = analyze_results(post_MCMC_out, data_vars, q_dem, S, sim_n, scenario);
 %   wt_kappa_mat: matrix of normalized weights, replicated across items
 %   lin_idx: vector of linear indices for unique item-response combos
 function data_vars = get_data_vars(samp_data)
-    data_vars.food = samp_data.sample_data;
+    data_vars.food = samp_data.X_data;
     [data_vars.n, data_vars.p] = size(data_vars.food);
-    data_vars.d_max = max(data_vars.food(:));    % Max number of levels over all items
-    data_vars.d = max(data_vars.food);           % Max number of levels for each food item. 
-    data_vars.y = samp_data.true_y;            % Outcome
+    data_vars.d_max = max(data_vars.food(:));  % Max number of levels over all items
+    data_vars.d = max(data_vars.food);         % Max number of levels for each food item. 
+    data_vars.y = samp_data.Y_data;            % Outcome
     
     % Normalized weights
     kappa = sum(samp_data.sample_wt) / data_vars.n;    % Normalization constant. If weights sum to N, this is 1/(sampl frac)
@@ -135,7 +135,7 @@ function OFMM_params = init_OFMM_params(data_vars, k_max, alpha, eta)
         OFMM_params.c_i(ind == 1) = k;               % Class assignment for those w/ ind == TRUE is set to k
         x_ci(:, k) = ind;                            % For each indiv, 1 in col corresp to class assignment
     end 
-    OFMM_params.n_ci=sum(x_ci);              %Vector of num indivs assigned to each cluster
+    OFMM_params.n_ci=sum(x_ci);               % Vector of num indivs assigned to each cluster
 end
 
 % init_probit_params initializes priors and variables for the probit model given hyperparameters
@@ -185,7 +185,7 @@ end
 %   Sig_0: matrix variance hyperparam for probit coefficients, xi
 %   S: number of demographic covariates in the probit model
 %   sim_n: simulation number indicator
-%   scenario: weighting scenario indicator
+%   scenario: sampling scenario indicator
 % Outputs: returns and saves MCMC_out structural array with the following fields:
 %   pi: matrix of class membership probabilities 
 %   theta: 4-D array of item-response probabilities
@@ -237,7 +237,7 @@ function [MCMC_out, OFMM_params, probit_params] = run_MCMC(data_vars, OFMM_param
     MCMC_out.loglik = MCMC_out.loglik((burn / thin) + 1:end); 
     
     % Save output
-    save(strcat('wsOFMM_MCMC_out','_scen',num2str(scenario),'_iter',num2str(sim_n)), 'MCMC_out');
+    save(strcat('wsOFMM_MCMC_scen',num2str(scenario),'_iter',num2str(sim_n)), 'MCMC_out');
 end
 
 % MCMC_update updates the posterior distributions of the parameters and variables
@@ -285,9 +285,8 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC(MCMC_out, data_var
     prob_ci = bsxfun(@times, prob_ci_numer, 1 ./ (sum(prob_ci_numer, 2)));
     indiv_loglik = log(sum(prob_ci_numer, 2));  % Individual log likelihood
     x_ci = mnrnd(1, prob_ci);                   % Matrix of updated c_i drawn from Mult(1, prob_ci). Each row is draw for an indiv
-    [row, col] = find(x_ci);                    % Row and col indices of each nonzero element of x_ci. col is class assignment for each indiv
-    x_gc = [row col]; x_gc = sortrows(x_gc, 1); % Matrix with 1st and 2nd col the row and col indices
-    OFMM_params.c_i = x_gc(:, 2);               % Vector of updated class assignment, c_i, for each individual
+    [~, col] = find(x_ci);                      % Col indices of each nonzero element of x_ci; i.e., class assignment for each indiv
+    OFMM_params.c_i = col;                      % Vector of updated class assignment, c_i, for each individual
     
     % Update posterior item response probabilities, theta, incorporating normalized weights    
     n_theta = zeros(data_vars.p, data_vars.d_max); % Initialize matrix of num indivs with each item response level
@@ -298,7 +297,7 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC(MCMC_out, data_var
             % Vector of num indivs with level r and class k, for each item (i.e., sum I(x_ij=r, c_i=k) over indivs)
             n_theta(:, r) = sum((data_vars.food == r) .* class_wt)'; 
         end
-        for j = 1:data_vars.p                                               % For each food item
+        for j = 1:data_vars.p                                     % For each food item
             dj = data_vars.d(j);                                  % Num response levels for item j
             eta_post = eta(1:dj) + n_theta(j, 1:dj);              % Posterior hyperparam is eta[r] + n_theta(j,r)
             OFMM_params.theta(j, k, 1:dj) = drchrnd(eta_post, 1); % Draw from posterior dist: Dir(eta), for every item and class
@@ -321,23 +320,23 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC(MCMC_out, data_var
     end    
     
     % Update posterior probit model coefficients, xi, incorporating normalized weights    
-    W_tilde = diag(data_vars.wt_kappa);                              % Diagonal normalized weight matrix
-    Sig_post = inv(Sig_0) + (transpose(Q)*W_tilde*Q);                % Precision of posterior Normal dist for xi
+    W_tilde = diag(data_vars.wt_kappa);                   % Diagonal normalized weight matrix
+    Sig_post = inv(Sig_0) + (transpose(Q)*W_tilde*Q);     % Precision of posterior Normal dist for xi
     mu_right = (Sig_0*mu_0) + (transpose(Q)*W_tilde*z_i); % Right part of mean of posterior Normal dist for xi
-    mu_post = Sig_post \ mu_right;                                   % Mean of posterior Normal dist for xi
-    probit_params.xi = mvnrnd(mu_post, inv(Sig_post));               % Draw from posterior dist: N(mu_post, Sig_post^{-1})    
+    mu_post = Sig_post \ mu_right;                        % Mean of posterior Normal dist for xi
+    probit_params.xi = mvnrnd(mu_post, inv(Sig_post));    % Draw from posterior dist: N(mu_post, Sig_post^{-1})    
     
     % Update probit likelihood component of posterior class membership P(c_i|-)
-    q_class = zeros(data_vars.n, k_max);                           % Initialize design matrix for class membership
+    q_class = zeros(data_vars.n, k_max);                          % Initialize design matrix for class membership
     for k = 1:k_max
-       q_class(:, k) = ones(data_vars.n, 1);                       % Temporarily assign all indivs to class k
-       Q_temp = [q_dem q_class];                                   % Form temporary covariate design matrix
-       Phi_temp = normcdf(Q_temp * transpose(probit_params.xi));   % Vector of P(y_i=1|Q)
-       Phi_temp(Phi_temp == 1) = 1 - 1e-10;                        % Adjust extremes
+       q_class(:, k) = ones(data_vars.n, 1);                      % Temporarily assign all indivs to class k
+       Q_temp = [q_dem q_class];                                  % Form temporary covariate design matrix
+       Phi_temp = normcdf(Q_temp * transpose(probit_params.xi));  % Vector of P(y_i=1|Q)
+       Phi_temp(Phi_temp == 1) = 1 - 1e-10;                       % Adjust extremes
        Phi_temp(Phi_temp == 0) = 1e-10;
        % Update indiv probit log-lik for class k. Helps avoid rounding issues
        loglik_probit = data_vars.y .* log(Phi_temp) + (1-data_vars.y) .* log(1-Phi_temp);
-       probit_params.indiv_lik_probit(:, k) = exp(loglik_probit);  % Update indiv probit likelihood for class k
+       probit_params.indiv_lik_probit(:, k) = exp(loglik_probit); % Update indiv probit likelihood for class k
     end    
     
     % Store posterior values if the iteration is selected based on thinning  
@@ -370,7 +369,7 @@ function post_MCMC_out = post_process(MCMC_out, data_vars, S)
     pd = pdist(transpose(MCMC_out.c_i), 'hamming');           % Pairwise distance of num times two indivs were in same class together
     cdiff = squareform(pd);                                   % Convert pd into square matrix
     post_MCMC_out.tree = linkage(cdiff,'complete');           % Hierarchical clustering dendrogram tree using distance criterion to find num classes
-    red_ci = cluster(post_MCMC_out.tree, 'maxclust', post_MCMC_out.k_med); % Vector of new class assignments for each indiv
+    red_ci = cluster(post_MCMC_out.tree, 'MaxClust', post_MCMC_out.k_med); % Vector of new class assignments for each indiv
     relabel_ci = zeros(m, post_MCMC_out.k_med);                            % Initialize matrix of relabeled class assignments after removing empty classes
     for k = 1:post_MCMC_out.k_med                                          % For each non-empty class
         % For each MC run, among indivs assigned to new class k, which original class was most common 
@@ -400,7 +399,7 @@ end
 %   q_dem: matrix of demographic covariates to include in regression, in cell-means format
 %   S: number of demographic covariates in the probit model
 %   sim_n: simulation number indicator
-%   scenario: weighting scenario indicator
+%   scenario: sampling scenario indicator
 % Outputs: returns analysis structural array with the following fields:
 %   pi_med: Vector of posterior median estimate across MCMC runs for class membership probs
 %   theta_med: Array of posterior median estimate across MCMC runs for item-response probs
@@ -460,12 +459,11 @@ function analysis = analyze_results(post_MCMC_out, data_vars, q_dem, S, sim_n, s
     end
     % Matrix of updated posterior P(c_i=k|-) for each indiv and class
     prob_ci = bsxfun(@times, prob_ci_numer, 1 ./ (sum(prob_ci_numer, 2)));
-    analysis.loglik = sum(log(sum(prob_ci_numer, 2)));  % Log likelihood
-    x_ci = mnrnd(1, prob_ci);                   % Matrix of updated c_i drawn from Mult(1, prob_ci). Each row is draw for an indiv
-    [row, col] = find(x_ci);                    % Row and col indices of each nonzero element of x_ci. col is class assignment for each indiv
-    x_gc = [row col]; x_gc = sortrows(x_gc, 1); % Matrix with 1st and 2nd col the row and col indices
-    analysis.c_i = x_gc(:, 2);                  % Vector of updated class assignment, c_i, for each individual
-    
+    analysis.loglik = sum(log(sum(prob_ci_numer, 2))); % Log likelihood
+    x_ci = mnrnd(1, prob_ci);                          % Matrix of updated c_i drawn from Mult(1, prob_ci). Each row is draw for an indiv
+    [~, col] = find(x_ci);                             % Col indices of each nonzero element of x_ci; i.e., class assignment for each indiv
+    analysis.c_i = col;                                % Vector of updated class assignment, c_i, for each individual
+      
     % Obtain probit model mean using median parameter estimates
     Q_med = [q_dem x_ci];                             % Design matrix with updated class memberships using median estimates   
     analysis.Phi_med = normcdf(Q_med * transpose(analysis.xi_med)); % Probit model mean using median estimates
@@ -479,8 +477,7 @@ function analysis = analyze_results(post_MCMC_out, data_vars, q_dem, S, sim_n, s
     % DIC is a metric for model goodness of fit. It compares two values:
         % 1) median(loglik): calculate log-lik at each MCMC iter then get the median
         % 2) loglik_mean: get posterior estimates of each param, then use these to calculate the log-lik
-    analysis.dic = -4 * median(analysis.loglik) + 2 * sum(analysis.loglik_mean);    
-    % DIC-6 adaptation that penalizes overfitting
+    % DIC-6 is an adaptation that penalizes overfitting
     analysis.dic6 = -6 * median(analysis.loglik) + 4 * sum(analysis.loglik_mean);    
     
     % Save parameter estimates and analysis results
@@ -555,4 +552,5 @@ end
 %     n_runs = 50;  % Number of MCMC iterations
 %     burn = 30;    % Burn-in period
 %     thin = 2;        % Thinning factor
+%     sim_n = 1;    % Simulation iteration
     
