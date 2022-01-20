@@ -1,17 +1,22 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Simulated data for weighted supervised OFMM and RPC        %
-% Programmer: SW                                             %
-% Scenario 1: Equal subpop sizes                             %
-%             Sample 100% from each subpop (full population) %
-%             All weights equal to 1                         %     
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Simulated data for weighted supervised OFMM and RPC        
+% Programmer: SW             
+% 
+% Assume equal subpopulation sizes
+% Scenario 1: Full population. All weights equal to 1  
+% Scenario 2: Sample 5% of total population (SRS). All weights equal
+% Scenario 2: Sample 5% from each subpop (proportional allocation). 
+%             All weights equal up to rounding      
+% Scenario 3: Sample 1000 from each subpop (equal allocation). 
+%             Diff weights per subpop 
+%
 % Data description:
 % We assume individuals come from 4 subpopulations. Sampling of 4000 
-% subjects is stratified by subpopulation. There are 3 global dietary 
-% patterns, and for each subpopulation, there are 2 local dietary patterns. 
+% subjects is stratified by subpop. There are 3 global dietary patterns, 
+% and for each subpopulation, there are 2 local dietary patterns. 
 % Each food item for an individual belongs to a global pattern or to a 
 % subpopulation-specific local pattern.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 clear; clc;
 rng(53188)     % Set seed
@@ -140,155 +145,6 @@ end
 
 
 
-
-%% LOCAL FUNCTIONS
-
-% create_item_response_probs creates the true item response probabilities
-% for each item-level combo, for all global and local classes
-% Inputs:
-%   p: Number of food items
-%   d: Number of response levels for food items
-%   clust_mode: Probability of true response level occurring
-%   non_mode: Probability of other response levels occurring
-%   sim_data: Structural array with the following fields:
-%       true_pi: Kx1 vector of true global class membership probabilities
-%       true_lambda: Lx1 vector of true local class membership probabilities
-%       true_global_patterns: pxK matrix of true item consumption levels for each global class
-%       true_local_patterns: pxSxL array of true item consumption levels for each local class
-%   S: Number of subpopulations
-%   K: Number of global classes
-%   L: Number of local classes per subpop
-% Outputs: returns updated sim_data with the following additional fields:
-%   true_global_thetas: pxKxd array of item response probs for global classes
-%   true_local_thetas: pxSxLxd array of item response probs for local classes
-function sim_data = create_item_response_probs(p, d, clust_mode, non_mode, sim_data, S, K, L)
-    sim_data.true_global_thetas = ones(p, K, d) * non_mode;   % Initialize global item response probs to non_mode 
-    sim_data.true_local_thetas = ones(p, S, L, d) * non_mode; % Initialize local item response probs to non_mode 
-
-    for j = 1:p          % For each item
-        for k = 1:K      % For each global class
-            % Set prob true level occurs to clust_mode
-            sim_data.true_global_thetas(j, k, sim_data.true_global_patterns(j, k)) = clust_mode; 
-        end   
-        for s = 1:S      % For each subpop
-            for l = 1:L  % For each local class within the subpop
-                % Set prob true level occurs to clust_mode 
-                sim_data.true_local_thetas(j, s, l, sim_data.true_local_patterns(j, s, l)) = clust_mode; 
-            end
-        end
-    end    
-end 
-
-% create_consump_data creates consumption data for each food item for all 
-% individuals in the population.
-% Inputs:
-%   i_ind: Subject indicator
-%   j_ind: Item indicator
-%   s_ind: Subpopulation indicator
-%   c_ind: Global class indicator
-%   l_ind: Local class indicator
-%   sim_data: Structural array with the following fields:
-%       true_pi: Kx1 vector of true global class membership probabilities
-%       true_lambda: Lx1 vector of true local class membership probabilities
-%       true_global_patterns: pxK matrix of true item consumption levels for each global class
-%       true_local_patterns: pxSxL array of true item consumption levels for each local class
-%       true_global_thetas: pxKxd array of item response probs for global classes
-%       true_local_thetas: pxSxLxd array of item response probs for local classes
-%       nu: Sx1 vector of subpop-specific probs of global assigment for all items
-%       Gsj: Sxp matrix of true assignments to global/local for each subpop and item
-%   X_pop: Nxp matrix of population consumption data for all indivs and items
-% Outputs:
-%   X_pop: Nxp matrix of population consumption data for all indivs and items
-function X_pop = create_consump_data(i_ind, j_ind, s_ind, c_ind, l_ind, sim_data, X_pop)
-
-    if sim_data.Gsj(s_ind, j_ind) == 1  % Item assigned to global pattern
-        % Draw from a Multinomial to obtain consump level based on global item response probs 
-        item_resp = sim_data.true_global_thetas(j_ind, c_ind, :);
-        draw = mnrnd(1, item_resp(:));
-        X_pop(i_ind, j_ind) = find(draw == 1);
-
-    else  % Item assigned to local pattern
-        % Draw from a Multinomial to obtain consump level based on local item response probs
-        item_resp = sim_data.true_local_thetas(j_ind, s_ind, l_ind, :);
-        draw = mnrnd(1, item_resp(:)); 
-        X_pop(i_ind, j_ind) = find(draw == 1);
-    end
-    
-end
-
-% sample_indivs takes in subpop specs and outputs indices and weights for 
-% sampled individuals.
-% Inputs:
-%   N_s: If stratified, Sx1 vector of subpop sizes; else, population size
-%   n_s: If stratified, Sx1 vector of subpop sample sizes; else, sample size
-%   S: Number of subpops
-%   strat: Boolean specifying whether to stratify sampling by subpop
-%   Si_pop: Nx1 vector of subpop assignments for all indivs
-%   Ci_pop: Nx1 vector of global class assignments for all indivs
-%   Li_pop: Nx1 vector of local class assignments for all indivs
-%   X_pop: Nxp matrix of population consumption data for all indivs and items
-%   Y_pop: Nx1 vector of population outcome data for all indivs
-%   K: Number of global classes
-%   sim_data: Structural array with the following fields:
-%       true_pi: Kx1 vector of true global class membership probabilities
-%       true_lambda: Lx1 vector of true local class membership probabilities
-%       true_global_patterns: pxK matrix of true item consumption levels for each global class
-%       true_local_patterns: pxSxL array of true item consumption levels for each local class
-%       true_global_thetas: pxKxd array of item response probs for global classes
-%       true_local_thetas: pxSxLxd array of item response probs for local classes
-%       nu: Sx1 vector of subpop-specific probs of global assigment for all items
-%       Gsj: Sxp matrix of true assignments to global/local for each subpop and item
-%       true_xi: (K+S)x1 vector of true probit model coefficients
-%       true_Phi: Nx1 vector of true probit means, P(y_i=1|Q)
-% Outputs: Updated sim_data with the following additional fields:
-%   samp_ind: nx1 vector of indices of sampled indivs
-%   sample_wt: nx1 vector of sampling weights for sampled indivs
-%   norm_const: Sx1 vector of normalization constants, one per subpop  
-%   true_Si: nx1 vector of subpop assigns for sampled indivs
-%   true_Ci: nx1 vector of global class assigns for sampled indivs
-%   true_Li: nx1 vector of local class assigns for sampled indivs
-%   X_data: nxp matrix of consumption data for sampled indivs and items
-%   Y_data: nx1 vector of outcome data for sampled indivs and items
-%   true_K: Number of global classes
-function sim_data = sample_indivs(N_s, n_s, S, strat, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data) 
-    if strat == false                                        % If not stratifying by subpop
-        sim_data.samp_ind = randsample(N_s, n_s);            % Indices of randomly sampled indivs
-        wt_s = N_s / n_s;                                    % Sampling weight
-        pop_wt = ones(N_s, 1) * wt_s;                        % Weights, temp applied to all popn indivs
-        sim_data.sample_wt = pop_wt(sim_data.samp_ind);      % Weights for sampled indivs 
-        sim_data.norm_const = sum(sim_data.sample_wt / N_s); % Normalization constant. Default is 1
-
-    else 
-        sim_data.samp_ind = cell(S, 1);   % Initialize indices of sampled indivs, grouped by subpop
-        sim_data.sample_wt = cell(S, 1);  % Initialize sampling weights for sampled indivs, grouped by subpop
-        sim_data.norm_const = cell(S, 1); % Initialize normalization constant for each subpop
-      
-        % Obtain indices and weights for sampled individuals in each subpop
-        for s = 1:S  % For each subpopulation
-            % Indices of randomly sampled indivs from subpop s
-            sim_data.samp_ind{s} = randsample(N_s(s), n_s(s));     
-            wt_s = N_s(s) / n_s(s);             % Sampling weight for subpop s
-            pop_wt_s = ones(N_s(s), 1) * wt_s;  % Weights for subpop s, temp applied to all popn indivs
-            % Weights for sampled indivs in subpop s
-            sim_data.sample_wt{s} = pop_wt_s(sim_data.samp_ind{s});        
-            % Normalization constant for subpop s weights
-            sim_data.norm_const{s} = sum(sim_data.sample_wt{s}) / N_s(s); 
-        end
-        
-        % Convert cell arrays to vectors through vertical concat 
-        sim_data.samp_ind = vertcat(sim_data.samp_ind{:});  
-        sim_data.sample_wt = vertcat(sim_data.sample_wt{:});
-        sim_data.norm_const = vertcat(sim_data.norm_const{:});
-    end    
-
-    % Obtain observed sample data
-    sim_data.true_Si = Si_pop(sim_data.samp_ind);   % Subpop assignments for sampled indivs
-    sim_data.true_Ci = Ci_pop(sim_data.samp_ind);   % True global class assignments for sampled indivs
-    sim_data.true_Li = Li_pop(sim_data.samp_ind);   % True local class assignments for sampled indivs
-    sim_data.X_data = X_pop(sim_data.samp_ind, :);  % Consumption data for sampled indivs
-    sim_data.Y_data = Y_pop(sim_data.samp_ind);     % Outcome data for sampled indivs
-    sim_data.true_K = K;                            % Rename variable for number of classes
-end
 
 %% Testing code
 % num_sims = 1;  

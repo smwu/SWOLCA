@@ -141,5 +141,6 @@ do
 done
 
 # Gives you full access to "submit-jobs.sh" script while protecting against access from other users
-chmod 700 submit-jobs.sh
+### Uncomment this code to change execution priveleges for the "submit-jobs.sh" script
+      # chmod 700 submit-jobs.sh
 

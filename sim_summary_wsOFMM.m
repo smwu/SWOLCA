@@ -5,9 +5,8 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 clear; clc;
-% num_sims = 500;  % Number of simulated sets
-num_sims = 1;
-scen = 1;
+num_sims = 100;  % Number of simulated sets
+scenario = 1;
 
 % Initialize outputs, stored for all simulated sets
 K_all = zeros(num_sims, 1);         % Initialize estimated number of classes
@@ -19,8 +18,8 @@ mse_Phi_all = zeros(num_sims, 1);   % Initialize MSE of class-specific response 
 mse_theta_all = zeros(num_sims, 1); % Initialize MSE of class-specific item response probs
 
 for sim_n = 1:num_sims              % For each simulated set
-    load(strcat('simdata_wsRPC_scen', num2str(scen), '_iter', num2str(sim_n), '.mat'))  % Load simulated dataset
-    load(strcat('wsOFMM_Results_scen', num2str(scen), '_iter', num2str(sim_n), '.mat')) % Load wsOFMM results
+    load(strcat('simdata_wsRPC_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'))  % Load simulated dataset
+    load(strcat('wsOFMM_Results_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat')) % Load wsOFMM results
     
     K_all(sim_n) = analysis.k_red;                          % Estimated number of classes
     K_match_all(sim_n) = analysis.k_red == sim_data.true_K; % Estimated and true number of classes match (1/0)
@@ -79,7 +78,7 @@ res.mse_Phi_median = [median(mse_Phi_all, 'omitnan') quantile(mse_Phi_all, 0.025
 res.mse_theta_median = [median(mse_theta_all) quantile(mse_theta_all, 0.025, 2) quantile(mse_theta_all, 0.975, 2)];       
 
 % Save simulation summary results
-save(strcat('sim_summary_scen', num2str(scen)), 'res');
+save(strcat('sim_summary_scen', num2str(scenario)), 'res');
 
 %% Testing code
 % num_sims = 1;
