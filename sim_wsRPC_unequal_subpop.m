@@ -2,12 +2,12 @@
 % Simulated data for weighted supervised OFMM and RPC        
 % Programmer: SW             
 % 
-% Assume equal subpopulation sizes
-% Scenario 1: Full population. All weights equal to 1  
-% Scenario 2: Sample 5% of total population (SRS). All weights equal
-% Scenario 3: Sample 5% from each subpop (proportional allocation). 
+% Assume unequal subpopulation sizes
+% Scenario 5: Full population. All weights equal to 1  
+% Scenario 6: Sample 5% of total population (SRS). All weights equal
+% Scenario 7: Sample 5% from each subpop (proportional allocation). 
 %             All weights equal up to rounding      
-% Scenario 4: Sample 1000 from each subpop (equal allocation). 
+% Scenario 8: Sample 1000 from each subpop (equal allocation). 
 %             Diff weights per subpop 
 %
 % Data description:
@@ -28,7 +28,7 @@ d = 4;                                      % Number of response levels (assumed
 S = 4;                                      % Number of subpops
 K = 3;                                      % Number of global classes
 L = 2;                                      % Number of local classes per subpop
-N_s = [20000, 20000, 20000, 20000];         % Subpopulation sizes           
+N_s = [10000, 25000, 27500, 17500];         % Subpopulation sizes           
 N = sum(N_s);                               % Population size
 
 sim_data.true_pi = [0.33 0.33 0.34];        % Global class membership proportions
@@ -110,32 +110,32 @@ for sim_n = 1:num_sims  % For each simulation iteration
     sim_data.true_Phi = normcdf(lin_pred_pop);      % True probit mean, P(Y_i=1|Q, C)
     Y_pop = binornd(1, sim_data.true_Phi);          % True outcome for all indivs
     
-    %% Sampling scenario 1: full population
-    scen = 1;  
+    %% Sampling scenario 5: full population
+    scen = 5;  
     n_s = N;  % Sample size
     % Obtain indices, weights, and data for sampled individuals
     sim_data = sample_indivs(N, n_s, S, false, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data);
     % Save simulated data
     save(strcat('simdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
     
-    %% Sampling scenario 2: simple random sample
-    scen = 2;                    
+    %% Sampling scenario 6: simple random sample
+    scen = 6;                    
     n_s = 4000;  % Sample size 
     % Obtain indices, weights, and data for sampled individuals
     sim_data = sample_indivs(N, n_s, S, false, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data);
     % Save simulated data
     save(strcat('simdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
     
-    %% Sampling scenario 3: stratified random sample by subpop with proportional allocation
-    scen = 3;                     
+    %% Sampling scenario 7: stratified random sample by subpop with proportional allocation
+    scen = 7;                     
     n_s = round(0.05 .* N_s);  % Sample sizes for each subpop
     % Obtain indices, weights, and data for sampled individuals
     sim_data = sample_indivs(N_s, n_s, S, true, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data);
     % Save simulated data
     save(strcat('simdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
     
-    %% Sampling scenario 4: stratified random sample by subpop with equal allocation
-    scen = 4;               
+    %% Sampling scenario 8: stratified random sample by subpop with equal allocation
+    scen = 8;               
     n_s = [1000, 1000, 1000, 1000];  % Sample sizes for each subpop    
     % Obtain indices, weights, and data for sampled individuals
     sim_data = sample_indivs(N_s, n_s, S, true, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data);
