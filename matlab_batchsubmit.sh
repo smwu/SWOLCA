@@ -1,13 +1,15 @@
 #!/bin/bash
 #SBATCH -J wsOFMM	# Job name for the array
-#SBATCH -o wsOFMM_%a.out  # Standard output with job array index
-#SBATCH -e wsOFMM_%a.err  # Standard error with job array index
+#SBATCH -o wsOFMM_%A.out  # Shared standard output with job ID
 #SBATCH -p shared       # Partition to submit to
 #SBATCH -n 1		# Number of cores
-#SBATCH --mem 12000	# Memory request (12Gb)
-#SBATCH -t 2-8:00:00	# Runtime (D-HH:MM) days, hours, mins
+#SBATCH --mem 2000	# Memory request
+#SBATCH -t 0-15:00:00	# Runtime (D-HH:MM:SS) days, hours, mins, secs
 #SBATCH --mail-type=BEGIN,END,FAIL  # Mail notifications 
 #SBATCH --mail-user=stephaniewu@fas.harvard.edu  # Account to email
 
 module load matlab
-matlab  -nodisplay -nosplash < wsOFMM"${SLURM_ARRAY_TASK_ID}".m
+for scenario in $(seq 2 4); do
+	echo This is scenario ${scenario} iteration ${SLURM_ARRAY_TASK_ID}.$'\n'
+	matlab -nodisplay -nosplash -r "wsOFMM_main(${scenario},${SLURM_ARRAY_TASK_ID})"
+done

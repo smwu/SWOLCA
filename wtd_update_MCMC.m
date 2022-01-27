@@ -78,12 +78,14 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC(MCMC_out, data
         z_i(z_i == -Inf) = norminv(1e-10);
     end    
     
-    % Update posterior probit model coefficients, xi, incorporating normalized weights    
-    W_tilde = diag(data_vars.wt_kappa);                   % Diagonal normalized weight matrix
-    Sig_post = inv(Sig_0) + (transpose(Q)*W_tilde*Q);     % Precision of posterior Normal dist for xi
-    mu_right = (Sig_0*mu_0) + (transpose(Q)*W_tilde*z_i); % Right part of mean of posterior Normal dist for xi
-    mu_post = Sig_post \ mu_right;                        % Mean of posterior Normal dist for xi
-    probit_params.xi = mvnrnd(mu_post, inv(Sig_post));    % Draw from posterior dist: N(mu_post, Sig_post^{-1})    
+    % Update posterior probit model coefficients, xi, incorporating normalized weights                 
+    diag_ind = 1:data_vars.n;                                     % Indices to indicate matrix diagonal
+    W_tilde = sparse(diag_ind, diag_ind, data_vars.wt_kappa);     % Create sparse diagonal normalized weight matrix
+    Q_sparse = sparse(Q);                                         % Convert to sparse design matrix to save memory
+    Sig_post = inv(Sig_0) + full(Q_sparse' * W_tilde * Q_sparse); % Precision of posterior Normal dist for xi
+    mu_right = (Sig_0*mu_0) + (Q_sparse' * W_tilde * z_i);        % Right part of mean of posterior Normal dist for xi
+    mu_post = Sig_post \ mu_right;                                % Mean of posterior Normal dist for xi
+    probit_params.xi = mvnrnd(mu_post, inv(Sig_post));            % Draw from posterior dist: N(mu_post, Sig_post^{-1})    
     
     % Update probit likelihood component of posterior class membership P(c_i|-)
     q_class = zeros(data_vars.n, k_max);                          % Initialize design matrix for class membership

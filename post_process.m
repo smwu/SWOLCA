@@ -14,12 +14,12 @@ function post_MCMC_out = post_process(MCMC_out, data_vars, S)
     % Remove extraneous empty classes and relabel class assignments  
     m = size(MCMC_out.pi, 1);                                 % Num stored output iterations
     post_MCMC_out.k_med = median(sum(MCMC_out.pi > 0.05, 2)); % Median num classes w/ more than >5% indivs, over all iterations
-    pd = pdist(transpose(MCMC_out.c_i), 'hamming');           % Pairwise distance of num times two indivs were in same class together
-    cdiff = squareform(pd);                                   % Convert pd into square matrix
-    post_MCMC_out.tree = linkage(cdiff,'complete');           % Hierarchical clustering dendrogram tree using distance criterion to find num classes
-    red_ci = cluster(post_MCMC_out.tree, 'MaxClust', post_MCMC_out.k_med); % Vector of new class assignments for each indiv
-    relabel_ci = zeros(m, post_MCMC_out.k_med);                            % Initialize matrix of relabeled class assignments after removing empty classes
-    for k = 1:post_MCMC_out.k_med                                          % For each non-empty class
+    % Hierarchical clustering dendrogram tree using pairwise distance of num times two indivs were in same class together
+    post_MCMC_out.tree = linkage(single(MCMC_out.c_i'), 'complete', 'hamming');
+    % Vector of new class assignments for each indiv
+    red_ci = cluster(post_MCMC_out.tree, 'MaxClust', post_MCMC_out.k_med); 
+    relabel_ci = zeros(m, post_MCMC_out.k_med);               % Initialize matrix of relabeled class assigns after removing empty classes
+    for k = 1:post_MCMC_out.k_med                             % For each non-empty class
         % For each MC run, among indivs assigned to new class k, which original class was most common 
         relabel_ci(:, k) = mode(MCMC_out.c_i(:, red_ci == k), 2); 
     end

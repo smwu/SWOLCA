@@ -2,12 +2,12 @@
 % Simulated data for weighted supervised OFMM and RPC        
 % Programmer: SW             
 % 
-% Assume unequal subpopulation sizes
-% Scenario 5: Full population. All weights equal to 1  
-% Scenario 6: Sample 5% of total population (SRS). All weights equal
-% Scenario 7: Sample 5% from each subpop (proportional allocation). 
+% Assume equal subpopulation sizes
+% Scenario 1: Full population. All weights equal to 1  
+% Scenario 2: Sample 5% of total population (SRS). All weights equal
+% Scenario 3: Sample 5% from each subpop (proportional allocation). 
 %             All weights equal up to rounding      
-% Scenario 8: Sample 1000 from each subpop (equal allocation). 
+% Scenario 4: Sample 1000 from each subpop (equal allocation). 
 %             Diff weights per subpop 
 %
 % Data description:
@@ -19,8 +19,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%54%%%%%%%%%%%%%%
 
 clear; clc;
-rng(53188)     % Set seed
-
 %% Set scenario specifications
 num_sims = 100;                             % Number of simulation sets      
 p = 50;                                     % Number of food items
@@ -28,41 +26,45 @@ d = 4;                                      % Number of response levels (assumed
 S = 4;                                      % Number of subpops
 K = 3;                                      % Number of global classes
 L = 2;                                      % Number of local classes per subpop
-N_s = [10000, 25000, 27500, 17500];         % Subpopulation sizes           
+N_s = [20000, 20000, 20000, 20000];         % Subpopulation sizes           
 N = sum(N_s);                               % Population size
-
-sim_data.true_pi = [0.33 0.33 0.34];        % Global class membership proportions
-sim_data.true_lambda = [0.5 0.5];           % Local class membership proportions
-sim_data.true_xi = [1 1.1 1.2 0.9 1 -2 -1]; % True probit model coefficients
-sim_data.nu = [0.5 0.4 0.7 0.8];            % Subpop-specific prob of global assigment for all items
 clust_mode = 0.85;                          % Probability of true consumption level occurring
 non_mode = 0.05;                            % Probability of other consumption levels occurring
 
-%% Set true comsumption patterns for each diet profile class      
-global1 = [ones(0.5 * p, 1) * 3;  % Global profile patterns
-           ones(0.5 * p, 1) * 1];
-global2 = [ones(0.2 * p, 1) * 2; 
-           ones(0.8 * p, 1) * 4];
-global3 = [ones(0.2 * p, 1) * 1; 
-           ones(0.4 * p, 1) * 2; 
-           ones(0.4 * p, 1) * 3];
-% p x K matrix of true consumption levels for each global class
-sim_data.true_global_patterns = [global1 global2 global3];  
-
-local11 = ones(p, 1) * 1;  % Local profile patterns
-local12 = [repmat([1; 2; 3; 4], [12, 1]); 1; 1];
-local21 = ones(p, 1) * 2;
-local22 = [repmat([2; 4; 1; 3], [12, 1]); 2; 2];
-local31 = ones(p, 1) * 3;
-local32 = [repmat([3; 1; 4; 2], [12, 1]); 3; 3];
-local41 = ones(p, 1) * 4;
-local42 = [repmat([4; 3; 2; 1], [12, 1]); 4; 4];
-% p x S x L array of true consumption levels for each local class
-sim_data.true_local_patterns = [local11 local21 local31 local41];
-sim_data.true_local_patterns(:,:,2) = [local12 local22 local32 local42];
-
 %% Create and save simulations
-for sim_n = 1:num_sims  % For each simulation iteration    
+parfor sim_n = 1:num_sims  % For each simulation iteration    
+    rng(sim_n)     % Set seed
+       
+    %% Set parameter specifications
+    sim_data = struct;  % Initialize structural array
+    sim_data.true_pi = [0.33 0.33 0.34];        % Global class membership proportions
+    sim_data.true_lambda = [0.5 0.5];           % Local class membership proportions
+    sim_data.true_xi = [1 1.1 1.2 0.9 1 -2 -1]; % True probit model coefficients
+    sim_data.nu = [0.5 0.4 0.7 0.8];            % Subpop-specific prob of global assigment for all items
+
+    %% Set true comsumption patterns for each diet profile class      
+    global1 = [ones(0.5 * p, 1) * 3;  % Global profile patterns
+               ones(0.5 * p, 1) * 1];
+    global2 = [ones(0.2 * p, 1) * 2; 
+               ones(0.8 * p, 1) * 4];
+    global3 = [ones(0.2 * p, 1) * 1; 
+               ones(0.4 * p, 1) * 2; 
+               ones(0.4 * p, 1) * 3];
+    % p x K matrix of true consumption levels for each global class
+    sim_data.true_global_patterns = [global1 global2 global3];  
+
+    local11 = ones(p, 1) * 1;  % Local profile patterns
+    local12 = [repmat([1; 2; 3; 4], [12, 1]); 1; 1];
+    local21 = ones(p, 1) * 2;
+    local22 = [repmat([2; 4; 1; 3], [12, 1]); 2; 2];
+    local31 = ones(p, 1) * 3;
+    local32 = [repmat([3; 1; 4; 2], [12, 1]); 3; 3];
+    local41 = ones(p, 1) * 4;
+    local42 = [repmat([4; 3; 2; 1], [12, 1]); 4; 4];
+    % p x S x L array of true consumption levels for each local class
+    sim_data.true_local_patterns = [local11 local21 local31 local41];
+    sim_data.true_local_patterns(:,:,2) = [local12 local22 local32 local42];
+    
     %% Generate true global and local class assignments for all individuals
     Ci_pop = randsample(1:K, N, true, sim_data.true_pi)';     % Randomly generate global class assigns for all indivs
     Li_pop = randsample(1:L, N, true, sim_data.true_lambda)'; % Randomly generate local class assigns for all indivs
@@ -110,37 +112,37 @@ for sim_n = 1:num_sims  % For each simulation iteration
     sim_data.true_Phi = normcdf(lin_pred_pop);      % True probit mean, P(Y_i=1|Q, C)
     Y_pop = binornd(1, sim_data.true_Phi);          % True outcome for all indivs
     
-    %% Sampling scenario 5: full population
-    scen = 5;  
+    %% Sampling scenario 1: full population
+    scen = 1;  
     n_s = N;  % Sample size
     % Obtain indices, weights, and data for sampled individuals
     sim_data = sample_indivs(N, n_s, S, false, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data);
     % Save simulated data
-    save(strcat('simdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
+    par_save(strcat('parsimdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), sim_data);
     
-    %% Sampling scenario 6: simple random sample
-    scen = 6;                    
+    %% Sampling scenario 2: simple random sample
+    scen = 2;                    
     n_s = 4000;  % Sample size 
     % Obtain indices, weights, and data for sampled individuals
     sim_data = sample_indivs(N, n_s, S, false, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data);
     % Save simulated data
-    save(strcat('simdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
+    par_save(strcat('parsimdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), sim_data);
     
-    %% Sampling scenario 7: stratified random sample by subpop with proportional allocation
-    scen = 7;                     
+    %% Sampling scenario 3: stratified random sample by subpop with proportional allocation
+    scen = 3;                     
     n_s = round(0.05 .* N_s);  % Sample sizes for each subpop
     % Obtain indices, weights, and data for sampled individuals
     sim_data = sample_indivs(N_s, n_s, S, true, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data);
     % Save simulated data
-    save(strcat('simdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
+    par_save(strcat('parsimdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), sim_data);
     
-    %% Sampling scenario 8: stratified random sample by subpop with equal allocation
-    scen = 8;               
+    %% Sampling scenario 4: stratified random sample by subpop with equal allocation
+    scen = 4;               
     n_s = [1000, 1000, 1000, 1000];  % Sample sizes for each subpop    
     % Obtain indices, weights, and data for sampled individuals
     sim_data = sample_indivs(N_s, n_s, S, true, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data);
     % Save simulated data
-    save(strcat('simdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
+    par_save(strcat('parsimdata_wsRPC_scen', num2str(scen),'_iter', num2str(sim_n)), sim_data);
 end
 
 
