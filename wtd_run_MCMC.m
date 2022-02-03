@@ -49,10 +49,10 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_run_MCMC(data_vars, OFMM_p
             probit_params.indiv_lik_probit = probit_params.indiv_lik_probit(:, new_order);  % Relabel indiv probit likelihood
             OFMM_params.pi = OFMM_params.pi(new_order);                % Relabel class probabilities
             probit_params.xi((S+1):end) = probit_params.xi(S + new_order); % Relabel probit model coefficients
-            alpha = alpha(new_order);                                  % Relabel hyperparam for pi
-            mu_0((S+1):end) = mu_0(S + new_order);                     % Relabel mean hyperparam for xi
-            idx = find(Sig_0);                                         % Diagonal elements of Sig_0
-            Sig_0(idx((S+1):end)) = Sig_0(idx(S + new_order));         % Relabel var hyperparam for xi
+            % alpha = alpha(new_order);                                  % Relabel hyperparam for pi
+            % mu_0((S+1):end) = mu_0(S + new_order);                     % Relabel mean hyperparam for xi
+            % idx = find(Sig_0);                                         % Diagonal elements of Sig_0
+            % Sig_0(idx((S+1):end)) = Sig_0(idx(S + new_order));         % Relabel var hyperparam for xi
         end
     end
     MCMC_out.runtime = toc;  % Stop timer
