@@ -44,8 +44,9 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC(MCMC_out, data
     prob_ci = bsxfun(@times, prob_ci_numer, 1 ./ (sum(prob_ci_numer, 2)));
     indiv_loglik = log(sum(prob_ci_numer, 2));  % Individual log likelihood
     x_ci = mnrnd(1, prob_ci);                   % Matrix of updated c_i drawn from Mult(1, prob_ci). Each row is draw for an indiv
-    [~, col] = find(x_ci);                      % Col indices of each nonzero element of x_ci; i.e., class assignment for each indiv
-    OFMM_params.c_i = col;                      % Vector of updated class assignment, c_i, for each individual
+    [row, col] = find(x_ci);                    % Row and col indices of each nonzero element of x_ci; col is class assignment for each indiv
+    sorted = sortrows([row col], 1);            % Sort indices in ascending row index order, to match subject index
+    OFMM_params.c_i = sorted(:, 2);             % Vector of updated class assignment, c_i, for each individual
     
     % Update posterior item response probabilities, theta, incorporating normalized weights    
     n_theta = zeros(data_vars.p, data_vars.d_max); % Initialize matrix of num indivs with each item response level
@@ -88,8 +89,8 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC(MCMC_out, data
     probit_params.xi = mvnrnd(mu_post, inv(Sig_post));            % Draw from posterior dist: N(mu_post, Sig_post^{-1})    
     
     % Update probit likelihood component of posterior class membership P(c_i|-)
-    q_class = zeros(data_vars.n, k_max);                          % Initialize design matrix for class membership
     for k = 1:k_max
+       q_class = zeros(data_vars.n, k_max);                       % Initialize design matrix for class membership
        q_class(:, k) = ones(data_vars.n, 1);                      % Temporarily assign all indivs to class k
        Q_temp = [q_dem q_class];                                  % Form temporary covariate design matrix
        Phi_temp = normcdf(Q_temp * transpose(probit_params.xi));  % Vector of P(y_i=1|Q)

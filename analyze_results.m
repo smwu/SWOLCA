@@ -41,8 +41,8 @@ function analysis = analyze_results(post_MCMC_out, data_vars, q_dem, S, p_cov)
     
     % Update probit likelihood using unique classes and updated posterior median estimates for xi
     analysis.indiv_lik_probit = zeros(data_vars.n, analysis.k_red); % Initialize indiv probit lik matrix for each indiv and class
-    q_class = zeros(data_vars.n, analysis.k_red);               % Initialize design matrix for class membership
     for k = 1:analysis.k_red
+       q_class = zeros(data_vars.n, analysis.k_red);            % Initialize design matrix for class membership
        q_class(:, k) = ones(data_vars.n, 1);                    % Temporarily assign all indivs to class k
        Q_temp = [q_dem q_class];                                % Form temporary covariate design matrix
        Phi_temp = normcdf(Q_temp * transpose(analysis.xi_med)); % Vector of P(y_i=1|Q)
@@ -60,38 +60,35 @@ function analysis = analyze_results(post_MCMC_out, data_vars, q_dem, S, p_cov)
         theta_k = reshape(analysis.theta_med(:, k, :), data_vars.p, data_vars.d_max); 
         % Matrix of categ likelihood \prod_{r=1}^d \theta_{jr|k}^{I(x_ij=r)} for each indiv and item 
         categ_lik = reshape(theta_k(data_vars.lin_idx), [data_vars.n, data_vars.p]); 
-        % Update numerator for posterior P(c_i=k|-) (indiv likelihood)
+        % Update numerator for posterior P(c_i=k|-) (indiv OFMM likelihood)
         prob_ci_numer(:, k) = analysis.pi_med(k) * prod(categ_lik, 2) .* analysis.indiv_lik_probit(:, k);   
     end
     % Matrix of updated posterior P(c_i=k|-) for each indiv and class
     prob_ci = bsxfun(@times, prob_ci_numer, 1 ./ (sum(prob_ci_numer, 2)));
-    analysis.loglik = sum(log(sum(prob_ci_numer, 2))); % Log likelihood
-    x_ci = mnrnd(1, prob_ci);                          % Matrix of updated c_i drawn from Mult(1, prob_ci). Each row is draw for an indiv
-    [~, col] = find(x_ci);                             % Col indices of each nonzero element of x_ci; i.e., class assignment for each indiv
-    analysis.c_i = col;                                % Vector of updated class assignment, c_i, for each individual
+    analysis.loglik_med = sum(log(sum(prob_ci_numer, 2))); % Log likelihood calculated using posterior median param estimates
+    x_ci = mnrnd(1, prob_ci);                   % Matrix of updated c_i drawn from Mult(1, prob_ci). Each row is draw for an indiv
+    [row, col] = find(x_ci);                    % Row and col indices of each nonzero element of x_ci; col is class assignment for each indiv
+    sorted = sortrows([row col], 1);            % Sort indices in ascending row index order, to match subject index
+    analysis.c_i = sorted(:, 2);                % Vector of updated class assignment, c_i, for each individual
       
     % Obtain probit model mean using median parameter estimates
     Q_med = [q_dem x_ci];                             % Design matrix with updated class memberships using median estimates   
     analysis.Phi_med = normcdf(Q_med * transpose(analysis.xi_med)); % Probit model mean using median estimates
     analysis.Phi_med(analysis.Phi_med == 0) = 1e-10;  % Adjust extremes
     analysis.Phi_med(analysis.Phi_med == 1) = 1 - 1e-10;
-        
-    % Calculate log-lik using posterior median estimates of all params
-    loglik_probit_mean = data_vars.y .* log(analysis.Phi_med) + (1 - data_vars.y) .* log(1 - analysis.Phi_med);
-    analysis.loglik_med = analysis.pi_med(k) * prod(categ_lik, 2) .* loglik_probit_mean;
     
     % DIC is a metric for model goodness of fit. It consists of two terms:
         % 1) median(loglik): calculate log-lik at each MCMC iter then get the median
         % 2) loglik_med: get posterior estimates of each param, then use these to calculate the log-lik
     % DIC-6 is an adaptation that penalizes overfitting
-    analysis.dic6 = -6 * median(analysis.loglik) + 4 * sum(analysis.loglik_med); 
+    analysis.dic6 = -6 * median(post_MCMC_out.loglik) + 4 * analysis.loglik_med; 
     
     % AEBIC is a metric for model goodness of fit that is asymptotically
     % consistent and invariant to reparameterization
     num_params = numel(analysis.pi_med) + numel(analysis.theta_med) + numel(analysis.xi_med);
     gamma = 1;
-    t1 = -2 * data_vars.n * mean(analysis.loglik ./ data_vars.n); % -2*n*E[1/n*sum(indiv_log_lik)]
-    t2 = num_params * log(data_vars.n);                           % |S|*log(n)
-    t3 = 2 * gamma * num_params * log(p_cov);                     % 2*gamma*|S|*log(p)
+    t1 = -2 * data_vars.n * mean(post_MCMC_out.loglik ./ data_vars.n); % -2*n*E[1/n*sum(indiv_log_lik)]
+    t2 = num_params * log(data_vars.n);                                % |S|*log(n)
+    t3 = 2 * gamma * num_params * log(p_cov);                          % 2*gamma*|S|*log(p)
     analysis.aebic = t1 + t2 + t3;
 end

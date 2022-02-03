@@ -13,6 +13,13 @@ function OFMM_params = init_OFMM_params(data_vars, k_max, alpha, eta)
     % Prior for class membership probs
     OFMM_params.pi = drchrnd(alpha, 1); 
     
+    % Random initialization of class assignments
+    x_ci = mnrnd(1, OFMM_params.pi, data_vars.n); % Matrix of c_i drawn from Mult(1, pi). Each row is draw for an indiv
+    [row, col] = find(x_ci);                      % Row and col indices of nonzero elements of x_ci; col is class assign for each indiv
+    sorted = sortrows([row col], 1);              % Sort indices in ascending row index order, to match subject index
+    OFMM_params.c_i = sorted(:, 2);               % Vector of class assignment, c_i, for each individual
+    OFMM_params.n_ci = sum(x_ci);                 % Vector of num indivs assigned to each cluster       
+    
     % Prior for item response probabilities
     OFMM_params.theta = zeros(data_vars.p, k_max, data_vars.d_max);  % Initialize array of item response probs
     for k = 1:k_max                % For each class
@@ -20,17 +27,5 @@ function OFMM_params = init_OFMM_params(data_vars, k_max, alpha, eta)
             d_j = data_vars.d(j);  % Max number of levels for food item j
             OFMM_params.theta(j, k, 1:d_j) = drchrnd(eta(1:d_j), 1); % For each class and item, draw from Dir(eta)
         end
-    end
-    
-    % Random initialization of class assignments
-    rr = unifrnd(0, 1, [data_vars.n, 1]);     % Vector of Unif(0,1) draws
-    pisums = [0 cumsum(OFMM_params.pi)];      % Cum sum of class membership probs, from 0 to 1
-    OFMM_params.c_i = zeros(data_vars.n, 1);  % Initialize vector of class assignments
-    x_ci = zeros(data_vars.n, k_max);         % Initialize matrix of cell-means class assignments 
-    for k = 1:k_max
-        ind = rr > pisums(k) & rr <= pisums(k + 1);  % T/F indicating those w/ rr in the kth pisums interval
-        OFMM_params.c_i(ind == 1) = k;               % Class assignment for those w/ ind == TRUE is set to k
-        x_ci(:, k) = ind;                            % For each indiv, 1 in col corresp to class assignment
-    end 
-    OFMM_params.n_ci=sum(x_ci);               % Vector of num indivs assigned to each cluster
+    end     
 end
