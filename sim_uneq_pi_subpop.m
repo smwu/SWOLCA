@@ -1,32 +1,27 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Simulated data for weighted supervised OFMM and RPC        
+% Simulated data with global and local latent classes, with subpopulation 
+% associated with local and global class membership        
 % Programmer: SW             
 % 
-% Assume unequal subpopulation sizes and subpop-specific class membership
-% probabilities.
-% Scenario 9: Full population. All weights equal to 1  
-% Scenario 10: Sample 5% of total population (SRS). All weights equal
-% Scenario 11: Sample 5% from each subpop (proportional allocation). 
-%              All weights equal up to rounding      
-% Scenario 12: Sample 1000 from each subpop (equal allocation). 
-%              Diff weights per subpop 
-%
-% Data description:
-% We assume individuals come from 4 subpopulations. Sampling of 4000 
-% subjects is stratified by subpop. There are 3 global dietary patterns, 
-% and for each subpopulation, there are 2 local dietary patterns. 
-% Each food item for an individual belongs to a global pattern or to a 
+% Scenario 4:
+% We assume individuals come from 4 subpopulations of unequal sizes. 
+% There are 3 global latent classes, with class membership probabilities 
+% dependent on subpopulation membership. 
+% There are 2 local latent classes per subpopulation, with local class 
+% membership probabilities dependent on subpopulation membership. 
+% Each food item for an individual belongs to a global class or to a 
 % subpopulation-specific local pattern.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% sim_pi_subpop takes in sim_n as a command line array index argument, and 
-% simulates four datasets, one per scenario for Scenarios 9, 10, 11, and 12.
+% sim_uneq_pi_subpop takes in sim_n as a command line array index argument, 
+% and simulates a population dataset for scenario 4.
 % Inputs:
 %   sim_n: Command line argument indicating array index
-% Outputs: saves simulated datasets corresponding to Scenarios 9-12.
-function sim_pi_subpop(sim_n)
+% Outputs: saves simulated dataset for the given scenario and index.
+function sim_uneq_pi_subpop(sim_n)
     rng(sim_n, 'twister');                         % Set seed
     out_dir = "/n/home01/stephwu18/wsOFMM/data/";  % Output directory
+    out_dir = "";
     
     %% Set scenario specifications    
     p = 50;                                        % Number of food items
@@ -34,7 +29,7 @@ function sim_pi_subpop(sim_n)
     S = 4;                                         % Number of subpops
     K = 3;                                         % Number of global classes
     L = 2;                                         % Number of local classes per subpop
-    N_s = [10000, 25000, 27500, 17500];            % Subpopulation sizes              
+    N_s = [1000, 2500, 2750, 1750];                % Subpopulation sizes              
     N = sum(N_s);                                  % Population size
     clust_mode = 0.85;                             % Probability of true consumption level occurring
     non_mode = 0.05;                               % Probability of other consumption levels occurring
@@ -120,35 +115,11 @@ function sim_pi_subpop(sim_n)
     Phi_pop = normcdf(lin_pred_pop);                % True probit mean, P(Y_i=1|Q, C), for all indivs
     Y_pop = binornd(1, Phi_pop);                    % True outcome for all indivs
     
-    %% Sampling scenario 9: full population
-    scen = 9;  
-    n_s = N;  % Sample size
+    %% Format and save data
+    scen = 4;  % Simulation scenario  
+    n_s = N;   % Sample size is full population
     % Obtain indices, weights, and data for sampled individuals
     sim_data = sample_indivs(N, n_s, S, false, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, Phi_pop, K, sim_data);
-    % Save simulated data
-    save(strcat(out_dir, 'simdata_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
-    
-    %% Sampling scenario 10: simple random sample
-    scen = 10;                    
-    n_s = 4000;  % Sample size    
-    % Obtain indices, weights, and data for sampled individuals
-    sim_data = sample_indivs(N, n_s, S, false, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, Phi_pop, K, sim_data);
-    % Save simulated data
-    save(strcat(out_dir, 'simdata_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
-    
-    %% Sampling scenario 11: stratified random sample by subpop with proportional allocation
-    scen = 11;                     
-    n_s = round(0.05 .* N_s);  % Sample sizes for each subpop
-    % Obtain indices, weights, and data for sampled individuals
-    sim_data = sample_indivs(N_s, n_s, S, true, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, Phi_pop, K, sim_data);
-    % Save simulated data
-    save(strcat(out_dir, 'simdata_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
-    
-    %% Sampling scenario 12: stratified random sample by subpop with equal allocation
-    scen = 12;               
-    n_s = [1000, 1000, 1000, 1000];  % Sample sizes for each subpop 	
-    % Obtain indices, weights, and data for sampled individuals
-    sim_data = sample_indivs(N_s, n_s, S, true, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, Phi_pop, K, sim_data);
     % Save simulated data
     save(strcat(out_dir, 'simdata_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
 

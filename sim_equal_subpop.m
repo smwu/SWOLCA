@@ -33,8 +33,8 @@ function sim_equal_subpop(sim_n)
     S = 4;                                      % Number of subpops
     K = 3;                                      % Number of global classes
     L = 2;                                      % Number of local classes per subpop
-    N_s = [20000, 20000, 20000, 20000];         % Subpopulation sizes           
-    N = sum(N_s);                               % Population size
+    N_s = [20000, 20000, 20000, 20000];         % Subpopulation sizes
+    N = sum(N_s);                               % Population size    
     clust_mode = 0.85;                          % Probability of true consumption level occurring
     non_mode = 0.05;                            % Probability of other consumption levels occurring
        
@@ -110,16 +110,16 @@ function sim_equal_subpop(sim_n)
     for k = 1:K                      % For each global class
         q_class(Ci_pop == k, k) = 1; % For all indivs in global class k, set k-th column to 1
     end
-    Q = [q_dem q_class];             % Design matrix with dem covs and global classes
+    Q = [q_dem q_class];                            % Design matrix with dem covs and global classes
     lin_pred_pop = Q * transpose(sim_data.true_xi); % True linear predictor for all indivs. Mean of truncated normal dist
-    sim_data.true_Phi = normcdf(lin_pred_pop);      % True probit mean, P(Y_i=1|Q, C)
-    Y_pop = binornd(1, sim_data.true_Phi);          % True outcome for all indivs
+    Phi_pop = normcdf(lin_pred_pop);                % True probit mean, P(Y_i=1|Q, C), for all indivs
+    Y_pop = binornd(1, Phi_pop);                    % True outcome for all indivs
     
     %% Sampling scenario 1: full population
     scen = 1;  
     n_s = N;  % Sample size
     % Obtain indices, weights, and data for sampled individuals
-    sim_data = sample_indivs(N, n_s, S, false, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data);
+    sim_data = sample_indivs(N, n_s, S, false, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, Phi_pop, K, sim_data);
     % Save simulated data
     save(strcat(out_dir, 'simdata_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
     
@@ -127,7 +127,7 @@ function sim_equal_subpop(sim_n)
     scen = 2;                    
     n_s = 4000;  % Sample size 
     % Obtain indices, weights, and data for sampled individuals
-    sim_data = sample_indivs(N, n_s, S, false, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data);
+    sim_data = sample_indivs(N, n_s, S, false, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, Phi_pop, K, sim_data);
     % Save simulated data
     save(strcat(out_dir, 'simdata_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
     
@@ -135,15 +135,15 @@ function sim_equal_subpop(sim_n)
     scen = 3;                     
     n_s = round(0.05 .* N_s);  % Sample sizes for each subpop
     % Obtain indices, weights, and data for sampled individuals
-    sim_data = sample_indivs(N_s, n_s, S, true, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data);
+    sim_data = sample_indivs(N_s, n_s, S, true, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, Phi_pop, K, sim_data);
     % Save simulated data
     save(strcat(out_dir, 'simdata_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
     
     %% Sampling scenario 4: stratified random sample by subpop with equal allocation
     scen = 4;               
-    n_s = [1000, 1000, 1000, 1000];  % Sample sizes for each subpop    
+    n_s = [1000, 1000, 1000, 1000];  % Sample sizes for each subpop 
     % Obtain indices, weights, and data for sampled individuals
-    sim_data = sample_indivs(N_s, n_s, S, true, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, K, sim_data);
+    sim_data = sample_indivs(N_s, n_s, S, true, Si_pop, Ci_pop, Li_pop, X_pop, Y_pop, Phi_pop, K, sim_data);
     % Save simulated data
     save(strcat(out_dir, 'simdata_scen', num2str(scen),'_iter', num2str(sim_n)), 'sim_data');
 end
@@ -153,7 +153,6 @@ end
 
 %% Testing code
 % out_dir = "";
-% num_sims = 1;  
 % N_s = [200, 200, 200, 200]; 
 % n_s = 40;
 % n_s = [10, 10, 10, 10];
