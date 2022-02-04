@@ -1,22 +1,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Testing code for weighted supervised OFMM and supervised OFMM       
 % Programmer: SW             
-% 
-% Assume equal subpopulation sizes
-% Scenario 1: Full population. All weights equal to 1  
-% Scenario 2: Sample 5% of total population (SRS). All weights equal
-% Scenario 3: Sample 5% from each subpop (proportional allocation). 
-%             All weights equal up to rounding      
-% Scenario 4: Sample 1000 from each subpop (equal allocation). 
-%             Diff weights per subpop 
-%
-% Data description:
-% We assume individuals come from 4 subpopulations. Sampling of 4000 
-% subjects is stratified by subpop. There are 3 global dietary patterns, 
-% and for each subpopulation, there are 2 local dietary patterns. 
-% Each food item for an individual belongs to a global pattern or to a 
-% subpopulation-specific local pattern.
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%54%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% Testing code
 % for one iteration
