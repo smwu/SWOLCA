@@ -1,44 +1,16 @@
 # Weighted Supervised Overfitted Finite Mixture Model (wsOFMM)
 
-The weighted supervsied overfitted finite mixture model (wsOFMM) is a Bayesian clustering technique that assigns individuals to latent clusters based on categorical exposure data and binary outcome data. It uses a weighted pseudolikelihood method to incorporate survey weights and adjust for selection bias. An overfitted finite mixture model, similar to a latent class model, is jointly modeled with a probit regression model in order to generate cluster profiles that are informed by the probability of a positive binary outcome.
+This repo contains code and partial results from a simulation study of the wsOFMM. View the description of the folders below to help navigate to relevant code and materials.
 
-The parameters of the wsOFMM model are estimated using a two-step sampling algorithm:
+The **supervised overfitted finite mixture model (sOFMM)** is a Bayesian clustering technique that assigns individuals to latent classes based on categorical exposure data and binary outcome data. It includes an overfitted finite mixture model for reducing the dimension of a categorical exposure, combined with a probit regression model for measuring association with a binary outcome. The model sorts subjects into underlying classes with similar exposure and outcome patterns. The **weighted supervised overfitted finite mixture model (wsOFMM)** extends the sOFMM by using a weighted pseudolikelihood method to incorporate survey weights. It can be used to adjust for selection bias when using survey data. 
 
-1. In the adaptive sampling algorithm, the wsOFMM model is run to determine the appropriate number of latent clusters. This step may be skipped if the number of latent clusters is known a priori.
-2. In the fixed sampling algorithm, model parameters are estimated by re-runing the wsOFMM model with a fixed number of latent clusters determined by step 1.
+The parameters of both models are estimated using a two-step sampling algorithm: 1) In the adaptive sampling algorithm, the model is run to determine the number of underlying latent classes. This step may be skipped if the number of latent clusters is known a priori. 2) In the fixed sampling algorithm, model parameters are estimated by re-running the model with the fixed number of latent clusters determined by the adaptive sampling algorithm.
 
-# Code and Materials
+### This repo contains the following folders:
+ * `Simulation_Code`: Includes code used to generate simulated data.
+ * `Data`: Includes simulated datasets generated using functions in the "Simulation_Code" folder.
+ * `Model_Code`: Includes code used to run the sOFMM and wsOFMM models on simulated data in the "Data" folder.
+ * `Results`: Includes MCMC and posterior results output from running functions in the "Model_Code" folder.
+ * `Summary_Results`: Includes code and results that summarize output over multiple iterations and samples. Used for analysis. 
 
-This repo contains the following MATLAB files for creating simulated data and running the wsOFMM model:
 
-- `wsOFMM_main.m`: This includes main and local functions needed to run the wsOFMM model. To run the example data, one of the simulated data files, titled "simdata...." is needed.
-- `sim_wsRPC_scen1.m`: Code to generate simulation data and weights where sampling follows Scenario 1: equal subpopulations; sample 100\% from each subpopulation (full population sampled).
-- `sim_wsRPC_scen2.m`: Code to generate simulation data and weights where sampling follows Scenario 2: unequal subpopulations; sample 100\% from each subpopulation (full population sampled).
-- `sim_wsRPC_scen3.m`: Code to generate simulation data and weights where sampling follows Scenario 3: equal subpopulations; sample 5\% from each subpopulation (proportional allocation).
-- `sim_wsRPC_scen4.m`: Code to generate simulation data and weights where sampling follows Scenario 4: unequal subpopulations; sample 5\% from each subpopulation (proportional allocation).
-- `sim_wsRPC_scen5.m`: Code to generate simulation data and weights where sampling follows Scenario 5: unequal subpopulations; sample 1000 from each subpopulation (equal allocation).
-- `simdata_wsRPC_scen1_iter1.mat`: One simulated dataset for Scenario 1.
-- `simdata_wsRPC_scen2_iter1.mat`: One simulated dataset for Scenario 2.
-- `simdata_wsRPC_scen3_iter1.mat`: One simulated dataset for Scenario 3.
-- `simdata_wsRPC_scen4_iter1.mat`: One simulated dataset for Scenario 4.
-- `simdata_wsRPC_scen5_iter1.mat`: One simulated dataset for Scenario 5.
-- `wsOFMM_MCMC_out_4_1.mat`: Example MCMC output when running `wsOFMM_main.m` for Scenario 4.
-- `wsOFMM_Results_4_1.mat`: Example post-processed results after running `wsOFMM_main.m` for Scenario 4.
-- `sim_summary_wsOFMM.m`: Code to summarize results after running the wsOFMM model. To run this, model output files titled "wsOFMM_Results..." and simulation data files titles "simdata..." are required.
-
-The "simdata..." datasets contain the following variables:
-- `subpop_samp`: Subpopulation assignment for all sampled individuals
-- `true_Ci`: True global class memberships for all sampled individuals
-- `true_Li`: True subpopualtion-specific local class memberships for all sampled individuals
-- `sample_wt`: Survey weights for all sampled individuals
-- `norm_const`: Normalization constants for the weights in each subpopulation
-- `true_global_patterns`: True consumption patterns for global classes
-- `true_local_patterns`: True consumption patterns for local classes
-- `global_thetas`: True global item-response probabilities
-- `local_thetas`: True local item-response probabilities
-- `nu`: Subpopulation-specific probability of global assignment
-- `true_G`: True global/local assignments for each item and subpopulation
-- `sample_data`: Observed consumption data for all sampled individuals
-- `true_xi`: True probit model coefficients
-- `true_Phi`: True probit model mean
-- `true_y`: True binary outcome values for all sampled individuals
