@@ -7,10 +7,10 @@ This folder includes files for creating simulated datasets.
 * `sim_uneq.m`: Generates population data for Scenario 3 (see DAG 3 below), where subpopulation membership is independent of class membership but affects local latent classes.
 * `sim_uneq_pi_subpop.m`: Generates population data for Scenario 4 (see DAG 4 below), where subpopulation membership affects class membership and affects local latent classes.
 
-### The following files are used to generate simulated data for a sample drawn from an existing population:
-* `sample_SRS.m`: Draws a simple random sample (SRS) of size n=400 from a pre-existing population dataset. Scenarios 5-8 correspond to draws from population dataset for Scenarios 1-4, respectively, generated using the above population functions.
-* `sample_strat_prop.m`: Draws a stratified random sample with proportional allocation by subpopulation, with 5% of each subpopulation sampled from a pre-existing population dataset for a total sample size of n=400. Scenarios 9-12 correspond to draws from population dataset for Scenarios 1-4, respectively, generated using the above population functions.
-* `sample_strat_eq.m`: Draws a stratified random sample with equal allocation by subpopulation, with 100 subjects sampled from each subpopulation from a pre-existing population dataset for a total sample size of n=400. Scenarios 9-12 correspond to draws from population dataset for Scenarios 1-4, respectively, generated using the above population functions.
+### The following files are used to generate simulated data for a sample of size n=400 drawn from an existing population:
+* `sample_SRS.m`: Draws a simple random sample (SRS) from a pre-existing population dataset. Scenarios 5-8 correspond to draws from population datasets for Scenarios 1-4, respectively, generated using the above functions.
+* `sample_strat_prop.m`: Draws a stratified random sample with proportional allocation by subpopulation, with 5% of each subpopulation sampled from a pre-existing population dataset. Scenarios 9-12 correspond to draws from population datasets for Scenarios 1-4, respectively, generated using the above functions.
+* `sample_strat_eq.m`: Draws a stratified random sample with equal allocation by subpopulation, with 100 subjects per subpopulation sampled from a pre-existing population dataset. Scenarios 9-12 correspond to draws from population datasets for Scenarios 1-4, respectively, generated using the above functions.
 
 ### Additional helper files:
 * `sample_indivs.m`: Helper function used in all of the above files. Samples from a population.
@@ -22,4 +22,5 @@ This folder includes files for creating simulated datasets.
 * `Cluster_SOP_2022_1_26.pdf`: Instructions for running simulations and models on a cluster.
 
 ### Directed Acyclic Graphs (DAGs) of Data-Generating Mechanisms
-![DAGs](DAGs.png)
+![DAGs](https://user-images.githubusercontent.com/33609713/152619726-0ffca12d-e5c4-4a76-ad23-03cca3185e6a.PNG)
+
