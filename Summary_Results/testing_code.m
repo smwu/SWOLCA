@@ -1,10 +1,25 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Testing code for weighted supervised OFMM and supervised OFMM       
 % Programmer: SW             
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 
+% Assume equal subpopulation sizes
+% Scenario 1: Full population. All weights equal to 1  
+% Scenario 2: Sample 5% of total population (SRS). All weights equal
+% Scenario 3: Sample 5% from each subpop (proportional allocation). 
+%             All weights equal up to rounding      
+% Scenario 4: Sample 1000 from each subpop (equal allocation). 
+%             Diff weights per subpop 
+%
+% Data description:
+% We assume individuals come from 4 subpopulations. Sampling of 4000 
+% subjects is stratified by subpop. There are 3 global dietary patterns, 
+% and for each subpopulation, there are 2 local dietary patterns. 
+% Each food item for an individual belongs to a global pattern or to a 
+% subpopulation-specific local pattern.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%54%%%%%%%%%%%%%%
 
 %% Testing code
-% for one iteration
+%%%%%%% For one iteration
 in_dir = "/n/home01/stephwu18/wsOFMM/data/";   % Input directory
 out_dir = "/n/home01/stephwu18/wsOFMM/data/";  % Output directory
 scenario = 5;                                  % Scenario for full population
@@ -79,12 +94,18 @@ end
 mse_theta_class = min(pw_classes_mse);        % Min per column gives best pairing of true and predicted class membership    
 disp(mean(mse_theta_class)); % Total MSE is mean over all classes
 
+% Check correlations
+disp(corr(sim_data.true_Si, sim_data.true_Ci));
+disp(corr(sim_data.true_Si, sim_data.Y_data));
+disp(corr(sim_data.true_Ci, sim_data.Y_data)); 
+
 % Time one run of sOFMM
 tic
 sOFMM_main(3,22);
 toc
 % timeit(@() sOFMM_main(3,22));
 
+%%%%%%%% Loops
 % Simulate datasets for Scenarios 1,2,3,4 for 10 iterations
 for i = 1:10
     sim_no_local(i);
@@ -123,8 +144,66 @@ for scen = 1:4
 end
 toc
     
-% Check correlations
-disp(corr(sim_data.true_Si, sim_data.true_Ci));
-disp(corr(sim_data.true_Si, sim_data.Y_data));
-disp(corr(sim_data.true_Ci, sim_data.Y_data)); 
+% Display summaries for multiple population scenarios
+for scen = 1:4
+    sim_summary_wsOFMM(scen, 10, "wsOFMM")
+end
 
+% Display summaries for multiple sample scenarios
+for scen = 5:16
+    sim_summary_wsOFMM_sample(scen, 1, 10, "wsOFMM")
+end
+
+
+% Display correlations for multiple simulated population datasets and multiple
+% scenarios
+num_iters = 50;
+data_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/"; 
+for scen = 1:4
+    all.corr_S_C = NaN(num_iters, 1);  % Initialize correlation between S and C
+    all.corr_S_Y = NaN(num_iters, 1);  % Initialize correlation between S and Y
+    all.corr_C_Y = NaN(num_iters, 1);  % Initialize correlation between C and Y
+    for sim_n = 1:num_iters % For each simulated set or sample
+
+        % Load simulated dataset
+        load(strcat(data_dir, 'simdata_scen', num2str(scen), '_iter', num2str(sim_n), '.mat'), 'sim_data') 
+
+        % Get simulated correlations
+        all.corr_S_C(sim_n) = corr(sim_data.true_Si, sim_data.true_Ci);
+        all.corr_S_Y(sim_n) = corr(sim_data.true_Si, sim_data.Y_data);
+        all.corr_C_Y(sim_n) = corr(sim_data.true_Ci, sim_data.Y_data);
+
+    end
+    disp(strcat('Scenario ', num2str(scen)));
+    disp(mean(all.corr_S_C));
+    disp(mean(all.corr_S_Y));
+    disp(mean(all.corr_C_Y));
+    disp(strcat('sd S C', num2str(std(all.corr_S_C))));
+end    
+
+% Display correlations for multiple simulated sample datasets and multiple
+% scenarios
+num_iters = 50;
+samp_iter = 1;
+data_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/"; 
+for scen = 5:16
+    all.corr_S_C = NaN(num_iters, 1);  % Initialize correlation between S and C
+    all.corr_S_Y = NaN(num_iters, 1);  % Initialize correlation between S and Y
+    all.corr_C_Y = NaN(num_iters, 1);  % Initialize correlation between C and Y
+    for sim_n = 1:num_iters % For each simulated set or sample
+
+        % Load simulated dataset
+        load(strcat(data_dir, 'simdata_scen', num2str(scen), '_iter', num2str(sim_n), '_samp', num2str(samp_iter), '.mat'), 'sim_data') 
+
+        % Get simulated correlations
+        all.corr_S_C(sim_n) = corr(sim_data.true_Si, sim_data.true_Ci);
+        all.corr_S_Y(sim_n) = corr(sim_data.true_Si, sim_data.Y_data);
+        all.corr_C_Y(sim_n) = corr(sim_data.true_Ci, sim_data.Y_data);
+
+    end
+    disp(strcat('Scenario ', num2str(scen)));
+    disp(mean(all.corr_S_C));
+    disp(mean(all.corr_S_Y));
+    disp(mean(all.corr_C_Y));
+    disp(strcat('sd S C', num2str(std(all.corr_S_C))));
+end   

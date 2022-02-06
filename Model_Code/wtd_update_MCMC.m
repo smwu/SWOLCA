@@ -84,7 +84,7 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC(MCMC_out, data
     W_tilde = sparse(diag_ind, diag_ind, data_vars.wt_kappa);     % Create sparse diagonal normalized weight matrix
     Q_sparse = sparse(Q);                                         % Convert to sparse design matrix to save memory
     Sig_post = inv(Sig_0) + full(Q_sparse' * W_tilde * Q_sparse); % Precision of posterior Normal dist for xi
-    mu_right = (Sig_0*mu_0) + (Q_sparse' * W_tilde * z_i);        % Right part of mean of posterior Normal dist for xi
+    mu_right = (Sig_0 \ mu_0) + (Q_sparse' * W_tilde * z_i);        % Right part of mean of posterior Normal dist for xi
     mu_post = Sig_post \ mu_right;                                % Mean of posterior Normal dist for xi
     probit_params.xi = mvnrnd(mu_post, inv(Sig_post));            % Draw from posterior dist: N(mu_post, Sig_post^{-1})    
     

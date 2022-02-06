@@ -20,8 +20,7 @@
 % Outputs: saves simulated dataset for the given scenario and index.
 function sim_uneq(sim_n)   
     rng(sim_n, 'twister');                         % Set seed
-    out_dir = "/n/home01/stephwu18/wsOFMM/data/";  % Output directory
-    out_dir = "";
+    out_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/";  % Output directory
     
     %% Set scenario specifications  
     p = 50;                                     % Number of food items

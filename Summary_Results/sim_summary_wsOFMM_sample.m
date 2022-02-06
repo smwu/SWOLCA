@@ -1,46 +1,59 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Simulation Summary Results for sOFMM and wsOFMM   
-% when Data is a Population  
+% Simulation Summary Results for sOFMM and wsOFMM
+% when Dataset is a Sample
 % Programmer: SW                
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Inputs:
 %   scenario: Simulation scenario
 %   iter: Vector of simulation iterations to aggregate over
+%   samp_n: Vector of sample iterations to aggregate over. One of 'iter' and 'samp_n' must be scalar.
 %   Model: Model to fit; either "wsOFMM" or "sOFMM"
-function sim_summary_wsOFMM(scenario, iter, model)
+function sim_summary_wsOFMM_sample(scenario, iter, samp_n, model)
     % Input directory for data
-    data_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/";  
+    data_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/";   
     % Input directory for model results 
-    model_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Results_Permute/";     
+    model_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Results/";      
     % Output directory 
     out_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Summary_Results/";  
     
-    num_iters = length(iter);  % Get number of iterations to aggregate over
+    if length(samp_n) > length(iter)  % If aggregating over samples instead of iterations
+        reps = samp_n;                % Replicates defined by sample iterations
+    else                              % Aggregating over iterations
+        reps = iter;                  % Replicates defined by simulation iterations
+    end
+    n_reps = length(reps);            % Number of replicates to aggregate across
     
     % Initialize outputs, stored for all simulated sets
-    all.K = NaN(num_iters, 1);         % Initialize estimated number of classes
-    all.K_match = NaN(num_iters, 1);   % Initialize boolean vector of correct estimation of number of classes
-    all.sens = NaN(num_iters, 1);      % Initialize sensitivity
-    all.spec = NaN(num_iters, 1);      % Initialize specificity
-    all.dic6 = NaN(num_iters, 1);      % Initialize DIC version 6 to penalize overfitting 
-    all.aebic = NaN(num_iters, 1);     % Initialize AEBIC model selection metric
-    all.mse_Phi = NaN(num_iters, 1);   % Initialize MSE of class-specific response proportions
-    all.mse_theta = NaN(num_iters, 1); % Initialize MSE of class-specific item response probs
-    all.corr_S_C = NaN(num_iters, 1);  % Initialize correlation between S and C
-    all.corr_S_Y = NaN(num_iters, 1);  % Initialize correlation between S and Y
-    all.corr_C_Y = NaN(num_iters, 1);  % Initialize correlation between C and Y
+    all.K = NaN(n_reps, 1);         % Initialize estimated number of classes
+    all.K_match = NaN(n_reps, 1);   % Initialize boolean vector of correct estimation of number of classes
+    all.sens = NaN(n_reps, 1);      % Initialize sensitivity
+    all.spec = NaN(n_reps, 1);      % Initialize specificity
+    all.dic6 = NaN(n_reps, 1);      % Initialize DIC version 6 to penalize overfitting 
+    all.aebic = NaN(n_reps, 1);     % Initialize AEBIC model selection metric
+    all.mse_Phi = NaN(n_reps, 1);   % Initialize MSE of class-specific response proportions
+    all.mse_theta = NaN(n_reps, 1); % Initialize MSE of class-specific item response probs
+    all.corr_S_C = NaN(n_reps, 1);  % Initialize correlation between S and C
+    all.corr_S_Y = NaN(n_reps, 1);  % Initialize correlation between S and Y
+    all.corr_C_Y = NaN(n_reps, 1);  % Initialize correlation between C and Y
 
-    for i = 1:num_iters  % For each simulated set or sample
-        sim_n = iter(i);  % Get iteration index
+    for i = 1:n_reps      % For each simulated set or sample
+        sim_n = reps(i);  % Get iteration or sample index
+        
+        % Construct file names
+        if length(samp_n) > length(iter)  % If aggregating over samples instead of iterations
+            file_str = strcat(num2str(scenario), '_iter', num2str(iter), '_samp', num2str(samp_n(sim_n)), '.mat');
+        else                              % Aggregating over iterations
+            file_str = strcat(num2str(scenario), '_iter', num2str(iter(sim_n)), '_samp', num2str(samp_n), '.mat');
+        end 
         
         % Check if the results file exists
-        if isfile(strcat(model_dir, model, '_results_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'))  
+        if isfile(strcat(model_dir, model, '_results_scen', file_str))
 
             % Load simulated dataset
-            load(strcat(data_dir, 'simdata_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'), 'sim_data')  
-            % Load wsOFMM results
-            load(strcat(model_dir, model, '_results_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'), 'analysis') 
+            load(strcat(data_dir, 'simdata_scen', file_str), 'sim_data');
+            % Load model results
+            load(strcat(model_dir, model, '_results_scen', file_str), 'analysis') 
 
             all.K(sim_n) = analysis.k_red;                          % Estimated number of classes
             all.K_match(sim_n) = analysis.k_red == sim_data.true_K; % Estimated and true number of classes match (1/0)
@@ -81,7 +94,7 @@ function sim_summary_wsOFMM(scenario, iter, model)
                 end
             end
             mse_theta_class = min(pw_classes_mse);        % Min per column gives best pairing of true and predicted class membership    
-            all.mse_theta(sim_n) = sum(mse_theta_class);  % Total MSE is sum over all classes   
+            all.mse_theta(sim_n) = sum(mse_theta_class); % Total MSE is sum over all classes   
 
             % Get simulated correlations
             all.corr_S_C(sim_n) = corr(sim_data.true_Si, sim_data.true_Ci);
@@ -90,10 +103,10 @@ function sim_summary_wsOFMM(scenario, iter, model)
 
         else
             % If the results file does not exist, print out statement
-            disp(strcat('Scenario ', num2str(scenario), ' iter ', num2str(sim_n), ' is missing.'));
-        end  
+            disp(strcat('Scenario ', num2str(scenario), ' iter ', num2str(iter), ' samp ', num2str(sim_n), ' is missing.'));
+        end      
     end
-
+    
     % Median and 95% CI of estimated number of classes over all simulated datasets
     res.K_median = [median(all.K, 'omitnan') quantile(all.K, 0.025) quantile(all.K, 0.975)];          
     % Proportion of simulations with number of classes correctly estimated
@@ -119,14 +132,10 @@ function sim_summary_wsOFMM(scenario, iter, model)
 
     disp(res);  % Display results
 
-    % Save simulation summary results          
-    save(strcat(out_dir, 'summary_', model, '_scen', num2str(scenario), '_pop'), 'all', 'res');  
-
+    % Save simulation summary results
+    if length(samp_n) > length(iter)  % If aggregating over samples instead of iterations
+        save(strcat(out_dir, 'summary_', model, '_scen', num2str(scenario), '_iter', num2str(iter), '_sample'), 'all', 'res');
+    else                              % Aggregating over iterations
+        save(strcat(out_dir, 'summary_', model, '_scen', num2str(scenario), '_samp', num2str(samp_n)), 'all', 'res');
+    end    
 end 
-
-%% Testing code
-% num_sims = 1;
-% data_dir = strcat(pwd, "\Data\");
-% model_dir = strcat(pwd, "\Results\");
-% out_dir = "";
-

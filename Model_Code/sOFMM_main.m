@@ -19,12 +19,14 @@ function sOFMM_main(scenario, sim_n, samp_n)
     rng(sim_n, 'twister');
 
     %% Load simulated data and check if file already exists
-    in_dir = "/n/home01/stephwu18/wsOFMM/data/";      % Input directory
-    out_dir = "/n/home01/stephwu18/wsOFMM/results_permute/";  % Output directory      
-    if samp_n > 0                                     % If working with sample 
+    % Input directory
+    in_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/";
+    % Output directory 
+    out_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Results/";     
+    if samp_n > 0   % If working with sample 
         samp_data = importdata(strcat(in_dir, 'simdata_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n), '.mat'));
         already_done = isfile(strcat(out_dir, 'sOFMM_results_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n), '.mat'));
-    else                                              % If working with population
+    else            % If working with population
         samp_data = importdata(strcat(in_dir, 'simdata_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'));
         already_done = isfile(strcat(out_dir, 'sOFMM_results_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'));
     end

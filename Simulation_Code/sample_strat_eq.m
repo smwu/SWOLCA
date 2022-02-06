@@ -1,13 +1,20 @@
 
 % sample_strat_eq reads in a simulated population dataset and takes a 
 % simple random sample, then saves the sample. Corresponds to Scenarios 13-16.
+% Inputs:
+%   scenario: Population simulation scenario (1, 2, 3, or 4)
+%   sim_n: Simulation iteration number
+%   samp_n: Sample iteration number. Default is 1, so one sample is taken per iteration
+% Outputs a simulated sample dataset
 function sample_strat_eq(scenario, sim_n, samp_n)
     %% Specifications
-    rng(samp_n, 'twister');                        % Set seed
-    in_dir = "/n/home01/stephwu18/wsOFMM/data/";   % Input directory
-    out_dir = "/n/home01/stephwu18/wsOFMM/data/";  % Output directory
-    in_dir = strcat(pwd, "\Data\");
-    out_dir = strcat(pwd, "\Data\");   
+    if samp_n >1  % If more than one sample per iteration, set seed based on sample
+        rng(samp_n, 'twister');                        
+    else          % If only one sample per iteration, set seed based on iteration
+        rng(sim_n, 'twister');
+    end 
+    in_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/";   % Input directory
+    out_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/";  % Output directory 
     % Load population simulated dataset
     load(strcat(in_dir, 'simdata_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'), 'sim_data')      
               
