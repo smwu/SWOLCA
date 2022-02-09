@@ -151,7 +151,7 @@ end
 
 % Display summaries for multiple sample scenarios
 for scen = 5:16
-    sim_summary_wsOFMM_sample(scen, 1, 10, "wsOFMM")
+    sim_summary_wsOFMM_sample(scen, 1:50, 1, "wsOFMM")
 end
 
 

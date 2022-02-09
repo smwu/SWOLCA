@@ -124,11 +124,11 @@ function sim_summary_wsOFMM_sample(scenario, iter, samp_n, model)
     % Median and 95% CI of MSE of item response probabilities over all simulated datasets 
     res.mse_theta_median = [median(all.mse_theta, 'omitnan') quantile(all.mse_theta, 0.025) quantile(all.mse_theta, 0.975)]; 
     % Mean simulated correlation between S and C
-    res.corr_S_C = mean(all.corr_S_C);
+    res.corr_S_C = mean(all.corr_S_C, 'omitnan');
     % Mean simulated correlation between S and Y
-    res.corr_S_Y = mean(all.corr_S_Y);
+    res.corr_S_Y = mean(all.corr_S_Y, 'omitnan');
     % Mean simulated correlation between C and Y
-    res.corr_C_Y = mean(all.corr_C_Y);
+    res.corr_C_Y = mean(all.corr_C_Y, 'omitnan');
 
     disp(res);  % Display results
 
