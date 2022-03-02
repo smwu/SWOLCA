@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH -J wsOFMM_scen5_16	# Job name for the array
-#SBATCH -o wsOFMM_scen5_16_%A.out  # Shared standard output with job ID
+#SBATCH -J sOFMM_scen29_30	# Job name for the array
+#SBATCH -o sOFMM_scen29_30_%A.out  # Shared standard output with job ID
 #SBATCH -p shared       # Partition to submit to
 #SBATCH -n 1		# Number of cores
 #SBATCH --mem 1300	# Memory request
@@ -10,7 +10,7 @@
 
 module load matlab
 samp_n=1
-for scenario in $(seq 5 16); do
+for scenario in $(seq 29 30); do
 	echo This is scenario ${scenario} iteration ${SLURM_ARRAY_TASK_ID} sample ${samp_n}.$'\n'
-	matlab -nodisplay -nosplash -r "wsOFMM_main(${scenario},${SLURM_ARRAY_TASK_ID},${samp_n})"
+	matlab -nodisplay -nosplash -r "sOFMM_main(${scenario},${SLURM_ARRAY_TASK_ID},${samp_n})"
 done

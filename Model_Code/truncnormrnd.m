@@ -1,4 +1,4 @@
-% truncnormrnd generates a random sample from a truncated bormal
+% truncnormrnd generates a random sample from a truncated normal
 % distribution. The statistics toolbox is used.
 % Inputs:
 %   N: Size of the sample to draw
@@ -32,8 +32,14 @@ function z = truncnormrnd(N, mu, sig, xlo, xhi)
       error 'Must have xlo <= xhi if both provided'
     end
 
-    r = rand(N);                % Generate Unif[0,1] random deviates
+    r = rand(N, 1);             % Generate Unif[0,1] random deviates
     r = plo + (phi - plo) * r;  % Scale to [plo, phi]
     z = norminv(r);             % Invert through standard normal
     z = mu + z * sig;           % Apply shift and scale
+    
+    if sum(z > xhi) > 0   % Check to make sure sample is within truncation points
+        z(z > xhi) = xhi - 1e-10;
+    elseif sum(z < xlo) > 0
+        z(z < xlo) = xlo + 1e-10;
+    end    
 end

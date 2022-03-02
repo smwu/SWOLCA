@@ -62,6 +62,6 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_run_MCMC(data_vars, OFMM_p
     MCMC_out.theta = MCMC_out.theta((burn / thin) + 1:end, :, :, :);
     MCMC_out.c_i = MCMC_out.c_i((burn / thin) + 1:end, :);
     MCMC_out.xi = MCMC_out.xi((burn / thin) + 1:end, :);  
-    MCMC_out.z_i = MCMC_out.z_i((burn / thin) + 1:end);
+    MCMC_out.z_i = MCMC_out.z_i((burn / thin) + 1:end, :);
     MCMC_out.loglik = MCMC_out.loglik((burn / thin) + 1:end); 
 end
