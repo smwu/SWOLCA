@@ -59,7 +59,7 @@ function sOFMM_main(scenario, sim_n, samp_n)
         %% Run adaptive sampler to obtain number of classes
         n_runs = 25000;  % Number of MCMC iterations
         burn = 15000;    % Burn-in period
-        thin = 1;        % Thinning factor 
+        thin = 5;        % Thinning factor 
         [MCMC_out, ~, ~] = run_MCMC(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_max, q_dem, p_cov, alpha, eta, mu_0, Sig_0, S);
         k_fixed = round(median(sum(MCMC_out.pi > 0.05, 2))); % Obtain fixed number of classes to use in the fixed sampler
         clear OFMM_params probit_params MCMC_out;           % Reduce memory burden

@@ -88,6 +88,14 @@ for i = 1:50
     sim_confounder(i);
 end    
 
+% Simulate samples for Scenario 2 iter 1, for 20 sampled sets each
+iter = 1;
+scen = 2;
+for samp = 1:20
+    sample_SRS(scen, iter, samp);
+    sample_strat_eq(scen, iter, samp);
+end    
+
 % Simulate samples for Scenarios 1,2 iter 1-50, for 1 sampled set each
 samp = 1;
 for scen = 1:2

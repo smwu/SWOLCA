@@ -31,13 +31,18 @@ function analysis = analyze_results(post_MCMC_out, data_vars, q_dem, S, p_cov)
     t_ind0 = transpose(ind0);
     [~, ia, ~] = unique(t_ind0, 'rows');  % Vector of class indices corresponding to unique classes
     analysis.k_red = length(ia);          % Number of unique classes
+   
+    % Posterior MCMC parameter chains for the unique classes
+    analysis.pi_red = post_MCMC_out.pi(:, ia);
+    analysis.theta_red = post_MCMC_out.theta(:, :, ia, :);
+    analysis.xi_red = post_MCMC_out.xi(:, [1:S (S+ia')]);
     
     % Posterior median estimates for the unique classes
     analysis.pi_med = analysis.pi_med(ia) / sum(analysis.pi_med(ia)); % Class probs for the unique classes, normalized 
     % Item-response probs for the unique classes, normalized to sum to 1 across consumption levels
     analysis.theta_med = analysis.theta_med(:, ia, :); 
     analysis.theta_med = analysis.theta_med ./ sum(analysis.theta_med, 3);  
-    analysis.xi_med = [analysis.xi_med(1:S) analysis.xi_med(S + ia)]; % Probit coefs for the unique classes
+    analysis.xi_med = [analysis.xi_med(1:S) analysis.xi_med(S + ia)]; % Probit coefs for the unique classes    
     
     % Update probit likelihood using unique classes and updated posterior median estimates for xi
     analysis.indiv_lik_probit = zeros(data_vars.n, analysis.k_red); % Initialize indiv probit lik matrix for each indiv and class

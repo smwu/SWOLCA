@@ -14,8 +14,8 @@ function OFMM_params = wtd_init_OFMM_params(data_vars, k_max, alpha, eta)
     OFMM_params.pi = drchrnd(alpha, 1); 
     
     % Random initialization of class assignments
-    x_ci = mnrnd(1, OFMM_params.pi, data_vars.n); % Matrix of c_i drawn from Mult(1, pi). Each row is draw for an indiv
-    [row, col] = find(x_ci);                      % Row and col indices of nonzero elements of x_ci; col is class assign for each indiv
+    OFMM_params.x_ci = mnrnd(1, OFMM_params.pi, data_vars.n); % Matrix of c_i drawn from Mult(1, pi). Each row is draw for an indiv
+    [row, col] = find(OFMM_params.x_ci);                      % Row and col indices of nonzero elements of x_ci; col is class assign for each indiv
     sorted = sortrows([row col], 1);              % Sort indices in ascending row index order, to match subject index
     OFMM_params.c_i = sorted(:, 2);               % Vector of class assignment, c_i, for each individual
     OFMM_params.n_ci = zeros(1, k_max);           % Initialize vector of weighted num indivs assigned to each class

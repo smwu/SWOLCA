@@ -74,18 +74,16 @@ function analysis = analyze_results_latent(MCMC_out, post_MCMC_out, data_vars, q
     
     % Obtain probit model mean using median parameter estimates
     Q_med = [q_dem x_ci];                             % Design matrix with updated class memberships using median estimates   
-    analysis.Phi_med = normcdf(Q_med * transpose(analysis.xi_med)); % Probit model mean using median estimates
+    analysis.Phi_med = normcdf(Q_med * transpose(analysis.xi_med)); % Linear predictor, Q*xi. Probit model mean using median estimates
     analysis.Phi_med(analysis.Phi_med == 0) = 1e-10;  % Adjust extremes
     analysis.Phi_med(analysis.Phi_med == 1) = 1 - 1e-10;
     
     % Update latent probit variable, z_i, using unique classes and updated posterior median estimates for xi
-    Q = [q_dem dummyvar(analysis.c_i)];    % Design matrix with demographic covariates and updated latent classes
-    lin_pred = Q * transpose(analysis.xi_med);  % Linear predictor, Q*xi. Mean of truncated normal dist
     analysis.z_i = zeros(data_vars.n, 1);       % Initialize latent probit variable, z_i
     % For cases, z_i ~ TruncNormal(mean=Q*xi, var=1, low=0, high=Inf)
-    analysis.z_i(data_vars.y == 1) = truncnormrnd(1, lin_pred(data_vars.y == 1), 1, 0, Inf); 
+    analysis.z_i(data_vars.y == 1) = truncnormrnd(1, analysis.Phi_med(data_vars.y == 1), 1, 0, Inf); 
     % For controls, z_i ~ TruncNormal(mean=Q*xi, var=1, low=-Inf, high=0)
-    analysis.z_i(data_vars.y == 0) = truncnormrnd(1, lin_pred(data_vars.y == 0), 1, -Inf, 0); 
+    analysis.z_i(data_vars.y == 0) = truncnormrnd(1, analysis.Phi_med(data_vars.y == 0), 1, -Inf, 0); 
     if sum(analysis.z_i == Inf) > 0                  % Control extremes
         analysis.z_i(analysis.z_i == Inf) = norminv(1 - 1e-10);
     end 
@@ -105,7 +103,7 @@ function analysis = analyze_results_latent(MCMC_out, post_MCMC_out, data_vars, q
     % nxp matrix of theta values for each indiv and item \prod_{r=1}^d \theta_{jr|k}^{I(x_ij=r, c_i=k)}
     theta_indiv = reshape(analysis.theta_med(lin_idx), [data_vars.n, data_vars.p]);
     % Probit component 
-    probit_lik = normpdf(analysis.z_i, lin_pred, 1) .* ((data_vars.y == 1).* (analysis.z_i > 0) + (data_vars.y == 0) .* (analysis.z_i <= 0));
+    probit_lik = normpdf(analysis.z_i, analysis.Phi_med, 1) .* ((data_vars.y == 1).* (analysis.z_i > 0) + (data_vars.y == 0) .* (analysis.z_i <= 0));
     % Indiv complete log-likelihood
     analysis.loglik_med = log(analysis.pi_med(analysis.c_i) * prod(theta_indiv, 2) * probit_lik);
     

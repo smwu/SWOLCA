@@ -27,12 +27,14 @@ function sim_summary_wsOFMM_sample(scenario, iter, samp_n, model)
     % Initialize outputs, stored for all simulated sets
     all.K = NaN(n_reps, 1);         % Initialize estimated number of classes
     all.K_match = NaN(n_reps, 1);   % Initialize boolean vector of correct estimation of number of classes
+    all.mse_pi = NaN(n_reps, 1);    % Initialize MSE of class membership probs
+    all.mse_theta = NaN(n_reps, 1); % Initialize MSE of class-specific item response probs
+    all.mse_xi = NaN(n_reps, 1);    % Initialize MSE of probit coefs
+    all.mse_Phi = NaN(n_reps, 1);   % Initialize MSE of class- and subpop-specific response proportions
     all.sens = NaN(n_reps, 1);      % Initialize sensitivity
     all.spec = NaN(n_reps, 1);      % Initialize specificity
     all.dic6 = NaN(n_reps, 1);      % Initialize DIC version 6 to penalize overfitting 
     all.aebic = NaN(n_reps, 1);     % Initialize AEBIC model selection metric
-    all.mse_Phi = NaN(n_reps, 1);   % Initialize MSE of class-specific response proportions
-    all.mse_theta = NaN(n_reps, 1); % Initialize MSE of class-specific item response probs
     all.corr_S_C = NaN(n_reps, 1);  % Initialize correlation between S and C
     all.corr_S_Y = NaN(n_reps, 1);  % Initialize correlation between S and Y
     all.corr_C_Y = NaN(n_reps, 1);  % Initialize correlation between C and Y
@@ -57,7 +59,30 @@ function sim_summary_wsOFMM_sample(scenario, iter, samp_n, model)
 
             all.K(sim_n) = analysis.k_red;                          % Estimated number of classes
             all.K_match(sim_n) = analysis.k_red == sim_data.true_K; % Estimated and true number of classes match (1/0)
+            
+            % MSE of class membership probabilities
+            
 
+            % MSE of class-specific item response probabilities
+            pw_classes_mse = zeros(analysis.k_red, sim_data.true_K);         % Initialize matrix of pairwise class MSEs
+            dim = size(sim_data.true_global_thetas); p = dim(1); d = dim(3); % Get food data dimensions
+            for j = 1:sim_data.true_K                                        % For each true class
+                % Obtain the true item response probs for true class j
+                global_thetas_j = reshape(sim_data.true_global_thetas(:, j, :), [p, d]); 
+                for i = 1:analysis.k_red                                     % For each predicted class
+                    % Obtain the predicted item response probs for predicted class i
+                    theta_med_i = reshape(analysis.theta_med(:, i, :), [p, d]);
+                    % Obtain MSE of true and predicted item response probs for each pairwise class combo
+                    pw_classes_mse(i, j) = immse(theta_med_i, global_thetas_j);
+                end
+            end
+            mse_theta_class = min(pw_classes_mse);        % Min per column gives best pairing of true and predicted class membership    
+            all.mse_theta(sim_n) = sum(mse_theta_class); % Total MSE is sum over all classes   
+
+            % MSE of class-specific response proportions
+            all.mse_Phi(sim_n) = immse(analysis.Phi_med, sim_data.true_Phi);  
+
+            
             % Obtain sensitivity and specificity
             pw_classes_sens = zeros(analysis.k_red, sim_data.true_K); % Initialize matrix of pairwise class assigns for sensitivity
             pw_classes_spec = zeros(analysis.k_red, sim_data.true_K); % Initialize matrix of pairwise class assigns for specificity
@@ -76,25 +101,6 @@ function sim_summary_wsOFMM_sample(scenario, iter, samp_n, model)
 
             all.dic6(sim_n) = analysis.dic6;    % DIC version 6 to penalize overfitting
             all.aebic(sim_n) = analysis.aebic;  % AEBIC model selection metric
-
-            % MSE of class-specific response proportions
-            all.mse_Phi(sim_n) = immse(analysis.Phi_med, sim_data.true_Phi);  
-
-            % MSE of class-specific item response probabilities
-            pw_classes_mse = zeros(analysis.k_red, sim_data.true_K);         % Initialize matrix of pairwise class MSEs
-            dim = size(sim_data.true_global_thetas); p = dim(1); d = dim(3); % Get food data dimensions
-            for j = 1:sim_data.true_K                                        % For each true class
-                % Obtain the true item response probs for true class j
-                global_thetas_j = reshape(sim_data.true_global_thetas(:, j, :), [p, d]); 
-                for i = 1:analysis.k_red                                     % For each predicted class
-                    % Obtain the predicted item response probs for predicted class i
-                    theta_med_i = reshape(analysis.theta_med(:, i, :), [p, d]);
-                    % Obtain MSE of true and predicted item response probs for each pairwise class combo
-                    pw_classes_mse(i, j) = immse(theta_med_i, global_thetas_j);
-                end
-            end
-            mse_theta_class = min(pw_classes_mse);        % Min per column gives best pairing of true and predicted class membership    
-            all.mse_theta(sim_n) = sum(mse_theta_class); % Total MSE is sum over all classes   
 
             % Get simulated correlations
             all.corr_S_C(sim_n) = corr(sim_data.true_Si, sim_data.true_Ci);
