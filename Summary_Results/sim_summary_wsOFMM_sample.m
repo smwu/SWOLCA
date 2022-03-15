@@ -139,3 +139,9 @@ function sim_summary_wsOFMM_sample(scenario, iter, samp_n, model)
         save(strcat(out_dir, 'summary_', model, '_scen', num2str(scenario), '_samp', num2str(samp_n)), 'all', 'res');
     end    
 end 
+
+
+%     % Testing code
+%     data_dir = "C:/Users/Lang/Documents/Harvard/Research/Briana/supRPC/wsOFMM/Data/";
+%     model_dir = "C:/Users/Lang/Documents/Harvard/Research/Briana/supRPC/wsOFMM/Results/";
+%     out_dir = "C:/Users/Lang/Documents/Harvard/Research/Briana/supRPC/wsOFMM/Summary_Results/";

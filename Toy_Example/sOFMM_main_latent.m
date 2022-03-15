@@ -38,7 +38,7 @@ function sOFMM_main_latent(scenario, sim_n, samp_n)
     else
         %% Get data variables
         k_max = 50;    % Upper limit for number of classes
-        data_vars = get_data_vars_latent(samp_data);
+        data_vars = wtd_get_data_vars_latent(samp_data);
 
         %% Initialize priors and variables for OFMM model
         sp_k = k_max;                   % Denom constant to restrict alpha size and num classes for OFMM model
@@ -59,17 +59,13 @@ function sOFMM_main_latent(scenario, sim_n, samp_n)
         %% Run adaptive sampler to obtain number of classes
         n_runs = 25000;  % Number of MCMC iterations
         burn = 15000;    % Burn-in period
-        thin = 1;        % Thinning factor 
+        thin = 1;        % Thinning factor
         [MCMC_out, ~, ~] = run_MCMC_latent(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_max, q_dem, p_cov, alpha, eta, mu_0, Sig_0);
         k_fixed = round(median(sum(MCMC_out.pi > 0.05, 2))); % Obtain fixed number of classes to use in the fixed sampler
         clear OFMM_params probit_params MCMC_out;           % Reduce memory burden
 
         %% Run fixed sampler to obtain posteriors and save output
-        % Initialize OFMM model using fixed number of classes
-        
-        rng(1, 'twister');
-
-        
+        % Initialize OFMM model using fixed number of classes        
         sp_k = k_fixed;                   % Denom constant to restrict alpha size and num classes for OFMM model
         alpha = ones(1, k_fixed) / sp_k;  % Hyperparam for class membership probs. R package 'Zmix' allows diff options
         OFMM_params = init_OFMM_params_latent(data_vars, k_fixed, alpha, eta);
@@ -96,6 +92,14 @@ function sOFMM_main_latent(scenario, sim_n, samp_n)
 
         %% Obtain posterior estimates, reduce number of classes, analyze results, and save output
         analysis = analyze_results_latent(MCMC_out, post_MCMC_out, data_vars, q_dem, S, p_cov);
+        
+        % Post-hoc pi correction
+        analysis.posthoc_pi = zeros(analysis.k_red, 1);
+        for k = 1:analysis.k_red  % For each latent class
+            % Get updated weighted num indivs assigned to class k
+            analysis.posthoc_pi(k) = sum(data_vars.wt_kappa(analysis.c_i == k)) / sum(data_vars.wt_kappa);  
+        end
+        
         % Save parameter estimates and analysis results
         if samp_n > 0  % If working with sample 
             save(strcat(out_dir, 'sOFMM_latent_results_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'post_MCMC_out', 'analysis');

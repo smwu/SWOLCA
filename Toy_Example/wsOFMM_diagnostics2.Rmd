@@ -1,0 +1,846 @@
+---
+title: "wsOFMM Diagnostics"
+author: "Stephanie Wu"
+date: "3/9/2022"
+output:
+  html_document:
+    df_print: paged
+---
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+setwd("C:/Users/Lang/Documents/Harvard/Research/Briana/supRPC/wsOFMM/Toy_Example")
+
+library(R.matlab)
+library(gtools)
+library(flextable)
+library(dplyr)
+library(bayesplot)
+library(ggplot2)
+library(tidyr)
+library(ggpubr)
+
+### Helper functions
+
+# get_pi_dist returns the squared Euclidean distance between the estimated and 
+# true pi, averaged over R sample iterations
+# Inputs:
+#   est_pi: estimated pi vector
+#   true_pi: true pi vector
+#   order: optimal ordering of estimated pi elements. If NULL, the best ordering 
+#   is chosen over all permutations of est_pi with length equal to true_pi
+# Outputs: a list with one element:
+#   pi_dist: mean squared Euclidean distance between est_pi and true_pi over all
+#   iterations
+get_pi_dist <- function(est_pi, true_pi, order=NULL) {
+
+  if (is.null(order)) {  # If no optimal ordering exists
+    # Find all subsets of est_pi with size equal to true_pi
+    all_perms <- permutations(n=length(est_pi), r=length(true_pi))
+    
+    # Obtain vector of dist between est and true pi, calculated for each permutation
+    dist_all_perms <- numeric(nrow(all_perms))
+    for (i in 1:nrow(all_perms)) {
+      est_pi_perm <- est_pi[all_perms[i, ]]
+      dist_all_perms[i] <- sum((est_pi_perm - true_pi)^2)
+    }
+    # Lowest dist out of all permutations
+    min_dist <- min(dist_all_perms)
+    
+    # Obtain optimal ordering of cladists
+    ordering <- which.min(dist_all_perms)
+    # Return lowest dist and ordering
+    return(list("pi_dist" = min_dist, "ordering" = all_perms[ordering, ]))
+    
+  } else {  # If optimal ordering exists
+    est_pi_perm <- est_pi[order]
+    pi_dist <- sum((est_pi_perm - true_pi)^2)
+    # Return dist
+    return(list("pi_dist" = pi_dist))
+  }
+}
+
+# get_theta_dist returns the squared Euclidean distance between the estimated 
+# and true theta, averaged over R sample iterations
+# Inputs:
+#   est_theta: estimated theta vector
+#   true_theta: true theta vector
+#   order: optimal ordering of estimated theta elements, determined in get_pi_dist()
+# Outputs: a list with one element:
+#   theta_dist: mean squared Euclidean distance between est_theta and true_theta 
+#   over all iterations
+get_theta_dist <- function(est_theta, true_theta, order) {
+
+  est_theta_perm <- est_theta[ , order, ]
+  theta_dist <- sum((est_theta_perm - true_theta)^2)
+  # Return dist
+  return(list("theta_dist" = theta_dist))
+  
+}
+
+# get_xi_dist returns the squared Euclidean distance between the estimated and 
+# true xi, averaged over R sample iterations
+# Inputs:
+#   est_xi: estimated xi vector
+#   true_xi: true xi vector
+#   order: optimal ordering of estimated xi elements, determined in get_pi_dist()
+#   S: number of coefficients corresponding to additional covariates
+# Outputs: a list with one element:
+#   xi_dist: mean squared Euclidean distance between est_xi and true_xi over all
+#   iterations
+get_xi_dist <- function(est_xi, true_xi, order, S) {
+  
+  est_xi_perm <- c(est_xi[1:S], est_xi[order + S])
+  xi_dist <- sum((est_xi_perm - true_xi)^2)
+  # Return dist
+  return(list("xi_dist" = xi_dist))
+  
+}
+
+```
+## MSE for posterior parameters: squared Euclidean distance averaged across samples
+
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+# get_MSE obtains the average squared Euclidean distance of the posterior 
+# parameter estimates across the samples
+# Inputs:
+#   scen_pop: Population data scenario
+#   scen_samp: Sample data scenario
+#   iter_pop: Population data iteration
+#   R_seq: Vector sequence of sample indices
+#   latent: Boolean indicating if the latent method is used or not
+#   posthoc: Boolean indicating if a posthoc pi is included in the results
+# Outputs: list with the following components:
+#   MSE_s: vector with mean squared Euclidean distances (MSE) of posterior 
+#          parameter estimates from true values for the sOFMM model for pi, 
+#          theta, xi, and posthoc pi if applicable
+#   MSE_ws: vector of MSEs for the sOFMM model for pi, theta, xi, and posthoc pi
+#   MSE_K_s: mean squared distance of est K and true K across samples for sOFMM
+#   MSE_K_ws: mean squared distance of est K and true K across samples for wsOFMM
+get_MSE <- function(scen_pop, scen_samp, iter_pop, R_seq, latent, posthoc) {
+  R <- length(R_seq)  # Number of samples
+  
+  # Initialize vectors for wsOFMM
+  K_s <- numeric(R)
+  pi_dist_s <- numeric(R)
+  theta_dist_s <- numeric(R)
+  xi_dist_s <- numeric(R)
+  
+  # Initialize vectors for sOFMM
+  K_ws <- numeric(R)
+  pi_dist_ws <- numeric(R)
+  theta_dist_ws <- numeric(R)
+  xi_dist_ws <- numeric(R)
+  
+  # Initial dist vector for pi for sOFMM with posthoc correction
+  pi_dist_posthoc <- numeric(R)
+  
+  # Load simulated population data
+  sim_pop <- readMat(paste0("simdata_scen", scen_pop,"_iter", iter_pop, 
+                              ".mat"))$sim.data
+  # Assign element names
+  names(sim_pop) <- c("true_pi", "true_xi", "true_global_patterns", 
+                        "true_global_thetas", "samp_ind", "sample_wt", "norm_const", 
+                        "true_Si", "true_Ci", "X_data", "Y_data", "true_Phi", "true_K")
+  
+  # True pi in the population
+  true_overall_pi <- tabulate(sim_pop$true_Ci) / length(sim_pop$true_Ci)
+  
+  for (samp_n in R_seq) {  # For each sample iteration
+  
+    # Load simulated sample data for the iteration
+    sim_samp <- readMat(paste0("simdata_scen", scen_samp,"_iter", iter_pop, 
+                               "_samp", samp_n, ".mat"))$sim.data
+    # Assign element names
+    if (length(sim_samp) > length(sim_pop)) {
+      names(sim_samp) <- c(names(sim_pop), "true_Li")
+    } else {
+      names(sim_samp) <- names(sim_pop)
+    }
+    
+    
+    # Load model output
+    if (latent) {
+      out_ws <- readMat(paste0("wsOFMM_latent_results_scen", scen_samp, "_iter", 
+                                iter_pop, "_samp", samp_n, ".mat"))
+      out_s <- readMat(paste0("sOFMM_latent_results_scen", scen_samp, "_iter", 
+                               iter_pop, "_samp", samp_n, ".mat"))
+    } else {
+      out_ws <- readMat(paste0("wsOFMM_results_scen", scen_samp, "_iter", 
+                                iter_pop, "_samp", samp_n, ".mat"))
+      out_s <- readMat(paste0("sOFMM_results_scen", scen_samp, "_iter", 
+                               iter_pop, "_samp", samp_n, ".mat"))
+    }
+    # Extract analysis portion
+    data_ws <- out_ws$analysis
+    data_s <- out_s$analysis
+    # Assign element names
+    names(data_ws) <- c("pi_med", "theta_med", "xi_med", "k_red", "pi_red", "theta_red", 
+                        "xi_red", "c_i", "Phi_med", "z_i", "loglik_med", "dic6", "aebic")
+    if (length(data_s) > length(data_ws)) {
+      names(data_s) <- c(names(data_ws), "posthoc_pi")
+    } else {
+      names(data_s) <- names(data_ws)
+    }
+    
+    
+    # Get estimated number of classes
+    K_ws[samp_n] <- (data_ws$k_red - sim_pop$true_K)^2
+    K_s[samp_n] <- (data_s$k_red - sim_pop$true_K)^2
+    
+    
+    ## Get dist for pi 
+    # Get pi_dist for wsOFMM
+    get_dist_ws <- get_pi_dist(data_ws$pi_med, true_overall_pi, order=NULL)
+    order_ws <- get_dist_ws$ordering
+    pi_dist_ws[samp_n] <- get_dist_ws$pi_dist
+    
+    # Get pi_dist for sOFMM
+    get_dist_s <- get_pi_dist(data_s$pi_med, true_overall_pi, order=NULL)
+    order_s <- get_dist_s$ordering
+    pi_dist_s[samp_n] <- get_dist_s$pi_dist
+    if (posthoc) {
+      pi_dist_posthoc[samp_n] <- get_pi_dist(data_s$posthoc_pi, true_overall_pi, 
+                                           order=order_s)$pi_dist
+    } else {
+      pi_dist_posthoc[samp_n] <- NA
+    }
+    
+    # Get dist for theta
+    theta_dist_ws[samp_n] <- get_theta_dist(data_ws$theta_med, 
+                                            sim_pop$true_global_thetas, 
+                                            order_ws)$theta_dist
+    theta_dist_s[samp_n] <- get_theta_dist(data_s$theta_med, 
+                                           sim_pop$true_global_thetas, 
+                                           order_s)$theta_dist
+    
+    # Get dist for xi
+    S <- length(unique(sim_samp$true_Si))
+    xi_dist_ws[samp_n] <- get_xi_dist(data_ws$xi_med, sim_pop$true_xi, 
+                                      order_ws, S)$xi_dist
+    xi_dist_s[samp_n] <- get_xi_dist(data_s$xi_med, sim_pop$true_xi, 
+                                     order_s, S)$xi_dist
+  
+  }
+  
+  MSE_s <- c(mean(pi_dist_s), mean(theta_dist_s), mean(xi_dist_s), mean(pi_dist_posthoc))
+  MSE_ws <- c(mean(pi_dist_ws), mean(theta_dist_ws), mean(xi_dist_ws))
+  MSE_K_s <- mean(K_s)
+  MSE_K_ws <- mean(K_ws)
+  
+  return(list(MSE_s=round(MSE_s,4), MSE_ws=round(MSE_ws,4), 
+         MSE_K_s=round(MSE_K_s, 4), MSE_K_ws=round(MSE_K_ws, 4)))
+}
+```
+
+
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+### Create table of MSEs
+MSE_SRS <- get_MSE(scen_pop=2, scen_samp=6, iter_pop=1, R_seq=1:20, 
+                   latent=FALSE, posthoc=FALSE)
+MSE_Uneq <- get_MSE(scen_pop=2, scen_samp=14, iter_pop=1, R_seq=1:20, 
+                    latent=FALSE, posthoc=FALSE)
+MSE_SRS_latent <- get_MSE(scen_pop=2, scen_samp=6, iter_pop=1, R_seq=1:20, 
+                          latent=TRUE, posthoc=TRUE)
+MSE_Uneq_latent <- get_MSE(scen_pop=2, scen_samp=14, iter_pop=1, R_seq=1:20, 
+                           latent=TRUE, posthoc=TRUE)
+
+MSE_summ <- as.data.frame(matrix(NA, nrow=8, ncol=6))
+colnames(MSE_summ) <- c("Sampling", "Model", "pi (pi_posthoc)", "theta", "xi", "K")
+MSE_summ[, 1] <- c(rep("SRS", 4), rep("Uneq", 4))
+MSE_summ[, 2] <- rep(c("sOFMM", "wsOFMM", "sOFMM Latent", "wsOFMM Latent"), 2)
+MSE_summ[1, 3:6] <- c(MSE_SRS$MSE_s[1:3], MSE_SRS$MSE_K_s)
+MSE_summ[2, 3:6] <- c(MSE_SRS$MSE_ws, MSE_SRS$MSE_K_ws)
+MSE_summ[3, 3:6] <- c(paste0(MSE_SRS_latent$MSE_s[1], " (",
+                             MSE_SRS_latent$MSE_s[4], ")"), 
+                      MSE_SRS_latent$MSE_s[2:3], MSE_SRS_latent$MSE_K_s)
+MSE_summ[4, 3:6] <- c(MSE_SRS_latent$MSE_ws, MSE_SRS_latent$MSE_K_ws)
+MSE_summ[5, 3:6] <- c(MSE_Uneq$MSE_s[1:3], MSE_Uneq$MSE_K_s)
+MSE_summ[6, 3:6] <- c(MSE_Uneq$MSE_ws, MSE_Uneq$MSE_K_ws)
+MSE_summ[7, 3:6] <- c(paste0(MSE_Uneq_latent$MSE_s[1], " (",
+                             MSE_Uneq_latent$MSE_s[4], ")"), 
+                      MSE_Uneq_latent$MSE_s[2:3], MSE_Uneq_latent$MSE_K_s)
+MSE_summ[8, 3:6] <- c(MSE_Uneq_latent$MSE_ws, MSE_Uneq_latent$MSE_K_s)
+flextable(MSE_summ) %>% autofit() %>%
+  set_caption("MSE of Posterior Parameter Estimates Over 20 Samples")
+```
+
+
+## Comparison of mean posterior estimates and variances and coverage probabilities across samples
+
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+# get_est_var_cov obtains the posterior estimates, variances, and coverage 
+# probabilities for the parameters across the samples
+# Inputs:
+#   scen_pop: Population data scenario
+#   scen_samp: Sample data scenario
+#   iter_pop: Population data iteration
+#   R_seq: Vector sequence of sample indices
+#   latent: Boolean indicating if the latent method is used or not
+# Outputs: list with the following components:
+#   mean_pi_s: 3xK matrix of mean est and var and coverage for pi for sOFMM model
+#   mean_theta_s: 3x(p*K*d) matrix of mean est and var and coverage for theta for sOFMM model
+#   mean_xi_s: 3x(S+K) matrix of mean est and var and coverage for xi for sOFMM model
+#   mean_pi_ws: 3xK matrix of mean est and var and coverage for pi for wsOFMM model
+#   mean_theta_ws: 3x(p*K*d) matrix of mean est and var and coverage for theta for wsOFMM model
+#   mean_xi_ws: 3x(S+K) matrix of mean est and var and coverage for xi for wsOFMM model
+get_est_var_cov <- function(scen_pop, scen_samp, iter_pop, R_seq, latent) {
+  R <- length(R_seq)  # Number of samples
+  
+  # Load simulated population data
+  sim_pop <- readMat(paste0("simdata_scen", scen_pop,"_iter", iter_pop, 
+                              ".mat"))$sim.data
+  # Assign element names
+  names(sim_pop) <- c("true_pi", "true_xi", "true_global_patterns", 
+                        "true_global_thetas", "samp_ind", "sample_wt", "norm_const", 
+                        "true_Si", "true_Ci", "X_data", "Y_data", "true_Phi", "true_K")
+  
+  # True pi in the population
+  true_overall_pi <- tabulate(sim_pop$true_Ci) / length(sim_pop$true_Ci)
+  
+  # Initialize vectors for wsOFMM
+  pi_est_s <- matrix(NA, nrow=R, ncol=length(true_overall_pi))
+  pi_var_s <- matrix(NA, nrow=R, ncol=length(true_overall_pi))
+  pi_cov_s <- matrix(NA, nrow=R, ncol=length(true_overall_pi))
+  theta_est_s <- array(NA, dim=c(R, dim(sim_pop$true_global_thetas)))
+  theta_var_s <- array(NA, dim=c(R, dim(sim_pop$true_global_thetas)))
+  theta_cov_s <- array(NA, dim=c(R, dim(sim_pop$true_global_thetas)))
+  xi_est_s <- matrix(NA, nrow=R, ncol=length(sim_pop$true_xi))
+  xi_var_s <- matrix(NA, nrow=R, ncol=length(sim_pop$true_xi))
+  xi_cov_s <- matrix(NA, nrow=R, ncol=length(sim_pop$true_xi))
+  
+  # Initialize vectors for sOFMM
+  pi_est_ws <- matrix(NA, nrow=R, ncol=length(true_overall_pi))
+  pi_var_ws <- matrix(NA, nrow=R, ncol=length(true_overall_pi))
+  pi_cov_ws <- matrix(NA, nrow=R, ncol=length(true_overall_pi))
+  theta_est_ws <- array(NA, dim=c(R, dim(sim_pop$true_global_thetas)))
+  theta_var_ws <- array(NA, dim=c(R, dim(sim_pop$true_global_thetas)))
+  theta_cov_ws <- array(NA, dim=c(R, dim(sim_pop$true_global_thetas)))
+  xi_est_ws <- matrix(NA, nrow=R, ncol=length(sim_pop$true_xi))
+  xi_var_ws <- matrix(NA, nrow=R, ncol=length(sim_pop$true_xi))
+  xi_cov_ws <- matrix(NA, nrow=R, ncol=length(sim_pop$true_xi))
+  
+  
+  for (samp_n in R_seq) {  # For each sample iteration
+  
+    # Load simulated sample data for the iteration
+    sim_samp <- readMat(paste0("simdata_scen", scen_samp,"_iter", iter_pop, 
+                               "_samp", samp_n, ".mat"))$sim.data
+    # Assign element names
+    if (length(sim_samp) > length(sim_pop)) {
+      names(sim_samp) <- c(names(sim_pop), "true_Li")
+    } else {
+      names(sim_samp) <- names(sim_pop)
+    }
+    
+    
+    # Load model output
+    if (latent) {
+      out_ws <- readMat(paste0("wsOFMM_latent_results_scen", scen_samp, "_iter", 
+                                iter_pop, "_samp", samp_n, ".mat"))
+      out_s <- readMat(paste0("sOFMM_latent_results_scen", scen_samp, "_iter", 
+                               iter_pop, "_samp", samp_n, ".mat"))
+    } else {
+      out_ws <- readMat(paste0("wsOFMM_results_scen", scen_samp, "_iter", 
+                                iter_pop, "_samp", samp_n, ".mat"))
+      out_s <- readMat(paste0("sOFMM_results_scen", scen_samp, "_iter", 
+                               iter_pop, "_samp", samp_n, ".mat"))
+    }
+    # Extract analysis portion
+    data_ws <- out_ws$analysis
+    data_s <- out_s$analysis
+    # Assign element names
+    names(data_ws) <- c("pi_med", "theta_med", "xi_med", "k_red", "pi_red", "theta_red", 
+                        "xi_red", "c_i", "Phi_med", "z_i", "loglik_med", "dic6", "aebic")
+    if (length(data_s) > length(data_ws)) {
+      names(data_s) <- c(names(data_ws), "posthoc_pi")
+    } else {
+      names(data_s) <- names(data_ws)
+    }
+    
+    ### wsOFMM metrics
+    ## Get optimal ordering that minimizes MSE for pi
+    # Get ordering for wsOFMM
+    order_ws <- get_pi_dist(data_ws$pi_med, true_overall_pi, order=NULL)$ordering
+    S <- length(unique(sim_samp$true_Si))
+    # Estimates for wsOFMM
+    pi_est_ws[samp_n, ] <- apply(data_ws$pi_red[, order_ws], 2, median)
+    theta_est_ws[samp_n,,,] <- apply(data_ws$theta_red[,, order_ws,], 2:4, median)
+    xi_est_ws[samp_n, ] <- apply(cbind(data_ws$xi_red[,1:S], 
+                                       data_ws$xi_red[,order_ws+S]),
+                                 2, median)
+    # Variance for wsOFMM
+    pi_var_ws[samp_n, ] <- apply(data_ws$pi_red[, order_ws], 2, var)
+    theta_var_ws[samp_n,,,] <- apply(data_ws$theta_red[,, order_ws,], 2:4, var)
+    xi_var_ws[samp_n, ] <- apply(cbind(data_ws$xi_red[,1:S], 
+                                       data_ws$xi_red[,order_ws+S]),
+                                 2, var)
+    # Coverage for wsOFMM
+    pi_pred_int <- apply(data_ws$pi_red[, order_ws], 2, 
+                         function(x) quantile(x, probs=c(0.025, 0.975)))
+    pi_cov_ws[samp_n, ] <- (pi_pred_int[1,] <= true_overall_pi) & 
+      (true_overall_pi <= pi_pred_int[2,])
+    theta_pred_int <- apply(data_ws$theta_red[,, order_ws,], 2:4, 
+                         function(x) quantile(x, probs=c(0.025, 0.975)))
+    theta_cov_ws[samp_n,,,] <- (theta_pred_int[1,,,] <= sim_pop$true_global_thetas) & 
+      (sim_pop$true_global_thetas <= theta_pred_int[2,,,])
+    xi_pred_int <- apply(cbind(data_ws$xi_red[,1:S], 
+                                       data_ws$xi_red[,order_ws+S]), 2, 
+                         function(x) quantile(x, probs=c(0.025, 0.975)))
+    xi_cov_ws[samp_n, ] <- (xi_pred_int[1,] <= sim_pop$true_xi) & 
+      (sim_pop$true_xi <= xi_pred_int[2,])
+    
+    
+    ### sOFMM metrics
+    # Get ordering for sOFMM
+    order_s <- get_pi_dist(data_s$pi_med, true_overall_pi, order=NULL)$ordering
+    # Estimates for wsOFMM
+    pi_est_s[samp_n, ] <- apply(data_s$pi_red[, order_s], 2, median)
+    theta_est_s[samp_n,,,] <- apply(data_s$theta_red[,, order_s,], 2:4, median)
+    xi_est_s[samp_n, ] <- apply(cbind(data_s$xi_red[,1:S], 
+                                       data_s$xi_red[,order_s+S]),
+                                 2, median)
+    # Variance for wsOFMM
+    pi_var_s[samp_n, ] <- apply(data_s$pi_red[, order_s], 2, var)
+    theta_var_s[samp_n,,,] <- apply(data_s$theta_red[,, order_s,], 2:4, var)
+    xi_var_s[samp_n, ] <- apply(cbind(data_s$xi_red[,1:S], 
+                                       data_s$xi_red[,order_s+S]),
+                                 2, var)
+    # Coverage for wsOFMM
+    pi_pred_int <- apply(data_s$pi_red[, order_s], 2, 
+                         function(x) quantile(x, probs=c(0.025, 0.975)))
+    pi_cov_s[samp_n, ] <- (pi_pred_int[1,] <= true_overall_pi) & 
+      (true_overall_pi <= pi_pred_int[2,])
+    theta_pred_int <- apply(data_s$theta_red[,, order_s,], 2:4, 
+                         function(x) quantile(x, probs=c(0.025, 0.975)))
+    theta_cov_s[samp_n,,,] <- (theta_pred_int[1,,,] <= sim_pop$true_global_thetas) & 
+      (sim_pop$true_global_thetas <= theta_pred_int[2,,,])
+    xi_pred_int <- apply(cbind(data_s$xi_red[,1:S], 
+                                       data_s$xi_red[,order_s+S]), 2, 
+                         function(x) quantile(x, probs=c(0.025, 0.975)))
+    xi_cov_s[samp_n, ] <- (xi_pred_int[1,] <= sim_pop$true_xi) & 
+      (sim_pop$true_xi <= xi_pred_int[2,])
+
+  }
+  
+  
+  ### Get means over samples
+  # Means over samples for sOFMM model
+  # Mean est, var, and coverage for pi's, ordered by k
+  mean_pi_s <- rbind(apply(pi_est_s, 2, mean), apply(pi_var_s, 2, mean), 
+                     apply(pi_cov_s, 2, mean))
+  # Mean est, var, and coverage for theta's, ordered by item j, then class k, then level r
+  mean_theta_s <- rbind(apply(theta_est_s, 2:4, mean), apply(theta_var_s, 2:4, mean), 
+                     apply(theta_cov_s, 2:4, mean))
+  # Mean est, var, and coverage for xi's, ordered by k
+  mean_xi_s <- rbind(apply(xi_est_s, 2, mean), apply(xi_var_s, 2, mean), 
+                     apply(xi_cov_s, 2, mean))
+  
+  # Means over samples for wsOFMM model
+  mean_pi_ws <- rbind(apply(pi_est_ws, 2, mean), apply(pi_var_ws, 2, mean), 
+                     apply(pi_cov_ws, 2, mean))
+  mean_theta_ws <- rbind(apply(theta_est_ws, 2:4, mean), apply(theta_var_ws, 2:4, mean), 
+                     apply(theta_cov_ws, 2:4, mean))
+  mean_xi_ws <- rbind(apply(xi_est_ws, 2, mean), apply(xi_var_ws, 2, mean), 
+                     apply(xi_cov_ws, 2, mean))
+  
+  return(list(mean_pi_s=round(mean_pi_s,4), mean_theta_s=round(mean_theta_s,4),
+              mean_xi_s=round(mean_xi_s,4),
+              mean_pi_ws=round(mean_pi_ws,4), mean_theta_ws=round(mean_theta_ws,4),
+              mean_xi_ws=round(mean_xi_ws,4)))
+}
+
+
+```
+
+
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+### Create table of estimates, variance, and coverage summaries
+
+# Get estimate, variance, and coverage summaries
+summ_SRS <- get_est_var_cov(scen_pop=2, scen_samp=6, iter_pop=1, R_seq=1:20, 
+                   latent=FALSE)
+summ_Uneq <- get_est_var_cov(scen_pop=2, scen_samp=14, iter_pop=1, R_seq=1:20, 
+                    latent=FALSE)
+summ_SRS_latent <- get_est_var_cov(scen_pop=2, scen_samp=6, iter_pop=1, 
+                                   R_seq=1:20, latent=TRUE)
+summ_Uneq_latent <- get_est_var_cov(scen_pop=2, scen_samp=14, iter_pop=1, 
+                                    R_seq=1:20, latent=TRUE)
+
+
+# Create dataframe of pi and xi
+# Load simulated population data
+sim_pop <- readMat(paste0("simdata_scen", 2,"_iter", 1, 
+                            ".mat"))$sim.data
+# Assign element names
+names(sim_pop) <- c("true_pi", "true_xi", "true_global_patterns", 
+                      "true_global_thetas", "samp_ind", "sample_wt", "norm_const", 
+                      "true_Si", "true_Ci", "X_data", "Y_data", "true_Phi", "true_K")
+# True pi in the population
+true_overall_pi <- tabulate(sim_pop$true_Ci) / length(sim_pop$true_Ci)
+pi_xi_summ <- as.data.frame(matrix(NA, nrow=25, ncol=(3 + length(true_overall_pi) 
+                                                      + length(sim_pop$true_xi))))
+
+colnames(pi_xi_summ) <- c("Sampling", "Model", "Metric",
+                          paste0("pi_", 1:length(true_overall_pi)),
+                          paste0("xi_", 1:length(sim_pop$true_xi)))
+pi_xi_summ[, 1] <- c("",c(rep("SRS", 12), rep("Uneq", 12)))
+pi_xi_summ[, 2] <- c("",rep(rep(c("sOFMM", "wsOFMM", "sOFMM Latent", 
+                                  "wsOFMM Latent"), each=3), times=2))
+pi_xi_summ[, 3] <- c("True", rep(c("Mean Post Est", "Mean Post Var", 
+                                   "Mean Coverage"), times=8))
+pi_xi_summ[1, 3+(1:length(true_overall_pi))] <- true_overall_pi
+pi_xi_summ[1, 3+length(true_overall_pi)+
+             (1:length(sim_pop$true_xi))] <- sim_pop$true_xi
+pi_xi_summ[2:4, 3+(1:length(true_overall_pi))] <- summ_SRS$mean_pi_s
+pi_xi_summ[2:4, 3+length(true_overall_pi)+
+             (1:length(sim_pop$true_xi))] <- summ_SRS$mean_xi_s
+pi_xi_summ[5:7, 3+(1:length(true_overall_pi))] <- summ_SRS$mean_pi_ws
+pi_xi_summ[5:7, 3+length(true_overall_pi)+
+             (1:length(sim_pop$true_xi))] <- summ_SRS$mean_xi_ws
+pi_xi_summ[8:10, 3+(1:length(true_overall_pi))] <- summ_SRS_latent$mean_pi_s
+pi_xi_summ[8:10, 3+length(true_overall_pi)+
+             (1:length(sim_pop$true_xi))] <- summ_SRS_latent$mean_xi_s
+pi_xi_summ[11:13, 3+(1:length(true_overall_pi))] <- summ_SRS_latent$mean_pi_ws
+pi_xi_summ[11:13, 3+length(true_overall_pi)+
+             (1:length(sim_pop$true_xi))] <- summ_SRS_latent$mean_xi_ws
+pi_xi_summ[14:16, 3+(1:length(true_overall_pi))] <- summ_Uneq$mean_pi_s
+pi_xi_summ[14:16, 3+length(true_overall_pi)+
+             (1:length(sim_pop$true_xi))] <- summ_Uneq$mean_xi_s
+pi_xi_summ[17:19, 3+(1:length(true_overall_pi))] <- summ_Uneq$mean_pi_ws
+pi_xi_summ[17:19, 3+length(true_overall_pi)+
+             (1:length(sim_pop$true_xi))] <- summ_Uneq$mean_xi_ws
+pi_xi_summ[20:22, 3+(1:length(true_overall_pi))] <- summ_Uneq_latent$mean_pi_s
+pi_xi_summ[20:22, 3+length(true_overall_pi)+
+             (1:length(sim_pop$true_xi))] <- summ_Uneq_latent$mean_xi_s
+pi_xi_summ[23:25, 3+(1:length(true_overall_pi))] <- summ_Uneq_latent$mean_pi_ws
+pi_xi_summ[23:25, 3+length(true_overall_pi)+
+             (1:length(sim_pop$true_xi))] <- summ_Uneq_latent$mean_xi_ws
+
+flextable(pi_xi_summ) %>% fit_to_width(7.5) %>%
+  hline(i=c(1,4, 7, 10, 13, 16, 19, 22)) %>%
+  set_caption("Mean Posterior Estimates, Variance, and Coverage Over 20 Samples for Pi and Xi") 
+
+
+# Create dataframe of theta for k=1
+dim_theta <- dim(sim_pop$true_global_thetas)
+theta_summ_1 <- as.data.frame(matrix(NA, nrow=25, ncol=(3 + dim_theta[1]*dim_theta[3])))
+colnames(theta_summ_1) <- c("Sampling", "Model", "Metric", 
+                            paste0(rep(paste0("theta", 1:dim_theta[1]), 
+                                       each=dim_theta[3]), 
+                                   "_1_", 1:dim_theta[3]))
+theta_summ_1[, 1] <- c("",c(rep("SRS", 12), rep("Uneq", 12)))
+theta_summ_1[, 2] <- c("",rep(rep(c("sOFMM", "wsOFMM", "sOFMM Latent", 
+                                  "wsOFMM Latent"), each=3), times=2))
+theta_summ_1[, 3] <- c("True", rep(c("Mean Post Est", "Mean Post Var", 
+                                   "Mean Coverage"), times=8))
+# True thetas for k=1, ordered by level r, then item j
+theta_summ_1[1, -c(1:3)] <- c(t(sim_pop$true_global_thetas[,1,]))
+theta_summ_1[2:4, -c(1:3)] <- summ_SRS$mean_theta_s[,c(1,9,2,10,3,11,4,12)]
+theta_summ_1[5:7, -c(1:3)] <- summ_SRS$mean_theta_ws[,c(1,9,2,10,3,11,4,12)]
+theta_summ_1[8:10, -c(1:3)] <- summ_SRS_latent$mean_theta_s[,c(1,9,2,10,3,11,4,12)]
+theta_summ_1[11:13, -c(1:3)] <- summ_SRS_latent$mean_theta_ws[,c(1,9,2,10,3,11,4,12)]
+theta_summ_1[14:16, -c(1:3)] <- summ_Uneq$mean_theta_s[,c(1,9,2,10,3,11,4,12)]
+theta_summ_1[17:19, -c(1:3)] <- summ_Uneq$mean_theta_ws[,c(1,9,2,10,3,11,4,12)]
+theta_summ_1[20:22, -c(1:3)] <- summ_Uneq_latent$mean_theta_s[,c(1,9,2,10,3,11,4,12)]
+theta_summ_1[23:25, -c(1:3)] <- summ_Uneq_latent$mean_theta_ws[,c(1,9,2,10,3,11,4,12)]
+
+flextable(theta_summ_1) %>% fit_to_width(7.5) %>%
+  hline(i=c(1,4, 7, 10, 13, 16, 19, 22)) %>%
+  set_caption("Mean Posterior Estimates, Variance, and Coverage Over 20 Samples for Theta (k=1)") 
+
+
+# Create dataframe of theta for k=2
+dim_theta <- dim(sim_pop$true_global_thetas)
+theta_summ_2 <- as.data.frame(matrix(NA, nrow=25, ncol=(3 + dim_theta[1]*dim_theta[3])))
+colnames(theta_summ_2) <- c("Sampling", "Model", "Metric", 
+                            paste0(rep(paste0("theta", 1:dim_theta[1]), 
+                                       each=dim_theta[3]), 
+                                   "_2_", 1:dim_theta[3]))
+theta_summ_2[, 1] <- c("",c(rep("SRS", 12), rep("Uneq", 12)))
+theta_summ_2[, 2] <- c("",rep(rep(c("sOFMM", "wsOFMM", "sOFMM Latent", 
+                                  "wsOFMM Latent"), each=3), times=2))
+theta_summ_2[, 3] <- c("True", rep(c("Mean Post Est", "Mean Post Var", 
+                                   "Mean Coverage"), times=8))
+# True thetas for k=1, ordered by level r, then item j
+theta_summ_2[1, -c(1:3)] <- c(t(sim_pop$true_global_thetas[,2,]))
+theta_summ_2[2:4, -c(1:3)] <- summ_SRS$mean_theta_s[,c(5,13,6,14,7,15,8,16)]
+theta_summ_2[5:7, -c(1:3)] <- summ_SRS$mean_theta_ws[,c(5,13,6,14,7,15,8,16)]
+theta_summ_2[8:10, -c(1:3)] <- summ_SRS_latent$mean_theta_s[,c(5,13,6,14,7,15,8,16)]
+theta_summ_2[11:13, -c(1:3)] <- summ_SRS_latent$mean_theta_ws[,c(5,13,6,14,7,15,8,16)]
+theta_summ_2[14:16, -c(1:3)] <- summ_Uneq$mean_theta_s[,c(5,13,6,14,7,15,8,16)]
+theta_summ_2[17:19, -c(1:3)] <- summ_Uneq$mean_theta_ws[,c(5,13,6,14,7,15,8,16)]
+theta_summ_2[20:22, -c(1:3)] <- summ_Uneq_latent$mean_theta_s[,c(5,13,6,14,7,15,8,16)]
+theta_summ_2[23:25, -c(1:3)] <- summ_Uneq_latent$mean_theta_ws[,c(5,13,6,14,7,15,8,16)]
+
+flextable(theta_summ_2) %>% fit_to_width(7.5) %>%
+  hline(i=c(1,4, 7, 10, 13, 16, 19, 22)) %>%
+  set_caption("Mean Posterior Estimates, Variance, and Coverage Over 20 Samples for Theta (k=2)") 
+```
+
+## MCMC diagnostic plots for select samples
+
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+### Plot MCMC diagnostics for select samples
+plot_params <- function(scen_pop, scen_samp, iter_pop, select_samp, latent) {
+  
+  # Load simulated population data
+  sim_pop <- readMat(paste0("simdata_scen", scen_pop,"_iter", iter_pop, 
+                              ".mat"))$sim.data
+  # Assign element names
+  names(sim_pop) <- c("true_pi", "true_xi", "true_global_patterns", 
+                        "true_global_thetas", "samp_ind", "sample_wt", "norm_const", 
+                        "true_Si", "true_Ci", "X_data", "Y_data", "true_Phi", "true_K")
+  
+  # True pi in the population
+  true_overall_pi <- tabulate(sim_pop$true_Ci) / length(sim_pop$true_Ci)
+  
+  # Load simulated sample data for the iteration
+  sim_samp <- readMat(paste0("simdata_scen", scen_samp,"_iter", iter_pop, 
+                             "_samp", select_samp, ".mat"))$sim.data
+  # Assign element names
+  if (length(sim_samp) > length(sim_pop)) {
+    names(sim_samp) <- c(names(sim_pop), "true_Li")
+  } else {
+    names(sim_samp) <- names(sim_pop)
+  }
+  
+  # Load model output
+  if (latent) {
+    out_ws <- readMat(paste0("wsOFMM_latent_results_scen", scen_samp, "_iter", 
+                              iter_pop, "_samp", select_samp, ".mat"))
+    out_s <- readMat(paste0("sOFMM_latent_results_scen", scen_samp, "_iter", 
+                             iter_pop, "_samp", select_samp, ".mat"))
+  } else {
+    out_ws <- readMat(paste0("wsOFMM_results_scen", scen_samp, "_iter", 
+                              iter_pop, "_samp", select_samp, ".mat"))
+    out_s <- readMat(paste0("sOFMM_results_scen", scen_samp, "_iter", 
+                             iter_pop, "_samp", select_samp, ".mat"))
+  }
+  # Extract analysis portion
+  data_ws <- out_ws$analysis
+  data_s <- out_s$analysis
+  # Assign element names
+  names(data_ws) <- c("pi_med", "theta_med", "xi_med", "k_red", "pi_red", "theta_red", 
+                      "xi_red", "c_i", "Phi_med", "z_i", "loglik_med", "dic6", "aebic")
+  if (length(data_s) > length(data_ws)) {
+    names(data_s) <- c(names(data_ws), "posthoc_pi")
+  } else {
+    names(data_s) <- names(data_ws)
+  }
+  
+  # Extract MCMC output
+  df_pi_xi_ws <- data.frame(data_ws$pi_red, data_ws$xi_red)
+  df_theta_ws <- data.frame(data_ws$theta_red)
+  df_pi_xi_s <- data.frame(data_s$pi_red, data_s$xi_red)
+  df_theta_s <- data.frame(data_s$theta_red)
+  colnames(df_pi_xi_ws) <- c(paste0("pi_", 1:length(data_ws$pi_med)), 
+                             paste0("xi_", 1:length(data_ws$xi_med)))
+  colnames(df_pi_xi_s) <- c(paste0("pi_", 1:length(data_s$pi_med)), 
+                            paste0("xi_", 1:length(data_s$xi_med)))
+  theta_dim_ws <- dim(data_ws$theta_red)
+  theta_dim_s <- dim(data_s$theta_red)
+  colnames(df_theta_ws) <-  
+    paste0(paste0("theta", 1:theta_dim_ws[2], "_", 
+                  rep(1:theta_dim_ws[3], each=theta_dim_ws[2])), 
+           "_", rep(1:theta_dim_ws[4], each=(theta_dim_ws[2]*theta_dim_ws[3])))
+  colnames(df_theta_s) <- 
+    paste0(paste0("theta", 1:theta_dim_s[2], "_", 
+                  rep(1:theta_dim_s[3], each=theta_dim_s[2])), 
+           "_", rep(1:theta_dim_s[4], each=(theta_dim_s[2]*theta_dim_s[3])))  
+  
+  # Traceplots
+  print(mcmc_trace(df_pi_xi_ws) + 
+    ggtitle(paste0("Trace Plots for pi and xi for wsOFMM iteration ", iter_pop, 
+                   " sample ", select_samp)))
+  print(mcmc_trace(df_theta_ws) +
+    ggtitle(paste0("Trace Plots for theta for wsOFMM iteration ", iter_pop,
+                   " sample ", select_samp)))
+  print(mcmc_trace(df_pi_xi_s) +
+    ggtitle(paste0("Trace Plots for pi and xi for sOFMM iteration ", iter_pop,
+                   " sample ", select_samp)))
+  print(mcmc_trace(df_theta_s) +
+    ggtitle(paste0("Trace Plots for theta for sOFMM iteration ", iter_pop,
+                   " sample ", select_samp)))
+  
+  # Autocorrelation plots
+  print(mcmc_acf(df_pi_xi_ws) +
+    ggtitle(paste0("Autocorrelation Plots for pi and xi for wsOFMM iteration ",
+                   iter_pop, " sample ", select_samp)))
+  print(mcmc_acf(df_theta_ws) +
+    ggtitle(paste0("Autocorrelation Plots for theta for wsOFMM iteration ",
+                   iter_pop, " sample ", select_samp)))
+  print(mcmc_acf(df_pi_xi_s) +
+    ggtitle(paste0("Autocorrelation Plots for pi and xi for sOFMM iteration ",
+                   iter_pop, " sample ", select_samp)))
+  print(mcmc_acf(df_theta_s) +
+    ggtitle(paste0("Autocorrelation Plots for theta for sOFMM iteration ",
+                   iter_pop, " sample ", select_samp)))
+ 
+  ### Parameter boxplots
+  # Pi
+  reshape_pi_xi_ws <- df_pi_xi_ws %>% 
+    gather("pi", "pi_value", paste0("pi_", 1:length(data_ws$pi_med))) %>%
+    gather("xi", "xi_value", paste0("xi_", 1:length(data_ws$xi_med)))
+  reshape_pi_xi_s <- df_pi_xi_s %>% 
+    gather("pi", "pi_value", paste0("pi_", 1:length(data_s$pi_med))) %>%
+    gather("xi", "xi_value", paste0("xi_", 1:length(data_s$xi_med)))
+  reshape_pi_xi <- rbind(reshape_pi_xi_s, reshape_pi_xi_ws)
+  reshape_pi_xi$Model <- c(rep("sOFMM", times=nrow(reshape_pi_xi_s)), 
+                         rep("wsOFMM", times=nrow(reshape_pi_xi_ws)))
+  
+  print(reshape_pi_xi %>% ggplot(aes(x=pi, y=pi_value, fill=Model)) +
+    geom_boxplot() + 
+    ggtitle(paste0("Parameter comparison for pi for sample ", select_samp)) +
+    geom_hline(aes(yintercept= (sum(sim_pop$true_Ci==1)/nrow(sim_pop$true_Ci)), linetype="Population"), color="forestgreen") + 
+    geom_hline(aes(yintercept= (sum(sim_pop$true_Ci==2)/nrow(sim_pop$true_Ci)), linetype="Population"), color="forestgreen") + 
+    geom_hline(aes(yintercept= (sum(sim_samp$true_Ci==1)/nrow(sim_samp$true_Ci)), linetype="Sample"), color="orange") +
+    geom_hline(aes(yintercept= (sum(sim_samp$true_Ci==2)/nrow(sim_samp$true_Ci)), linetype="Sample"), color="orange") +
+    scale_linetype_manual(name = "True Parameter Values", values = c(2, 2), 
+                      guide = guide_legend(override.aes = list(color = c("forestgreen", "orange")))) +
+    facet_wrap(~Model, scales = "free_x") +
+    theme_bw())
+  
+  # Xi
+  show(reshape_pi_xi %>% ggplot(aes(x=xi, y=xi_value, fill=Model)) +
+    geom_boxplot() + 
+    ggtitle(paste0("Parameter comparison for xi for sample ", select_samp)) +
+    geom_hline(aes(yintercept= sim_pop$true_xi[1], linetype="Population"), color="forestgreen") + 
+    geom_hline(aes(yintercept= sim_pop$true_xi[2], linetype="Population"), color="forestgreen") + 
+    geom_hline(aes(yintercept= sim_pop$true_xi[3], linetype="Population"), color="forestgreen") + 
+    geom_hline(aes(yintercept= sim_pop$true_xi[4], linetype="Population"), color="forestgreen") + 
+    scale_linetype_manual(name = "True Parameter Values", values = c(2, 2), 
+                      guide = guide_legend(override.aes = list(color = c("forestgreen")))) +
+    facet_wrap(~Model, scales = "free_x") +
+    theme_bw())
+  
+  # Theta
+  reshape_theta_ws <- df_theta_ws %>%
+    gather("theta", "theta_value", paste0(paste0("theta", 1:theta_dim_ws[2], "_", 
+                  rep(1:theta_dim_ws[3], each=theta_dim_ws[2])), 
+           "_", rep(1:theta_dim_ws[4], each=(theta_dim_ws[2]*theta_dim_ws[3]))) )
+  reshape_theta_s <- df_theta_s %>%
+    gather("theta", "theta_value", paste0(paste0("theta", 1:theta_dim_s[2], "_", 
+                  rep(1:theta_dim_s[3], each=theta_dim_s[2])), 
+           "_", rep(1:theta_dim_s[4], each=(theta_dim_s[2]*theta_dim_s[3]))) )  
+  reshape_theta <- rbind(reshape_theta_s, reshape_theta_ws)
+  reshape_theta$Model <- c(rep("sOFMM", times=nrow(reshape_theta_s)), 
+                         rep("wsOFMM", times=nrow(reshape_theta_ws)))
+  true_thetas <- as.numeric(names(table(sim_pop$true_global_thetas)))
+  p1 <- reshape_theta_s %>% ggplot(aes(x=theta, y=theta_value)) + 
+    geom_boxplot(fill="#F8766D") +
+    theme(plot.title = element_text(hjust = 0.5), 
+          axis.title.x=element_blank()) +
+    ggtitle(paste0("Parameter comparison for theta for sample ", select_samp)) +
+    geom_hline(aes(yintercept= true_thetas[1], linetype="Population"), color="forestgreen") + 
+    geom_hline(aes(yintercept= true_thetas[2], linetype="Population"), color="forestgreen") +
+    scale_linetype_manual(name = "True Parameter Values", values = c(2, 2), 
+                      guide = guide_legend(override.aes = list(color = c("forestgreen")))) +
+    scale_x_discrete(labels=paste0(paste0(1:theta_dim_s[2], "_",
+                               rep(1:theta_dim_s[3], each=theta_dim_s[2])), 
+                        "_", rep(1:theta_dim_s[4], each=(theta_dim_s[2]*theta_dim_s[3])))) + 
+    theme(axis.text.x=element_text(angle=40)) + 
+    xlab("theta(j,k,r)") +
+    theme_bw()
+  p2 <- reshape_theta_ws %>% ggplot(aes(x=theta, y=theta_value)) + 
+    geom_boxplot(fill="#00BFC4") +
+    theme(plot.title = element_blank()) +
+    geom_hline(aes(yintercept= true_thetas[1], linetype="Population"), color="forestgreen") + 
+    geom_hline(aes(yintercept= true_thetas[2], linetype="Population"), color="forestgreen") +
+    scale_linetype_manual(name = "True Parameter Values", values = c(2, 2), 
+                      guide = guide_legend(override.aes = list(color = c("forestgreen")))) +
+    scale_x_discrete(labels=paste0(paste0(1:theta_dim_ws[2], "_",
+                               rep(1:theta_dim_ws[3], each=theta_dim_ws[2])), 
+                        "_", rep(1:theta_dim_ws[4], each=(theta_dim_ws[2]*theta_dim_ws[3])))) + 
+    theme(axis.text.x=element_text(angle=40)) + 
+    xlab("theta(j,k,r)") +
+    theme_bw()
+  ggarrange(p1, p2, nrow=2, common.legend=TRUE, legend="bottom")
+  
+}  
+```
+
+### Population scenario 2, SRS
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+plot_params(scen_pop=2, scen_samp=6, iter_pop=1, select_samp=8, latent=FALSE)
+plot_params(scen_pop=2, scen_samp=6, iter_pop=1, select_samp=16, latent=FALSE)
+```
+
+### Population scenario 2, SRS, latent
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+plot_params(scen_pop=2, scen_samp=6, iter_pop=1, select_samp=8, latent=TRUE)
+plot_params(scen_pop=2, scen_samp=6, iter_pop=1, select_samp=16, latent=TRUE)
+```
+
+### Population scenario 2, unequal sampling
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+plot_params(scen_pop=2, scen_samp=14, iter_pop=1, select_samp=8, latent=FALSE)
+plot_params(scen_pop=2, scen_samp=14, iter_pop=1, select_samp=16, latent=FALSE)
+```
+
+### Population scenario 2, unequal sampling, latent
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+plot_params(scen_pop=2, scen_samp=14, iter_pop=1, select_samp=8, latent=TRUE)
+plot_params(scen_pop=2, scen_samp=14, iter_pop=1, select_samp=16, latent=TRUE)
+
+```
+
+
+```{r, echo=FALSE, eval=FALSE}
+#### testing
+# est_pi <- c(0.5, 0.3, 0.2)
+# true_pi <- c(0.25, 0.75)
+
+
+
+#### testing
+# est_theta <- data_ws$theta_med
+# true_theta <- sim_pop$true_global_thetas
+# order <- order_ws
+# est_theta <- array(1:20, c(4, 3, 2))
+
+
+
+#### testing
+# est_xi <- data_ws$xi_med
+# true_xi <- sim_pop$true_xi
+# order <- order_ws
+# est_xi <- 1:5
+
+
+### Old Code
+# comb_pi_xi <- rbind(df_pi_xi_s, df_pi_xi_ws)
+# comb_pi_xi$Model <- c(rep("sOFMM", times=nrow(df_pi_xi_s)), 
+#                        rep("wsOFMM", times=nrow(df_pi_xi_ws)))
+# reshape_pi_xi <- comb_pi_xi %>% 
+#   gather("pi", "pi_value", paste0("pi_", 1:length(true_overall_pi))) %>%
+#   gather("xi", "xi_value", paste0("xi_", 1:length(sim_pop$true_xi)))
+# reshape_pi_xi %>% ggplot(aes(x=pi, y=pi_value, fill=Model)) +
+#   geom_boxplot() + 
+#   ggtitle(paste0("Parameter comparison for pi for iteration ", iter_pop)) +
+#   geom_hline(aes(yintercept= (sum(sim_pop$true_Ci==1)/nrow(sim_pop$true_Ci)), linetype="Population"), color="forestgreen") + 
+#   geom_hline(aes(yintercept= (sum(sim_pop$true_Ci==2)/nrow(sim_pop$true_Ci)), linetype="Population"), color="forestgreen") + 
+#   geom_hline(aes(yintercept= (sum(sim_samp$true_Ci==1)/nrow(sim_samp$true_Ci)), linetype="Sample"), color="orange") +
+#   geom_hline(aes(yintercept= (sum(sim_samp$true_Ci==2)/nrow(sim_samp$true_Ci)), linetype="Sample"), color="orange") +
+#   scale_linetype_manual(name = "True Parameter Values", values = c(2, 2), 
+#                     guide = guide_legend(override.aes = list(color = c("forestgreen", "orange"))))
+
+# reshape_pi_xi %>% ggplot(aes(x=xi, y=xi_value, fill=Model)) +
+#   geom_boxplot() + 
+#   ggtitle(paste0("Parameter comparison for pi for iteration ", iter_pop)) +
+#   geom_hline(aes(yintercept= sim_pop$true_xi[1], linetype="Population"), color="forestgreen") + 
+#   geom_hline(aes(yintercept= sim_pop$true_xi[2], linetype="Population"), color="forestgreen") + 
+#   geom_hline(aes(yintercept= sim_pop$true_xi[3], linetype="Population"), color="forestgreen") + 
+#   geom_hline(aes(yintercept= sim_pop$true_xi[4], linetype="Population"), color="forestgreen") + 
+#   scale_linetype_manual(name = "True Parameter Values", values = c(2, 2), 
+#                     guide = guide_legend(override.aes = list(color = c("forestgreen"))))
+
+# reshape_theta %>% ggplot(aes(x=theta, y=theta_value, fill=Model)) + 
+#   geom_boxplot() +
+#   ggtitle(paste0("Parameter comparison for theta for sample ", select_samp)) +
+#   geom_hline(aes(yintercept= true_thetas[1], linetype="dashed"), color="forestgreen") + 
+#   geom_hline(aes(yintercept= true_thetas[2], linetype="dashed"), color="forestgreen") +
+#   scale_linetype_manual(name = "True Parameter Values", values = c(2, 2), 
+#                     guide = guide_legend(override.aes = list(color = c("forestgreen")))) +
+#   facet_wrap(Model~., scales = "free_x") + 
+#   theme_bw()
+```
+
