@@ -28,7 +28,35 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, d
         OFMM_params.n_ci(k) = sum(OFMM_params.c_i == k);  
     end
     alpha_post = alpha + OFMM_params.n_ci;    % Posterior hyperparam is alpha(k) + n_ci(k)
-    OFMM_params.pi = drchrnd(alpha_post, 1);  % Draw from posterior dist: Dir(alpha_post)
+    OFMM_params.pi = drchrnd(alpha_post, 1);  % Draw from posterior dist: Dir(alpha_post) 
+    
+    
+    
+    % Update class membership, c_i
+    prob_ci_numer_log = zeros(data_vars.n, k_max);  % Initialize log matrix to address underflow
+ 	%prob_ci_numer = zeros(data_vars.n, k_max);  % Initialize matrix of P(c_i=k|-) numerator for each indiv and class
+    for k = 1:k_max
+        % Matrix of unique item-level probs for class k
+        theta_k = reshape(OFMM_params.theta(:, k, :), data_vars.p, data_vars.d_max); 
+        % Matrix of categ likelihood \prod_{r=1}^d \theta_{jr|k}^{I(x_ij=r)} for each indiv and item 
+        categ_lik = reshape(theta_k(data_vars.lin_idx), [data_vars.n, data_vars.p]); 
+        % Update numerator for posterior P(c_i=k|-) 
+        prob_ci_numer_log(:, k) = log(OFMM_params.pi(k)) + log(prod(categ_lik, 2)) + log(probit_params.indiv_lik_probit_class(:, k));
+        %prob_ci_numer(:, k) = OFMM_params.pi(k) * prod(categ_lik, 2) .* probit_params.indiv_lik_probit_class(:, k);  
+    end
+    % Matrix of updated posterior P(c_i=k|-) for each indiv and class
+    max_elems = max(prob_ci_numer_log, [], 2);
+    subtract = prob_ci_numer_log - max_elems;
+    log_denom = max_elems + log(sum(exp(subtract), 2));
+    prob_ci = exp(prob_ci_numer_log - log_denom);
+    %prob_ci = bsxfun(@times, prob_ci_numer, 1 ./ (sum(prob_ci_numer, 2)));
+    % Adjust precision for mnrnd function
+    
+    
+    
+    
+    
+    
     
     % Update class membership, c_i
  	prob_ci_numer = zeros(data_vars.n, k_max);  % Initialize matrix of P(c_i=k|-) numerator for each indiv and class
@@ -42,8 +70,16 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, d
     end
     % Matrix of updated posterior P(c_i=k|-) for each indiv and class
     prob_ci = bsxfun(@times, prob_ci_numer, 1 ./ (sum(prob_ci_numer, 2)));
+    % Adjust precision for mnrnd function
+    for i = 1:data_vars.n
+       prob_i = prob_ci(i, :);
+       if any(prob_i < 1e-15)
+           prob_i = prob_i + 1e-15;
+           prob_ci(i, :) = prob_i ./ sum(prob_i);
+       end    
+    end       
     OFMM_params.x_ci = mnrnd(1, prob_ci);                   % Matrix of updated c_i drawn from Mult(1, prob_ci). Each row is draw for an indiv
-    [row, col] = find(OFMM_params.x_ci);                    % Row and col indices of each nonzero element of x_ci; col is class assignment for each indiv
+    [row, col] = find(OFMM_params.x_ci == 1);               % Row and col indices of each nonzero element of x_ci; col is class assignment for each indiv
     sorted = sortrows([row col], 1);            % Sort indices in ascending row index order, to match subject index
     OFMM_params.c_i = sorted(:, 2);             % Vector of updated class assignment, c_i, for each individual
       
@@ -53,6 +89,18 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, d
         c_i_mat = repmat(OFMM_params.c_i, [1, data_vars.p]);  % Rep c_i's p times to form matrix of classes for each indiv and item
         class_wt = (c_i_mat == k);                            % Matrix indicating indivs assigned to class k. All other rows set to 0
         for r = 1:data_vars.d_max                             % For each consumption level r
+            
+            % DEBUGGING ERROR
+            if any(size((data_vars.food == r)) ~= size(class_wt))
+                disp("FOOD");
+                disp(size((data_vars.food == r)));
+                disp("CLASS_WT");
+                disp(size(class_wt));
+                disp("SORTED");
+                disp(size(sorted));
+                disp(sorted);
+            end
+            
             % Vector of num indivs with level r and class k, for each item (i.e., sum I(x_ij=r, c_i=k) over indivs)
             n_theta(:, r) = sum((data_vars.food == r) .* class_wt)'; 
         end
@@ -100,10 +148,10 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, d
     
     % Update probit likelihood component of posterior class membership P(c_i|-)
     for k = 1:k_max
-       q_class = zeros(data_vars.n, k_max);                        % Initialize design matrix for class membership
-       q_class(:, k) = ones(data_vars.n, 1);                       % Temporarily assign all indivs to class k
-       Q_temp = [q_dem q_class];                                   % Form temporary covariate design matrix
-       lin_pred_temp = normcdf(Q_temp * transpose(probit_params.xi));  % Vector of P(y_i=1|Q)
+       q_class = zeros(data_vars.n, k_max);                  % Initialize design matrix for class membership
+       q_class(:, k) = ones(data_vars.n, 1);                 % Temporarily assign all indivs to class k
+       Q_temp = [q_dem q_class];                             % Form temporary covariate design matrix
+       lin_pred_temp = Q_temp * transpose(probit_params.xi); % Linear predictor, Q*xi       
        % Update indiv probit likelihood assuming class k
        probit_params.indiv_lik_probit_class(:, k) = normpdf(probit_params.z_i,lin_pred_temp,1).*((data_vars.y==1).*(probit_params.z_i>0)+(data_vars.y==0).*(probit_params.z_i<=0));
     end    

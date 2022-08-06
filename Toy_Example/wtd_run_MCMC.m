@@ -14,7 +14,7 @@
 %   eta: vector hyperparam for item-response probs, theta; 1x(d_max)
 %   mu_0: vector mean hyperparam for probit coefficients, xi; (p_cov)x1  
 %   Sig_0: matrix variance hyperparam for probit coefficients, xi; (p_cov)x(p_cov)
-%   S: number of demographic covariates in the probit model
+%   S: Number of demographic covariates in the probit model
 % Outputs: returns and saves MCMC_out structural array with the following fields:
 %   pi: matrix of class membership probabilities; (n_runs/thin)x(k_max)  
 %   theta: 4-D array of item-response probabilities; (n_runs/thin)xpx(k_max)x(d_max) 
@@ -37,22 +37,23 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_run_MCMC(data_vars, OFMM_p
         % Update parameters and variables
         [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC(MCMC_out, data_vars, OFMM_params, probit_params, thin, k_max, q_dem, alpha, eta, mu_0, Sig_0, iter);
     
-        % Relabel classes every 10 iterations to encourage mixing
+        % Relabel classes every 20 iterations to encourage mixing
         if mod(iter, 10) == 0
             new_order = randperm(k_max);                               % New labels for latent classes
             new_ci = OFMM_params.c_i;
             for k = 1:k_max
                 new_ci(OFMM_params.c_i == k) = new_order(k);           % Class assignments with new labels
             end
-            OFMM_params.c_i = new_ci;                                  % Relabel class assignments
-            OFMM_params.theta = OFMM_params.theta(:, new_order, :);    % Relabel item-response probabilities
-            probit_params.indiv_lik_probit = probit_params.indiv_lik_probit(:, new_order);  % Relabel indiv probit likelihood
-            % OFMM_params.pi = OFMM_params.pi(new_order);                % Relabel class probabilities
-            % probit_params.xi((S+1):end) = probit_params.xi(S + new_order); % Relabel probit model coefficients
-            % alpha = alpha(new_order);                                  % Relabel hyperparam for pi
-            % mu_0((S+1):end) = mu_0(S + new_order);                     % Relabel mean hyperparam for xi
-            % idx = find(Sig_0);                                         % Diagonal elements of Sig_0
-            % Sig_0(idx((S+1):end)) = Sig_0(idx(S + new_order));         % Relabel var hyperparam for xi
+            OFMM_params.c_i = new_ci;                               % Relabel class assignments
+            OFMM_params.theta = OFMM_params.theta(:, new_order, :); % Relabel item-response probabilities
+            % Relabel indiv probit likelihood
+            probit_params.indiv_lik_probit_class = probit_params.indiv_lik_probit_class(:, new_order);  
+            OFMM_params.pi = OFMM_params.pi(new_order);                % Relabel class probabilities
+%             probit_params.xi((S+1):end) = probit_params.xi(S + new_order); % Relabel probit model coefficients
+%             alpha = alpha(new_order);                                  % Relabel hyperparam for pi
+%             mu_0((S+1):end) = mu_0(S + new_order);                     % Relabel mean hyperparam for xi
+%             idx = find(Sig_0);                                         % Diagonal elements of Sig_0
+%             Sig_0(idx((S+1):end)) = Sig_0(idx(S + new_order));         % Relabel var hyperparam for xi
         end
     end
     MCMC_out.runtime = toc;  % Stop timer

@@ -29,7 +29,7 @@ function sample_SRS(scenario, sim_n, samp_n)
         sim_data.true_Li = zeros(N, 1);
     end
     
-    n_s = 400;                                % Sample size
+    n_s = 4000;                                % Sample size
     % Obtain sample
     sample_data = sample_indivs(N, n_s, S, false, sim_data.true_Si, sim_data.true_Ci, sim_data.true_Li, sim_data.X_data, sim_data.Y_data, sim_data.true_Phi, sim_data.true_K, sim_data);
     sim_data = sample_data; 

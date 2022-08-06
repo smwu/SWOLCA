@@ -1,6 +1,7 @@
 
 % sample_strat_eq reads in a simulated population dataset and takes a 
-% simple random sample, then saves the sample. Corresponds to Scenarios 13-16.
+% stratified random sample with equal numbers sampled from each 
+% subpopulation, then saves the sample. Corresponds to Scenarios 13-16.
 % Inputs:
 %   scenario: Population simulation scenario (1, 2, 3, or 4)
 %   sim_n: Simulation iteration number
@@ -29,7 +30,7 @@ function sample_strat_eq(scenario, sim_n, samp_n)
         sim_data.true_Li = zeros(N, 1);
     end
     
-    n_s = [100, 100];               % Sample sizes for each subpop
+    n_s = [2000, 2000];               % Sample sizes for each subpop
     % Obtain sample
     sample_data = sample_indivs(N_s, n_s, S, true, sim_data.true_Si, sim_data.true_Ci, sim_data.true_Li, sim_data.X_data, sim_data.Y_data, sim_data.true_Phi, sim_data.true_K, sim_data);
     sim_data = sample_data; 

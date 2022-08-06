@@ -9,6 +9,7 @@
 %   theta: vector prior for item response probabilities; px(k_max)x(d_max). Dist: Dir(eta) per class and item
 %   c_i: vector of initial class assignments (randomly generated); nx1
 %   n_ci: vector of num indivs initially assigned to each cluster; 1x(k_max)
+%   x_ci: matrix of class assignments for all indivs; nx(k_max)
 function OFMM_params = wtd_init_OFMM_params(data_vars, k_max, alpha, eta)
     % Prior for class membership probs
     OFMM_params.pi = drchrnd(alpha, 1); 

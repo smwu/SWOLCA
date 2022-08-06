@@ -37,8 +37,8 @@ function sOFMM_main_latent(scenario, sim_n, samp_n)
         disp(strcat('Scenario ', num2str(scenario), ' iter ', num2str(sim_n), ' samp ', num2str(samp_n), ' already exists.'));
     else
         %% Get data variables
-        k_max = 50;    % Upper limit for number of classes
         data_vars = wtd_get_data_vars_latent(samp_data);
+        k_max = 50;    % Upper limit for number of classes
 
         %% Initialize priors and variables for OFMM model
         sp_k = k_max;                   % Denom constant to restrict alpha size and num classes for OFMM model
@@ -60,9 +60,20 @@ function sOFMM_main_latent(scenario, sim_n, samp_n)
         n_runs = 25000;  % Number of MCMC iterations
         burn = 15000;    % Burn-in period
         thin = 5;        % Thinning factor
-        [MCMC_out, ~, ~] = run_MCMC_latent(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_max, q_dem, p_cov, alpha, eta, mu_0, Sig_0);
-        k_fixed = round(median(sum(MCMC_out.pi > 0.05, 2))); % Obtain fixed number of classes to use in the fixed sampler
-        clear OFMM_params probit_params MCMC_out;           % Reduce memory burden
+        [MCMC_out, ~, ~] = run_MCMC_latent(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_max, q_dem, p_cov, alpha, eta, mu_0, Sig_0, S);
+        % Post-processing for adaptive sampler
+        post_MCMC_out = post_process_latent(MCMC_out, data_vars, S);
+        % Array of posterior median item-response probs
+        theta_med_temp = reshape(median(post_MCMC_out.theta), [data_vars.p, post_MCMC_out.k_med, data_vars.d_max]);  
+        % Matrix of most likely consump level based on item-response probs, for each item and class across MCMC runs
+        [~, ind0] = max(theta_med_temp, [], 3); 
+        t_ind0 = transpose(ind0);
+        % Identify unique classes   
+        [~, ia, ~] = unique(t_ind0, 'rows');  % Vector of class indices corresponding to unique classes
+        k_fixed = length(ia);          % Number of unique classes
+        clear OFMM_params probit_params MCMC_out post_MCMC_out;  % Reduce memory burden
+                %k_fixed = round(median(sum(MCMC_out.pi > 0.05, 2))); % Obtain fixed number of classes to use in the fixed sampler
+                %clear OFMM_params probit_params MCMC_out;           % Reduce memory burden
 
         %% Run fixed sampler to obtain posteriors and save output
         % Initialize OFMM model using fixed number of classes        
@@ -78,17 +89,19 @@ function sOFMM_main_latent(scenario, sim_n, samp_n)
         probit_params = init_probit_params_latent(data_vars, k_fixed, q_dem, mu_0, Sig_0, OFMM_params);
 
         % Run MCMC algorithm using fixed number of classes
-        [MCMC_out, ~, ~] = run_MCMC_latent(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_fixed, q_dem, p_cov, alpha, eta, mu_0, Sig_0);
-        % Save output
-        if samp_n > 0  % If working with sample 
-            save(strcat(out_dir, 'sOFMM_latent_MCMC_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'MCMC_out');
-        else
-            save(strcat(out_dir, 'sOFMM_latent_MCMC_scen', num2str(scenario), '_iter', num2str(sim_n)), 'MCMC_out');
-        end
+%         n_runs = 50000;  % Number of MCMC iterations
+%         burn = 40000;    % Burn-in period
+%         thin = 5;        % Thinning factor
+        [MCMC_out, ~, ~] = run_MCMC_latent(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_fixed, q_dem, p_cov, alpha, eta, mu_0, Sig_0, S);
+%         % Save output
+%         if samp_n > 0  % If working with sample 
+%             save(strcat(out_dir, 'sOFMM_latent_MCMC_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'MCMC_out');
+%         else
+%             save(strcat(out_dir, 'sOFMM_latent_MCMC_scen', num2str(scenario), '_iter', num2str(sim_n)), 'MCMC_out');
+%         end
 
         %% Post-processing to recalibrate labels and remove extraneous empty classes
         post_MCMC_out = post_process_latent(MCMC_out, data_vars, S);
-        clear OFMM_params probit_params;  % Reduce memory burden
 
         %% Obtain posterior estimates, reduce number of classes, analyze results, and save output
         analysis = analyze_results_latent(MCMC_out, post_MCMC_out, data_vars, q_dem, S, p_cov);
@@ -112,13 +125,13 @@ end
 
 %% Miscellaneous additional code
 %     % Create and save figures
-%     figure; %check mixing of pi parameter
-%     plot(MCMC_out.pi)
-%     saveas(gcf,'wsOFMM_pis.png')
+%    figure; %check mixing of pi parameter
+%    plot(MCMC_out.pi)
+%    saveas(gcf,'wsOFMM_pis.png')
 %     
-%     figure; %save dendrogram of hierarchical clustering
-%     dendrogram(post_MCMC_out.tree);
-%     saveas(gcf,'wsOFMM_dendrogram.png')
+%    figure; %save dendrogram of hierarchical clustering
+%    dendrogram(post_MCMC_out.tree)
+%    saveas(gcf,'wsOFMM_dendrogram.png')
 %
 %     % Compute the MSE comparing the estimated probit model to the true model 
 %     y_mse = immse(analysis.Phi_med, samp_data.true_Phi)  % Phi_true must be pulled from simulated dataset

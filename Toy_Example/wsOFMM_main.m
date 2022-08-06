@@ -57,8 +57,8 @@ function wsOFMM_main(scenario, sim_n, samp_n)
         probit_params = init_probit_params(data_vars, k_max, q_dem, mu_0, Sig_0);
 
         %% Run adaptive sampler to obtain number of classes
-        n_runs = 25000;  % Number of MCMC iterations
-        burn = 15000;    % Burn-in period
+        n_runs = 100000;  % Number of MCMC iterations
+        burn = 70000;    % Burn-in period
         thin = 5;        % Thinning factor
         [MCMC_out, ~, ~] = wtd_run_MCMC(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_max, q_dem, p_cov, alpha, eta, mu_0, Sig_0, S);
         k_fixed = round(median(sum(MCMC_out.pi > 0.05, 2))); % Obtain fixed number of classes to use in the fixed sampler
@@ -68,7 +68,7 @@ function wsOFMM_main(scenario, sim_n, samp_n)
         % Initialize OFMM model using fixed number of classes
         sp_k = k_fixed;                   % Denom constant to restrict alpha size and num classes for OFMM model
         alpha = ones(1, k_fixed) / sp_k;  % Hyperparam for class membership probs. R package 'Zmix' allows diff options
-        OFMM_params = init_OFMM_params(data_vars, k_fixed, alpha, eta);
+        OFMM_params = wtd_init_OFMM_params(data_vars, k_fixed, alpha, eta);
 
         % Initialize probit model using fixed number of classes
         p_cov = k_fixed + S;                        % Number of covariates in probit model
@@ -78,20 +78,23 @@ function wsOFMM_main(scenario, sim_n, samp_n)
         probit_params = init_probit_params(data_vars, k_fixed, q_dem, mu_0, Sig_0);
 
         % Run MCMC algorithm using fixed number of classes
+%         n_runs = 50000;  % Number of MCMC iterations
+%         burn = 40000;    % Burn-in period
+%         thin = 5;        % Thinning factor
         [MCMC_out, ~, ~] = wtd_run_MCMC(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_fixed, q_dem, p_cov, alpha, eta, mu_0, Sig_0, S);
-        % Save MCMC output
-        if samp_n > 0  % If working with sample 
-            save(strcat(out_dir, 'wsOFMM_MCMC_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'MCMC_out');
-        else
-            save(strcat(out_dir, 'wsOFMM_MCMC_scen', num2str(scenario), '_iter', num2str(sim_n)), 'MCMC_out');
-        end    
+%         % Save MCMC output
+%         if samp_n > 0  % If working with sample 
+%             save(strcat(out_dir, 'wsOFMM_MCMC_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'MCMC_out');
+%         else
+%             save(strcat(out_dir, 'wsOFMM_MCMC_scen', num2str(scenario), '_iter', num2str(sim_n)), 'MCMC_out');
+%         end    
 
         %% Post-processing to recalibrate labels and remove extraneous empty classes
         post_MCMC_out = post_process(MCMC_out, data_vars, S);
-        clear OFMM_params probit_params MCMC_out;  % Reduce memory burden
+        clear OFMM_params probit_params;  % Reduce memory burden
 
         %% Obtain posterior estimates, reduce number of classes, analyze results, and save output
-        analysis = analyze_results(post_MCMC_out, data_vars, q_dem, S, p_cov);
+        analysis = analyze_results(MCMC_out, post_MCMC_out, data_vars, q_dem, S, p_cov);
         % Save parameter estimates and analysis results
         if samp_n > 0  % If working with sample 
             save(strcat(out_dir, 'wsOFMM_results_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'post_MCMC_out', 'analysis');

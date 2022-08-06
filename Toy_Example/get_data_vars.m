@@ -18,11 +18,11 @@ function data_vars = get_data_vars(samp_data)
     data_vars.d = max(data_vars.food);           % Max number of levels for each food item. 
     data_vars.y = samp_data.Y_data;              % Outcome
     
-    % Item-response combinations
-    idz = repmat(1:data_vars.p, data_vars.n, 1);  % nxp matrix of item id's. Replicates 1:p row n times
-    idz = idz(:);                                 % cols of idz, concat by col into vector of length np. 1(x n),2(x n),...
-    x_d = data_vars.food(:);                      % Food item responses as a long vector (corresponds to idz) 
+    % Item-response combinations with assumed class
+    item_idx = repmat(1:data_vars.p, data_vars.n, 1);  % nxp matrix of item id's. Replicates 1:p row n times
+    item_idx = item_idx(:);                            % cols of idz, concat by col into vector of length np. 1(x n),2(x n),...
+    x_idx = data_vars.food(:);                         % Food item responses as a long vector (corresponds to idz) 
     % lin_idx: np vector of unique item-response (idz x y_d) combo indices
     % Each unique combo has corresp linear index. Those with same combo have same lin_idx value
-    data_vars.lin_idx = sub2ind([data_vars.p, data_vars.d_max], idz, x_d);
+    data_vars.lin_idx = sub2ind([data_vars.p, data_vars.d_max], item_idx, x_idx);
 end

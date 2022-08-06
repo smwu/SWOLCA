@@ -31,8 +31,8 @@ function post_MCMC_out = post_process_latent(MCMC_out, data_vars, S)
     post_MCMC_out.xi = zeros(m, S + post_MCMC_out.k_med);
     for iter = 1:m                                    % For each stored MC run
         iter_order = relabel_ci(iter, :);             % Vector of new class assignments (mode orig classes after removing empty classes)
-        % Update class probs corresp to new class assignments
-        post_MCMC_out.pi(iter, :) = MCMC_out.pi(iter, iter_order); 
+        pi_temp = MCMC_out.pi(iter, iter_order);      % Update class probs corresp to new class assignments
+        post_MCMC_out.pi(iter, :) = pi_temp / sum(pi_temp);  % Normalize to sum to 1
         % Update item-response probs corresp to new class assignments
         post_MCMC_out.theta(iter, :, :, :) = MCMC_out.theta(iter, :, iter_order, :);  
         % Update probit model coefs corresp to new class assignments. First few coefs corresp to dem vars and are not changed

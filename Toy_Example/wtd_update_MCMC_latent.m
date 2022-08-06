@@ -50,12 +50,7 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC_latent(MCMC_ou
     % Update posterior item response probabilities, theta, incorporating normalized weights    
     n_theta = zeros(data_vars.p, data_vars.d_max); % Initialize matrix of num indivs with each item response level
     for k = 1:k_max  
-        c_i_mat = repmat(OFMM_params.c_i, [1, data_vars.p]);  % Rep c_i's p times to form matrix of classes for each indiv and item
-        if ~isequal(size(c_i_mat), size(data_vars.wt_kappa_mat))
-            disp(size(c_i_mat));
-            disp(size(data_vars.wt_kappa_mat));
-            disp(iter);
-        end    
+        c_i_mat = repmat(OFMM_params.c_i, [1, data_vars.p]);  % Rep c_i's p times to form matrix of classes for each indiv and item   
         class_wt = (c_i_mat == k) .* data_vars.wt_kappa_mat;  % Matrix of normalized weights for indivs assigned to class k. All other rows set to 0
         for r = 1:data_vars.d_max                             % For each consumption level r
             % Vector of num indivs with level r and class k, for each item (i.e., sum I(x_ij=r, c_i=k) over indivs)
@@ -88,7 +83,7 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC_latent(MCMC_ou
     item_idx = item_idx(:);                               % Concat by col into (np)x1 vector. 1(x n),2(x n),...,p(x n)
     class_idx = repmat(OFMM_params.c_i, 1, data_vars.p);  % Replicate col vector c_i p times to form nxp matrix of class assigns
     class_idx = class_idx(:);                             % Concat by col into (np)x1 vector 
-    x_idx = data_vars.food(:);                            % Concat responses by col in (np)x1 vector 
+    x_idx = data_vars.food(:);                            % Concat consumption by col in (np)x1 vector 
     % lin_idx: (npx1) vector of linear indices indicating value of pxKxd theta matrix, for each item and indiv
     lin_idx = sub2ind([data_vars.p, k_max, data_vars.d_max], item_idx, class_idx, x_idx);
     % nxp matrix of theta values for each indiv and item \prod_{r=1}^d \theta_{jr|k}^{I(x_ij=r, c_i=k)}
@@ -107,10 +102,10 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC_latent(MCMC_ou
     
     % Update probit likelihood component of posterior class membership P(c_i|-) with assumed classes
     for k = 1:k_max
-       q_class = zeros(data_vars.n, k_max);                       % Initialize design matrix for class membership
-       q_class(:, k) = ones(data_vars.n, 1);                      % Temporarily assign all indivs to class k
-       Q_temp = [q_dem q_class];                                  % Form temporary covariate design matrix
-       lin_pred_temp = normcdf(Q_temp * transpose(probit_params.xi));  % Vector of P(y_i=1|Q)
+       q_class = zeros(data_vars.n, k_max);                   % Initialize design matrix for class membership
+       q_class(:, k) = ones(data_vars.n, 1);                  % Temporarily assign all indivs to class k
+       Q_temp = [q_dem q_class];                              % Form temporary covariate design matrix
+       lin_pred_temp = Q_temp * transpose(probit_params.xi);  % Vector of P(y_i=1|Q)
        % Update indiv probit likelihood assuming class k
        probit_params.indiv_lik_probit_class(:, k) = normpdf(probit_params.z_i,lin_pred_temp,1).*((data_vars.y==1).*(probit_params.z_i>0)+(data_vars.y==0).*(probit_params.z_i<=0));
     end    

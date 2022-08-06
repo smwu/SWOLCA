@@ -9,16 +9,17 @@
 %   theta: vector prior for item response probabilities; px(k_max)x(d_max). Dist: Dir(eta) per class and item
 %   c_i: vector of initial class assignments (randomly generated); nx1
 %   n_ci: vector of num indivs initially assigned to each cluster; 1x(k_max)
+%   x_ci: matrix of class assignments for all indivs; nx(k_max)
 function OFMM_params = init_OFMM_params(data_vars, k_max, alpha, eta)
     % Prior for class membership probs
     OFMM_params.pi = drchrnd(alpha, 1); 
     
     % Random initialization of class assignments
     OFMM_params.x_ci = mnrnd(1, OFMM_params.pi, data_vars.n); % Matrix of c_i drawn from Mult(1, pi). Each row is draw for an indiv
-    [row, col] = find(OFMM_params.x_ci);                      % Row and col indices of nonzero elements of x_ci; col is class assign for each indiv
+    [row, col] = find(OFMM_params.x_ci);          % Row and col indices of nonzero elements of x_ci; col is class assign for each indiv
     sorted = sortrows([row col], 1);              % Sort indices in ascending row index order, to match subject index
     OFMM_params.c_i = sorted(:, 2);               % Vector of class assignment, c_i, for each individual
-    OFMM_params.n_ci = sum(OFMM_params.x_ci);                 % Vector of num indivs assigned to each cluster       
+    OFMM_params.n_ci = sum(OFMM_params.x_ci);     % Vector of num indivs assigned to each cluster       
     
     % Prior for item response probabilities
     OFMM_params.theta = zeros(data_vars.p, k_max, data_vars.d_max);  % Initialize array of item response probs

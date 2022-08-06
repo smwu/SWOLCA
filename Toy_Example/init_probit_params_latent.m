@@ -13,11 +13,10 @@
 %   xi: vector prior for probit coefficients; 1x(p_cov). Dist: MVN(mu_0, sig_0)
 %   z_i: vector of latent variables in probit model; nx1
 %   probit_lik: vector of indiv probit likelihoods with class assignments; nx1
-%   indiv_lik_probit_class: vector of indiv probit lik with assumed classes, used for posterior class membership; nx1
+%   indiv_lik_probit_class: matrix of indiv probit lik with assumed classes, used for posterior class membership; nx(k_max)
 function probit_params = init_probit_params_latent(data_vars, k_max, q_dem, mu_0, Sig_0, OFMM_params)
     % Prior for model params, drawn from MVN(mu0, Sig0)
     probit_params.xi = mvnrnd(mu_0, Sig_0);  
-    probit_params.xi0 = probit_params.xi;  %%% CHANGE THIS
     
     % Probit model latent variable z_i 
     probit_params.z_i = zeros(data_vars.n, 1);   % Initialize latent probit variable, z_i
@@ -38,12 +37,12 @@ function probit_params = init_probit_params_latent(data_vars, k_max, q_dem, mu_0
     probit_params.probit_lik = normpdf(probit_params.z_i, lin_pred, 1) .* ((data_vars.y == 1).* (probit_params.z_i > 0) + (data_vars.y == 0) .* (probit_params.z_i <= 0));
     
     % Probit likelihood component of posterior class membership P(c_i|-) with assumed classes
-    probit_params.indiv_lik_probit_class = zeros(data_vars.n, k_max);   % Initialize matrix of indiv probit likelihood assuming each class       
+    probit_params.indiv_lik_probit_class = zeros(data_vars.n, k_max); % Initialize matrix of indiv probit likelihood assuming each class       
     for k = 1:k_max
-       q_class = zeros(data_vars.n, k_max);                       % Initialize design matrix for class membership
-       q_class(:, k) = ones(data_vars.n, 1);                      % Temporarily assign all indivs to class k
-       Q_temp = [q_dem q_class];                                  % Form temporary covariate design matrix
-       lin_pred_temp = normcdf(Q_temp * transpose(probit_params.xi));  % Vector of P(y_i=1|Q)
+       q_class = zeros(data_vars.n, k_max);                  % Initialize design matrix for class membership
+       q_class(:, k) = ones(data_vars.n, 1);                 % Temporarily assign all indivs to class k
+       Q_temp = [q_dem q_class];                             % Form temporary covariate design matrix
+       lin_pred_temp = Q_temp * transpose(probit_params.xi); % Linear predictor, Q*xi
        % Update indiv probit likelihood assuming class k
        probit_params.indiv_lik_probit_class(:, k) = normpdf(probit_params.z_i,lin_pred_temp,1).*((data_vars.y==1).*(probit_params.z_i>0)+(data_vars.y==0).*(probit_params.z_i<=0));
     end 

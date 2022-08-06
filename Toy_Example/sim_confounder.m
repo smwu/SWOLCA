@@ -23,7 +23,7 @@ function sim_confounder(sim_n)
     d = 2;                                      % Number of response levels (assumed constant across items)
     S = 2;                                      % Number of subpops
     K = 2;                                      % Number of global classes
-    N_s = [1000, 7000];                         % Subpopulation sizes
+    N_s = [10000, 70000];                         % Subpopulation sizes
     N = sum(N_s);                               % Population size    
     clust_mode = 0.9;                          % Probability of true consumption level occurring
     non_mode = 0.1;                            % Probability of other consumption levels occurring
@@ -32,8 +32,9 @@ function sim_confounder(sim_n)
     sim_data = struct;  % Initialize structural array
     sim_data.true_pi = [0.8, 0.2;
                         0.2, 0.8];                % Global class membership proportions
-    sim_data.true_xi = [1.2, -0.33, 0.08, -0.68]; % True probit model coefficients; first dem, then class
-
+    %sim_data.true_xi = [1.2, -0.33, 0.08, -0.68]; % True probit model coefficients; first dem, then class
+    sim_data.true_xi = [1.4, -1.4, -0.5, 0.238];
+    
     %% Set true comsumption patterns for each diet profile class      
     global1 = ones(p, 1) * 2;  % Global profile patterns
     global2 = ones(p, 1);
@@ -63,7 +64,15 @@ function sim_confounder(sim_n)
         end
     end  
     
-    %% Create true probit model and population outcome data      
+    %% Create true probit model and population outcome data 
+    % Reference coding
+    q_dem = zeros(N, S);
+    q_dem(:,1) = 1;  % Reference level is S=1, C=1
+    for s = 2:S
+        q_dem(Si_pop == s, s) = 1;
+    end    
+    
+    
     q_dem = zeros(N, S);             % Initialize design matrix of dem covs (subpop) in cell-means format
     for s = 1:S                      % For each subpop
         q_dem(Si_pop == s, s) = 1;   % For all indivs in subpop s, set s-th column to 1
@@ -78,7 +87,7 @@ function sim_confounder(sim_n)
     Y_pop = binornd(1, Phi_pop);                    % True outcome for all indivs
     
     %% Format and save data
-    scen = 2;  % Simulation scenario  
+    scen = 3;  % Simulation scenario  
     n_s = N;   % Sample size is full population
     % Obtain indices, weights, and data for sampled individuals
     Li_pop = zeros(N, 1);

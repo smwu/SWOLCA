@@ -11,7 +11,7 @@
 %   theta: Matrix reordered item-response probs; (n_runs/thin)xpx(k_med)x(d_max)
 %   xi: Matrix of reordered probit model coefficients; (n_runs/thin)x(S+k_med)
 %   loglik: Vector of log likelihoods; (n_runs/thin)x1 
-function post_MCMC_out = post_process(MCMC_out, data_vars, S) 
+function post_MCMC_out = post_process_test(MCMC_out, data_vars, S) 
     % Remove extraneous empty classes and relabel class assignments  
     m = size(MCMC_out.pi, 1);                                 % Num stored output iterations
     post_MCMC_out.k_med = median(sum(MCMC_out.pi > 0.05, 2)); % Median num classes w/ more than >5% indivs, over all iterations
