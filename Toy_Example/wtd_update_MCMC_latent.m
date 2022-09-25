@@ -13,6 +13,7 @@
 %   mu_0: vector mean hyperparam for probit coefficients, xi; (p_cov)x1  
 %   Sig_0: matrix variance hyperparam for probit coefficients, xi; (p_cov)x(p_cov)
 %   iter: MCMC iteration indicator
+%   S: Number of demographic covariates in the probit model
 % Outputs: returns updated OFMM_params and probit_params structural arrays,
 % as well as updated MCMC_out structural array with the following fields:
 %   pi: matrix of class membership probabilities; (n_runs/thin)x(k_max)  
@@ -21,7 +22,7 @@
 %   xi: matrix of probit model coefficients; (n_runs/thin)x(p_cov) 
 %   z_i: matrix of latent probit outcomes; (n_runs/thin)xn
 %   loglik: vector of log likelihoods; (n_runs/thin)x1 
-function [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC_latent(MCMC_out, data_vars, OFMM_params, probit_params, thin, k_max, q_dem, alpha, eta, mu_0, Sig_0, iter) 
+function [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC_latent(MCMC_out, data_vars, OFMM_params, probit_params, thin, k_max, q_dem, alpha, eta, mu_0, Sig_0, iter, S) 
     % Update posterior class membership probs, pi, incorporating normalized weights
     for k = 1:k_max  % For each latent class
         % Get updated weighted num indivs assigned to class k
@@ -64,7 +65,14 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC_latent(MCMC_ou
     end        
     
     % Update latent probit variable, z_i
-    Q = [q_dem OFMM_params.x_ci];                            % Design matrix with demographic covariates and updated latent classes
+    % Factor variable coding design matrix with demographic covariates and initial latent classes
+    Q = zeros(data_vars.n, S * k_max);
+    for s = 1:S
+        for k = 1:k_max
+            Q(:, ((s-1) * k_max) + k) = q_dem(:, s) .* OFMM_params.x_ci(:, k);
+        end
+    end    
+%             Q = [q_dem OFMM_params.x_ci];                            % Design matrix with demographic covariates and updated latent classes
     lin_pred = Q * transpose(probit_params.xi);  % Linear predictor, Q*xi. Mean of truncated normal dist
     % For cases, z_i ~ TruncNormal(mean=Q*xi, var=1, low=0, high=Inf)
     probit_params.z_i(data_vars.y == 1) = truncnormrnd(1, lin_pred(data_vars.y == 1), 1, 0, Inf); 
@@ -89,8 +97,12 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC_latent(MCMC_ou
     % nxp matrix of theta values for each indiv and item \prod_{r=1}^d \theta_{jr|k}^{I(x_ij=r, c_i=k)}
     theta_indiv = reshape(OFMM_params.theta(lin_idx), [data_vars.n, data_vars.p]);
     % Indiv complete log-likelihood
-    indiv_loglik = log(OFMM_params.pi(OFMM_params.c_i) * prod(theta_indiv, 2) * probit_params.probit_lik);
-    
+    if (size(OFMM_params.pi) == 1)  % Adjustment in case pi is 1x1
+        indiv_loglik = log(OFMM_params.pi(OFMM_params.c_i) .* prod(theta_indiv, 2) .* probit_params.probit_lik);
+    else
+        indiv_loglik = log(OFMM_params.pi(OFMM_params.c_i) * prod(theta_indiv, 2) * probit_params.probit_lik);
+    end
+
     % Update posterior probit model coefficients, xi, incorporating normalized weights                 
     diag_ind = 1:data_vars.n;                                     % Indices to indicate matrix diagonal
     W_tilde = sparse(diag_ind, diag_ind, data_vars.wt_kappa);     % Create sparse diagonal normalized weight matrix
@@ -102,12 +114,17 @@ function [MCMC_out, OFMM_params, probit_params] = wtd_update_MCMC_latent(MCMC_ou
     
     % Update probit likelihood component of posterior class membership P(c_i|-) with assumed classes
     for k = 1:k_max
-       q_class = zeros(data_vars.n, k_max);                   % Initialize design matrix for class membership
-       q_class(:, k) = ones(data_vars.n, 1);                  % Temporarily assign all indivs to class k
-       Q_temp = [q_dem q_class];                              % Form temporary covariate design matrix
-       lin_pred_temp = Q_temp * transpose(probit_params.xi);  % Vector of P(y_i=1|Q)
-       % Update indiv probit likelihood assuming class k
-       probit_params.indiv_lik_probit_class(:, k) = normpdf(probit_params.z_i,lin_pred_temp,1).*((data_vars.y==1).*(probit_params.z_i>0)+(data_vars.y==0).*(probit_params.z_i<=0));
+        % Factor variable coding temporarily assign all indivs to class k
+        Q_temp = zeros(data_vars.n, S * k_max);  % Initialize temp design matrix for class membership
+        for s = 1:S  % (s-1) * k_max is the shift amount
+            Q_temp(:, ((s-1) * k_max) + k) = q_dem(:, s);         % Temporarily assign all indivs to class k
+        end        
+%                 q_class = zeros(data_vars.n, k_max);                   % Initialize design matrix for class membership
+%                 q_class(:, k) = ones(data_vars.n, 1);                  % Temporarily assign all indivs to class k
+%                 Q_temp = [q_dem q_class];                              % Form temporary covariate design matrix
+        lin_pred_temp = Q_temp * transpose(probit_params.xi);  % Vector of P(y_i=1|Q)
+        % Update indiv probit likelihood assuming class k
+        probit_params.indiv_lik_probit_class(:, k) = normpdf(probit_params.z_i,lin_pred_temp,1).*((data_vars.y==1).*(probit_params.z_i>0)+(data_vars.y==0).*(probit_params.z_i<=0));
     end    
     
     % Store posterior values if the iteration is selected based on thinning  

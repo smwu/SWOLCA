@@ -13,6 +13,7 @@
 %   mu_0: vector mean hyperparam for probit coefficients, xi 
 %   Sig_0: matrix variance hyperparam for probit coefficients, xi
 %   iter: MCMC iteration indicator
+%   S: Number of demographic covariates in the probit model
 % Outputs: returns updated OFMM_params and probit_params structural arrays,
 % as well as updated MCMC_out structural array with the following fields:
 %   pi: matrix of class membership probabilities 
@@ -21,7 +22,7 @@
 %   xi: matrix of probit model coefficients
 %   z_i: matrix of latent probit outcomes
 %   loglik: vector of log likelihoods
-function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, data_vars, OFMM_params, probit_params, thin, k_max, q_dem, alpha, eta, mu_0, Sig_0, iter) 
+function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, data_vars, OFMM_params, probit_params, thin, k_max, q_dem, alpha, eta, mu_0, Sig_0, iter, S) 
     % Update posterior class membership probs, pi
     for k = 1:k_max  % For each latent class
         % Get updated num indivs assigned to class k
@@ -29,33 +30,6 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, d
     end
     alpha_post = alpha + OFMM_params.n_ci;    % Posterior hyperparam is alpha(k) + n_ci(k)
     OFMM_params.pi = drchrnd(alpha_post, 1);  % Draw from posterior dist: Dir(alpha_post) 
-    
-    
-    
-    % Update class membership, c_i
-    prob_ci_numer_log = zeros(data_vars.n, k_max);  % Initialize log matrix to address underflow
- 	%prob_ci_numer = zeros(data_vars.n, k_max);  % Initialize matrix of P(c_i=k|-) numerator for each indiv and class
-    for k = 1:k_max
-        % Matrix of unique item-level probs for class k
-        theta_k = reshape(OFMM_params.theta(:, k, :), data_vars.p, data_vars.d_max); 
-        % Matrix of categ likelihood \prod_{r=1}^d \theta_{jr|k}^{I(x_ij=r)} for each indiv and item 
-        categ_lik = reshape(theta_k(data_vars.lin_idx), [data_vars.n, data_vars.p]); 
-        % Update numerator for posterior P(c_i=k|-) 
-        prob_ci_numer_log(:, k) = log(OFMM_params.pi(k)) + log(prod(categ_lik, 2)) + log(probit_params.indiv_lik_probit_class(:, k));
-        %prob_ci_numer(:, k) = OFMM_params.pi(k) * prod(categ_lik, 2) .* probit_params.indiv_lik_probit_class(:, k);  
-    end
-    % Matrix of updated posterior P(c_i=k|-) for each indiv and class
-    max_elems = max(prob_ci_numer_log, [], 2);
-    subtract = prob_ci_numer_log - max_elems;
-    log_denom = max_elems + log(sum(exp(subtract), 2));
-    prob_ci = exp(prob_ci_numer_log - log_denom);
-    %prob_ci = bsxfun(@times, prob_ci_numer, 1 ./ (sum(prob_ci_numer, 2)));
-    % Adjust precision for mnrnd function
-    
-    
-    
-    
-    
     
     
     % Update class membership, c_i
@@ -83,6 +57,7 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, d
     sorted = sortrows([row col], 1);            % Sort indices in ascending row index order, to match subject index
     OFMM_params.c_i = sorted(:, 2);             % Vector of updated class assignment, c_i, for each individual
       
+    
     % Update posterior item response probabilities, theta   
     n_theta = zeros(data_vars.p, data_vars.d_max); % Initialize matrix of num indivs with each item response level
     for k = 1:k_max  
@@ -111,8 +86,19 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, d
         end
     end        
     
+    
     % Update latent probit variable, z_i
-    Q = [q_dem OFMM_params.x_ci];                            % Design matrix with demographic covariates and updated latent classes
+    % Factor variable coding design matrix with demographic covariates and initial latent classes
+    Q = zeros(data_vars.n, S * k_max);
+    for s = 1:S
+        for k = 1:k_max
+            Q(:, ((s-1) * k_max) + k) = q_dem(:, s) .* OFMM_params.x_ci(:, k);
+        end
+    end
+%             % Reference cell coding design matrix with demographic covariates and initial latent classes
+%             q_design = horzcat(q_dem, OFMM_params.c_i);
+%             Q = x2fx(q_design, 'interaction', [1 2], [length(unique(q_dem)), k_max]);
+%             Q = [q_dem OFMM_params.x_ci];                % Design matrix with demographic covariates and initial latent classes
     lin_pred = Q * transpose(probit_params.xi);  % Linear predictor, Q*xi. Mean of truncated normal dist
     % For cases, z_i ~ TruncNormal(mean=Q*xi, var=1, low=0, high=Inf)
     probit_params.z_i(data_vars.y == 1) = truncnormrnd(1, lin_pred(data_vars.y == 1), 1, 0, Inf); 
@@ -126,6 +112,7 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, d
     end    
     probit_params.probit_lik = normpdf(probit_params.z_i, lin_pred, 1) .* ((data_vars.y == 1).* (probit_params.z_i > 0) + (data_vars.y == 0) .* (probit_params.z_i <= 0));
 
+    
     % Update individual log-likelihood with class assignments and latent variable formulation       
     item_idx = repmat(1:data_vars.p, data_vars.n, 1);     % nxp matrix of item id's. Replicates 1:p row n times
     item_idx = item_idx(:);                               % Concat by col into (np)x1 vector. 1(x n),2(x n),...,p(x n)
@@ -137,7 +124,11 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, d
     % nxp matrix of theta values for each indiv and item \prod_{r=1}^d \theta_{jr|k}^{I(x_ij=r, c_i=k)}
     theta_indiv = reshape(OFMM_params.theta(lin_idx), [data_vars.n, data_vars.p]);
     % Indiv complete log-likelihood
-    indiv_loglik = log(OFMM_params.pi(OFMM_params.c_i) * prod(theta_indiv, 2) * probit_params.probit_lik);
+    if (size(OFMM_params.pi) == 1)  % Adjustment in case pi is 1x1
+        indiv_loglik = log(OFMM_params.pi(OFMM_params.c_i) .* prod(theta_indiv, 2) .* probit_params.probit_lik);
+    else
+        indiv_loglik = log(OFMM_params.pi(OFMM_params.c_i) * prod(theta_indiv, 2) * probit_params.probit_lik);
+    end
     
     % Update posterior probit model coefficients, xi   
     Sig_post = inv(Sig_0) + (transpose(Q) * Q);           % Precision of posterior Normal dist for xi
@@ -146,15 +137,26 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, d
     mu_post = Sig_post \ mu_right;                      % Mean of posterior Normal dist for xi
     probit_params.xi = mvnrnd(mu_post, inv(Sig_post));  % Draw from posterior dist: N(mu_post, Sig_post^{-1})    
     
+    
     % Update probit likelihood component of posterior class membership P(c_i|-)
     for k = 1:k_max
-       q_class = zeros(data_vars.n, k_max);                  % Initialize design matrix for class membership
-       q_class(:, k) = ones(data_vars.n, 1);                 % Temporarily assign all indivs to class k
-       Q_temp = [q_dem q_class];                             % Form temporary covariate design matrix
+        % Factor variable coding temporarily assign all indivs to class k
+        Q_temp = zeros(data_vars.n, S * k_max);  % Initialize temp design matrix for class membership
+        for s = 1:S  % (s-1) * k_max is the shift amount
+            Q_temp(:, ((s-1) * k_max) + k) = q_dem(:, s);         % Temporarily assign all indivs to class k
+        end
+%                % Reference cell coding temporarily assign all indivs to class k
+%                class_temp = ones(data_vars.n, 1) * k;
+%                q_design_temp = horzcat(q_dem, class_temp);
+%                Q_temp = x2fx(q_design_temp, 'interaction', [1 2], [length(unique(q_dem)), k_max]);
+%                q_class = zeros(data_vars.n, k_max);                  % Initialize design matrix for class membership
+%                q_class(:, k) = ones(data_vars.n, 1);                 % Temporarily assign all indivs to class k
+%                Q_temp = [q_dem q_class];                             % Form temporary covariate design matrix
        lin_pred_temp = Q_temp * transpose(probit_params.xi); % Linear predictor, Q*xi       
        % Update indiv probit likelihood assuming class k
        probit_params.indiv_lik_probit_class(:, k) = normpdf(probit_params.z_i,lin_pred_temp,1).*((data_vars.y==1).*(probit_params.z_i>0)+(data_vars.y==0).*(probit_params.z_i<=0));
     end    
+    
     
     % Store posterior values if the iteration is selected based on thinning  
     if mod(iter, thin) == 0
@@ -166,3 +168,25 @@ function [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, d
         MCMC_out.xi(iter / thin, :) = probit_params.xi; 
     end
 end
+
+
+% % Underflow code
+%     % Update class membership, c_i
+%     prob_ci_numer_log = zeros(data_vars.n, k_max);  % Initialize log matrix to address underflow
+%  	%prob_ci_numer = zeros(data_vars.n, k_max);  % Initialize matrix of P(c_i=k|-) numerator for each indiv and class
+%     for k = 1:k_max
+%         % Matrix of unique item-level probs for class k
+%         theta_k = reshape(OFMM_params.theta(:, k, :), data_vars.p, data_vars.d_max); 
+%         % Matrix of categ likelihood \prod_{r=1}^d \theta_{jr|k}^{I(x_ij=r)} for each indiv and item 
+%         categ_lik = reshape(theta_k(data_vars.lin_idx), [data_vars.n, data_vars.p]); 
+%         % Update numerator for posterior P(c_i=k|-) 
+%         prob_ci_numer_log(:, k) = log(OFMM_params.pi(k)) + log(prod(categ_lik, 2)) + log(probit_params.indiv_lik_probit_class(:, k));
+%         %prob_ci_numer(:, k) = OFMM_params.pi(k) * prod(categ_lik, 2) .* probit_params.indiv_lik_probit_class(:, k);  
+%     end
+%     % Matrix of updated posterior P(c_i=k|-) for each indiv and class
+%     max_elems = max(prob_ci_numer_log, [], 2);
+%     subtract = prob_ci_numer_log - max_elems;
+%     log_denom = max_elems + log(sum(exp(subtract), 2));
+%     prob_ci = exp(prob_ci_numer_log - log_denom);
+%     %prob_ci = bsxfun(@times, prob_ci_numer, 1 ./ (sum(prob_ci_numer, 2)));
+%     % Adjust precision for mnrnd function

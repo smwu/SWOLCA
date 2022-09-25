@@ -29,15 +29,37 @@ function analysis = analyze_results_latent(MCMC_out, post_MCMC_out, data_vars, q
     % Matrix of most likely consump level based on item-response probs, for each item and class across MCMC runs
     [~, ind0] = max(theta_med_temp, [], 3); 
     t_ind0 = transpose(ind0);
-    [~, ia, ~] = unique(t_ind0, 'rows');  % Vector of class indices corresponding to unique classes
+    [u_mat, ia, ~] = unique(t_ind0, 'rows');  % Vector of class indices corresponding to unique classes
     analysis.k_red = length(ia);          % Number of unique classes
-
-    % Posterior MCMC parameter chains for the unique classes, re-normalized
-    analysis.pi_red = post_MCMC_out.pi(:, ia);
+        
+    % Posterior MCMC chains for pi after combining duplicated classes, re-normalized
+    analysis.pi_red = post_MCMC_out.pi(:, ia);    % Restrict to unique classes
+    has_dupes = size(u_mat, 1) < size(t_ind0, 1); % Check for duplicates
+    if has_dupes
+        ind_dup = setdiff(1:size(t_ind0,1), ia);  % Find indices of duplicated classes
+        for i = 1:length(ind_dup)                    % Iterate over dupe rows
+            for j = 1:length(ia)                     % Iterate over non-dupe rows
+                i_dup = ind_dup(i);               
+                i_orig = ia(j);
+                if t_ind0(i_dup, :) == t_ind0(i_orig, :)
+                    % Combine pi for duplicated patterns
+                    analysis.pi_red(:, i_orig) = analysis.pi_red(:, i_orig) + post_MCMC_out.pi(:, i_dup);
+                    %disp(median(analysis.pi_red));
+                end
+            end
+        end
+    end  
     analysis.pi_red = analysis.pi_red ./ sum(analysis.pi_red, 2);
+    
+    % Posterior MCMC parameter chains for the unique classes, re-normalized
     analysis.theta_red = post_MCMC_out.theta(:, :, ia, :);
     analysis.theta_red = analysis.theta_red ./ sum(analysis.theta_red, 4);
-    analysis.xi_red = post_MCMC_out.xi(:, [1:S (S+ia')]);    
+    % Factor variable version
+    analysis.xi_red = zeros(size(analysis.pi_red, 1), S * analysis.k_red);
+    for s = 1:S
+        analysis.xi_red(:, ((s-1)*analysis.k_red) + (1:analysis.k_red)) = post_MCMC_out.xi(:, (s-1)*post_MCMC_out.k_med + ia);
+    end
+    %         analysis.xi_red = post_MCMC_out.xi(:, [1:S (S+ia')]);     
 
     % Posterior median estimates for the unique classes
     analysis.pi_med = median(analysis.pi_red);  % Class probs 
@@ -51,9 +73,18 @@ function analysis = analyze_results_latent(MCMC_out, post_MCMC_out, data_vars, q
     indiv_lik_probit_class = zeros(data_vars.n, analysis.k_red); % Initialize indiv probit lik matrix for each indiv and class
     analysis.z_i = MCMC_out.z_i(end, :)';                        % Obtain last values of probit latent variable
     for k = 1:analysis.k_red
-       q_class = zeros(data_vars.n, analysis.k_red);        % Initialize design matrix for class membership
-       q_class(:, k) = ones(data_vars.n, 1);                % Temporarily assign all indivs to class k
-       Q_temp = [q_dem q_class];                            % Form temporary covariate design matrix
+        % Factor variable coding temporarily assign all indivs to class k
+        Q_temp = zeros(data_vars.n, S * analysis.k_red);  % Initialize temp design matrix for class membership
+        for s = 1:S
+            Q_temp(:, ((s-1) * analysis.k_red) + k) = q_dem(:, s);         % Temporarily assign all indivs to class k
+        end
+%                % Reference cell coding temporarily assign all indivs to class k
+%                class_temp = ones(data_vars.n, 1) * k;
+%                q_design_temp = horzcat(q_dem, class_temp);
+%                Q_temp = x2fx(q_design_temp, 'interaction', [1 2], [length(unique(q_dem)), analysis.k_red]);
+%                q_class = zeros(data_vars.n, analysis.k_red);        % Initialize design matrix for class membership
+%                q_class(:, k) = ones(data_vars.n, 1);                % Temporarily assign all indivs to class k
+%                Q_temp = [q_dem q_class];                            % Form temporary covariate design matrix
        lin_pred_temp = Q_temp * transpose(analysis.xi_med); % Linear predictor, Q*xi
        % Update indiv probit likelihood assuming class k
        indiv_lik_probit_class(:, k) = normpdf(analysis.z_i,lin_pred_temp,1).*((data_vars.y==1).*(analysis.z_i>0)+(data_vars.y==0).*(analysis.z_i<=0));
@@ -79,8 +110,18 @@ function analysis = analyze_results_latent(MCMC_out, post_MCMC_out, data_vars, q
 %     analysis.c_i = sorted(:, 2);                % Vector of updated class assignment, c_i, for each individual
     
     % Obtain probit model mean using median parameter estimates
-%    Q_med = [q_dem x_ci];                             % Design matrix with updated class memberships using median estimates   
-    Q_med = [q_dem dummyvar(analysis.c_i)];  % Design matrix with updated class memberships using median estimates 
+        % Factor variable coding design matrix with updated class memberships using median estimates 
+        Q_med = zeros(data_vars.n, S * analysis.k_red);
+        x_ci = dummyvar(analysis.c_i);
+        for s = 1:S
+            for k = 1:analysis.k_red
+                Q_med(:, ((s-1) * analysis.k_red) + k) = q_dem(:, s) .* x_ci(:, k);
+            end
+        end
+%             % Reference cell coding design matrix with demographic covariates and initial latent classes
+%             q_design = horzcat(q_dem, analysis.c_i);
+%             Q_med = x2fx(q_design, 'interaction', [1 2], [length(unique(q_dem)), analysis.k_red]);
+%             Q_med = [q_dem dummyvar(analysis.c_i)];  % Design matrix with updated class memberships using median estimates 
     analysis.Phi_med = normcdf(Q_med * transpose(analysis.xi_med)); % Linear predictor, Q*xi. Probit model mean using median estimates
     analysis.Phi_med(analysis.Phi_med == 0) = 1e-10;  % Adjust extremes
     analysis.Phi_med(analysis.Phi_med == 1) = 1 - 1e-10;
@@ -112,8 +153,12 @@ function analysis = analyze_results_latent(MCMC_out, post_MCMC_out, data_vars, q
     % Probit component 
     probit_lik = normpdf(analysis.z_i, analysis.Phi_med, 1) .* ((data_vars.y == 1).* (analysis.z_i > 0) + (data_vars.y == 0) .* (analysis.z_i <= 0));
     % Indiv complete log-likelihood
-    analysis.loglik_med = log(analysis.pi_med(analysis.c_i) * prod(theta_indiv, 2) * probit_lik);
-    
+    if size(analysis.pi_med, 2) == 1  % Adjustment in case pi is 1x1
+        analysis.loglik_med = log(analysis.pi_med(analysis.c_i) .* prod(theta_indiv, 2) .* probit_lik);
+    else
+        analysis.loglik_med = log(analysis.pi_med(analysis.c_i) * prod(theta_indiv, 2) * probit_lik);
+    end
+
     % DIC is a metric for model goodness of fit. It consists of two terms:
         % 1) median(loglik): calculate log-lik at each MCMC iter then get the median
         % 2) loglik_med: get posterior estimates of each param, then use these to calculate the log-lik

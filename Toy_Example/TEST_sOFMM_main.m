@@ -21,6 +21,11 @@ sim_n = 1; % Iter = 1
 samp_n = 5; % Samples 2, 5 tend to not converge
 rng(sim_n, 'twister');  % set seed
 
+scenario = 5; %% SRS with n=400
+sim_n = 1; % Iter = 1
+samp_n = 1; % Sample number = 1
+rng(sim_n, 'twister');  % set seed
+
 %% Load simulated data and check if file already exists
 % Input directory
 in_dir = strcat(pwd, '/');
@@ -40,6 +45,9 @@ k_fixed = 2;
 eta = ones(1, data_vars.d_max); % Hyperparam for item response probs. 
 q_dem = dummyvar(samp_data.true_Si);        % Matrix of demographic covariates in cell-means format. Default contains subpop. 
 S = size(q_dem, 2);                         % Number of demographic covariates in the probit model
+% Reference cell version
+q_dem = samp_data.true_Si;
+S = length(unique(q_dem));
 
 % Initialize OFMM model using fixed number of classes 
 sp_k = k_fixed;                   % Denom constant to restrict alpha size and num classes for OFMM model
@@ -48,6 +56,8 @@ OFMM_params = init_OFMM_params_latent(data_vars, k_fixed, alpha, eta);
 
 % Initialize probit model using fixed number of classes
 p_cov = k_fixed + S;                        % Number of covariates in probit model
+% Reference cell version
+p_cov = S + k_fixed-1 + (S-1)*(k_fixed-1);  % Intercept + S_dummies + C_dummies + interactions
 mu_0 = normrnd(0, 1, [p_cov, 1]);           % Mean hyperparam drawn from MVN(0,1)
 Sig_0 = 1 ./ gamrnd(5/2, 2/5, [p_cov, 1]);  % Var hyperparam drawn from MVGamma(shape=5/2, scale=5/2)
 Sig_0 = diag(Sig_0);                        % Assume indep components. (pcov)x(pcov) matrix of variances. 
@@ -88,10 +98,17 @@ plot(post_MCMC_out.theta(:,1,2,2))
 hold off
 
 
+Q_test_ref = [1 0 0 0;   % S=1,C=1
+              1 1 0 0;   % S=2,C=1
+              1 0 1 0;   % S=1,C=2
+              1 1 1 1];  % S=2,C=2
+pred_Phi = normcdf(Q_test_ref * transpose(analysis.xi_med));
+actual_Phi = normcdf(Q_test_ref * transpose(samp_data.true_xi));
+sum(abs(actual_Phi - pred_Phi))
 
 
-
-
+immse(samp_data.true_Phi, analysis.Phi_med)
+sum(abs(sim_data.true_Phi - analysis.Phi_med))
 
 
 

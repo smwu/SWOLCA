@@ -14,7 +14,7 @@
 function post_MCMC_out = post_process_latent(MCMC_out, data_vars, S) 
     % Remove extraneous empty classes and relabel class assignments  
     m = size(MCMC_out.pi, 1);                                 % Num stored output iterations
-    post_MCMC_out.k_med = median(sum(MCMC_out.pi > 0.05, 2)); % Median num classes w/ more than >5% indivs, over all iterations
+    post_MCMC_out.k_med = round(median(sum(MCMC_out.pi > 0.05, 2))); % Median num classes w/ more than >5% indivs, over all iterations
     % Hierarchical clustering dendrogram tree using pairwise distance of num times two indivs were in same class together
     post_MCMC_out.tree = linkage(single(MCMC_out.c_i'), 'complete', 'hamming');
     % Vector of new class assignments for each indiv
@@ -28,16 +28,22 @@ function post_MCMC_out = post_process_latent(MCMC_out, data_vars, S)
     % Reorder parameter estimates to match the correct new class assignment
     post_MCMC_out.pi = zeros(m, post_MCMC_out.k_med); % Initialize parameter estimates corresponding to the non-empty classes
     post_MCMC_out.theta = zeros(m, data_vars.p, post_MCMC_out.k_med, data_vars.d_max);
-    post_MCMC_out.xi = zeros(m, S + post_MCMC_out.k_med);
+    % Factor variable initialize xi
+    post_MCMC_out.xi = zeros(m, S * post_MCMC_out.k_med);
+    k_old = size(MCMC_out.pi, 2);
+%             post_MCMC_out.xi = zeros(m, S + post_MCMC_out.k_med);
     for iter = 1:m                                    % For each stored MC run
         iter_order = relabel_ci(iter, :);             % Vector of new class assignments (mode orig classes after removing empty classes)
-        % Update class probs corresp to new class assignments
-        post_MCMC_out.pi(iter, :) = MCMC_out.pi(iter, iter_order); 
+        pi_temp = MCMC_out.pi(iter, iter_order);      % Update class probs corresp to new class assignments
+        post_MCMC_out.pi(iter, :) = pi_temp / sum(pi_temp);  % Normalize to sum to 1
         % Update item-response probs corresp to new class assignments
-        post_MCMC_out.theta(iter, :, :, :) = MCMC_out.theta(iter, :, iter_order, :);  
-        % Update probit model coefs corresp to new class assignments. First few coefs corresp to dem vars and are not changed
-        post_MCMC_out.xi(iter, :) = [MCMC_out.xi(iter, 1:S) MCMC_out.xi(iter, S + iter_order)];  
+        post_MCMC_out.theta(iter, :, :, :) = MCMC_out.theta(iter, :, iter_order, :);
+        % Factor variable coding update probit model coefs corresp to new class assignments
+        for s = 1:S
+            post_MCMC_out.xi(iter, (s-1)*post_MCMC_out.k_med + (1:post_MCMC_out.k_med)) = MCMC_out.xi(iter, (s-1)*k_old + iter_order);
+        end
+%                 % Update probit model coefs corresp to new class assignments. First few coefs corresp to dem vars and are not changed
+%                 post_MCMC_out.xi(iter, :) = [MCMC_out.xi(iter, 1:S) MCMC_out.xi(iter, S + iter_order)];  
     end
     post_MCMC_out.loglik = MCMC_out.loglik;  % Obtain log-lik for each stored MC run
-    post_MCMC_out.c_i = MCMC_out.c_i(end, :)'; % Obtain the last class assignments over all MC runs 
 end

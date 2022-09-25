@@ -42,32 +42,24 @@ function sim_data = sample_indivs(N_s, n_s, S, strat, Si_pop, Ci_pop, Li_pop, X_
         pop_wt = ones(N_s, 1) * wt_s;                        % Weights, temp applied to all popn indivs
         sim_data.sample_wt = pop_wt(sim_data.samp_ind);      % Weights for sampled indivs 
         sim_data.norm_const = sum(sim_data.sample_wt / N_s); % Normalization constant. Default is 1
-
     else 
         sim_data.samp_ind = cell(S, 1);   % Initialize indices of sampled indivs, grouped by subpop
-        sim_data.sample_wt = cell(S, 1);  % Initialize sampling weights for sampled indivs, grouped by subpop
         sim_data.norm_const = cell(S, 1); % Initialize normalization constant for each subpop
-        
-        % Obtain indices and weights for sampled individuals in each subpop
-        ind_count = 0;                             % Counter to adjust indices of sampled indivs
-        for s = 1:S                                % For each subpopulation
-            temp_ind = randsample(N_s(s), n_s(s)); % Indices of randomly sampled indivs from subpop s
-            wt_s = N_s(s) / n_s(s);                % Sampling weight for subpop s
-            pop_wt_s = ones(N_s(s), 1) * wt_s;     % Weights for subpop s, temp applied to all popn indivs
-            sim_data.sample_wt{s} = pop_wt_s(temp_ind);  % Weights for sampled indivs in subpop s       
-            % Normalization constant for subpop s weights
-            sim_data.norm_const{s} = sum(sim_data.sample_wt{s}) / N_s(s); 
-            sim_data.samp_ind{s} = temp_ind + ind_count; % Indices adjusted to match subpop
-            ind_count = ind_count + N_s(s);              % Increment counter
+        pop_wt = zeros(sum(N_s), 1);      % Initialize popn weights
+        for s = 1:S                       % For each subpopulation
+            subset = find(Si_pop == s);                              % Subset to the indices of indivs in subpop s
+            sim_data.samp_ind{s} = sort(randsample(subset, n_s(s))); % Randomly sample n_s indices from subpop s; sort by ascending index
+            wt_s = N_s(s) / n_s(s);                                  % Sampling weight for subpop s
+            pop_wt(subset) = wt_s;                                   % Weights for subpop s, temp applied to all popn indivs 
+            sim_data.norm_const{s} = (wt_s * n_s(s)) / N_s(s);       % Normalization constant for subpop s weights
         end
-        
         % Convert cell arrays to vectors through vertical concat 
-        sim_data.samp_ind = vertcat(sim_data.samp_ind{:});  
-        sim_data.sample_wt = vertcat(sim_data.sample_wt{:});
-        sim_data.norm_const = vertcat(sim_data.norm_const{:});
+        sim_data.samp_ind = sort(vertcat(sim_data.samp_ind{:}));  
+        sim_data.norm_const = vertcat(sim_data.norm_const{:});       
     end    
 
     % Obtain observed sample data
+    sim_data.sample_wt = pop_wt(sim_data.samp_ind);   % Indices of randomly sampled indivs
     sim_data.true_Si = Si_pop(sim_data.samp_ind);     % Subpop assignments for sampled indivs
     sim_data.true_Ci = Ci_pop(sim_data.samp_ind);     % True global class assignments for sampled indivs
     if sum(Li_pop > 0)                                % If there are local classes
@@ -78,3 +70,22 @@ function sim_data = sample_indivs(N_s, n_s, S, strat, Si_pop, Ci_pop, Li_pop, X_
     sim_data.true_Phi = Phi_pop(sim_data.samp_ind);   % True probit mean for sampled indivs
     sim_data.true_K = K;                              % Rename variable for number of classes
 end
+
+        
+        
+%         % Obtain indices and weights for sampled individuals in each subpop
+%         ind_count = 0;                             % Counter to adjust indices of sampled indivs
+%         for s = 1:S                                % For each subpopulation
+%             temp_ind = randsample(N_s(s), n_s(s)); % Indices of randomly sampled indivs from subpop s
+%             wt_s = N_s(s) / n_s(s);                % Sampling weight for subpop s
+%             pop_wt_s = ones(N_s(s), 1) * wt_s;     % Weights for subpop s, temp applied to all popn indivs
+%             sim_data.sample_wt{s} = pop_wt_s(temp_ind);  % Weights for sampled indivs in subpop s       
+%             % Normalization constant for subpop s weights
+%             sim_data.norm_const{s} = sum(sim_data.sample_wt{s}) / N_s(s); 
+%             sim_data.samp_ind{s} = temp_ind + ind_count; % Indices adjusted to match subpop
+%             ind_count = ind_count + N_s(s);              % Increment counter
+%         end
+%         % Convert cell arrays to vectors through vertical concat 
+%         sim_data.samp_ind = vertcat(sim_data.samp_ind{:});  
+%         sim_data.sample_wt = vertcat(sim_data.sample_wt{:});
+%         sim_data.norm_const = vertcat(sim_data.norm_const{:});

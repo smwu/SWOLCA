@@ -23,10 +23,12 @@ function wsOFMM_main_latent(scenario, sim_n, samp_n)
     in_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Toy_Example/";   
     % Output directory 
     out_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Toy_Example/";  
-    % Input directory
+%             in_dir = strcat(pwd, '/');
+%             out_dir = in_dir; 
     if samp_n > 0   % If working with sample 
         samp_data = importdata(strcat(in_dir, 'simdata_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n), '.mat'));
         already_done = isfile(strcat(out_dir, 'wsOFMM_latent_results_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n), '.mat'));
+%             already_done = false;
     else            % If working with population
         samp_data = importdata(strcat(in_dir, 'simdata_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'));
         already_done = isfile(strcat(out_dir, 'wsOFMM_latent_results_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'));
@@ -48,9 +50,10 @@ function wsOFMM_main_latent(scenario, sim_n, samp_n)
         OFMM_params = wtd_init_OFMM_params_latent(data_vars, k_max, alpha, eta);
 
         %% Initialize priors and variables for probit model
+        % Factor variable version
         q_dem = dummyvar(samp_data.true_Si);        % Matrix of demographic covariates in cell-means format. Default contains subpop.                               
         S = size(q_dem, 2);                         % Number of demographic covariates in the probit model
-        p_cov = k_max + S;                          % Number of covariates in probit model
+        p_cov = k_max * S;                          % Number of covariates in probit model
         mu_0 = normrnd(0, 1, [p_cov, 1]);           % Mean hyperparam drawn from MVN(0,1)
         Sig_0 = 1 ./ gamrnd(5/2, 2/5, [p_cov, 1]);  % Var hyperparam drawn from MVGamma(shape=5/2, scale=5/2)
         Sig_0 = diag(Sig_0);                        % Assume indep components. (pcov)x(pcov) matrix of variances. 
@@ -59,6 +62,8 @@ function wsOFMM_main_latent(scenario, sim_n, samp_n)
         %% Run adaptive sampler to obtain number of classes
         n_runs = 25000;  % Number of MCMC iterations
         burn = 15000;    % Burn-in period
+%                 n_runs = 250;  % Number of MCMC iterations
+%                 burn = 150;    % Burn-in period        
         thin = 5;        % Thinning factor
         [MCMC_out, ~, ~] = wtd_run_MCMC_latent(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_max, q_dem, p_cov, alpha, eta, mu_0, Sig_0, S);
         % Post-processing for adaptive sampler
@@ -82,7 +87,9 @@ function wsOFMM_main_latent(scenario, sim_n, samp_n)
         OFMM_params = wtd_init_OFMM_params_latent(data_vars, k_fixed, alpha, eta);
 
         % Initialize probit model using fixed number of classes
-        p_cov = k_fixed + S;                        % Number of covariates in probit model
+        % Factor variable version
+        p_cov = S * k_fixed;                          % Number of covariates; from interactions
+%                 p_cov = k_fixed + S;                        % Number of covariates in probit model
         mu_0 = normrnd(0, 1, [p_cov, 1]);           % Mean hyperparam drawn from MVN(0,1)
         Sig_0 = 1 ./ gamrnd(5/2, 2/5, [p_cov, 1]);  % Var hyperparam drawn from MVInvGamma(shape=5/2, scale=5/2)
         Sig_0 = diag(Sig_0);                        % Assume indep components. (pcov)x(pcov) matrix of variances. 
@@ -105,7 +112,21 @@ function wsOFMM_main_latent(scenario, sim_n, samp_n)
 
         %% Obtain posterior estimates, reduce number of classes, analyze results, and save output
         analysis = analyze_results_latent(MCMC_out, post_MCMC_out, data_vars, q_dem, S, p_cov);
-        % Save parameter estimates and analysis results
+%                 figure; %check ordered pi
+%                 plot(post_MCMC_out.pi) 
+%                 
+%                 figure; % check ordered theta
+%                 plot(post_MCMC_out.theta(:,1,1,1))
+%                 hold on
+%                 plot(post_MCMC_out.theta(:,1,1,2))
+%                 hold off
+%                 
+%                 figure; % check ordered xi
+%                 plot(post_MCMC_out.xi)
+% 
+%                 sum(abs(sort(samp_data.true_xi) - sort(analysis.xi_med)))
+
+        %% Save parameter estimates and analysis results
         if samp_n > 0  % If working with sample 
             save(strcat(out_dir, 'wsOFMM_latent_results_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'post_MCMC_out', 'analysis');
         else

@@ -11,7 +11,6 @@
 %   d_max: max number of consumption levels over all items
 %   d: vector of max number of levels for each food item; px1
 %   y: vector of outcomes; nx1
-%   wt: vector of survey weights; nx1
 %   wt_kappa: vector of normalized weights; nx1
 %   wt_kappa_mat: matrix of normalized weights, replicated across items; nxp
 %   lin_idx: vector of linear indices for unique item-response combos; (n*p)x1
@@ -21,7 +20,6 @@ function data_vars = wtd_get_data_vars_latent(samp_data)
     data_vars.d_max = max(data_vars.food(:));  % Max number of levels over all items
     data_vars.d = max(data_vars.food);         % Max number of levels for each food item. 
     data_vars.y = samp_data.Y_data;            % Outcome
-    data_vars.wt = samp_data.sample_wt;        % Survey weights
     
     % Normalized weights
     kappa = sum(samp_data.sample_wt) / data_vars.n;    % Normalization constant. If weights sum to N, this is 1/(sampl frac)

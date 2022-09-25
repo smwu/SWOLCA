@@ -15,6 +15,8 @@ function sample_SRS(scenario, sim_n, samp_n)
     end    
     in_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Toy_Example/";   % Input directory
     out_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Toy_Example/";  % Output directory
+    in_dir = strcat(pwd, "/");
+    out_dir = strcat(pwd, "/");
     % Load population simulated dataset
     load(strcat(in_dir, 'simdata_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'), 'sim_data')  
     
@@ -36,5 +38,11 @@ function sample_SRS(scenario, sim_n, samp_n)
     % Save sample data
     save(strcat(out_dir, 'simdata_scen', num2str(scenario + 4),'_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'sim_data');
 end
+ 
+% for samp_n = 1:20
+%     sample_SRS(1, 1, samp_n);
+% end  
 
-  
+% % Run in command window
+% sample_SRS(1, 1, 1);  
+% load(strcat(pwd, '/simdata_scen', num2str(5), '_iter', num2str(1), '_samp', num2str(1), '.mat'), 'sim_data')

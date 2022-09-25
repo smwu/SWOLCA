@@ -22,13 +22,16 @@ function wsOFMM_main_latent(scenario, sim_n, samp_n)
     % Input directory
     in_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/";   
     % Output directory 
-    out_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Results/Latent/";  
+    out_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Results/";  
+%             in_dir = strcat(pwd, '/');
+%             out_dir = in_dir; 
     if samp_n > 0   % If working with sample 
         samp_data = importdata(strcat(in_dir, 'simdata_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n), '.mat'));
-        already_done = isfile(strcat(out_dir, 'wsOFMM_results_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n), '.mat'));
+        already_done = isfile(strcat(out_dir, 'wsOFMM_latent_results_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n), '.mat'));
+%             already_done = false;
     else            % If working with population
         samp_data = importdata(strcat(in_dir, 'simdata_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'));
-        already_done = isfile(strcat(out_dir, 'wsOFMM_results_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'));
+        already_done = isfile(strcat(out_dir, 'wsOFMM_latent_results_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'));
     end
     
     % Run the model if the results file does not already exist
@@ -36,21 +39,23 @@ function wsOFMM_main_latent(scenario, sim_n, samp_n)
         % If the results file already exists, print out statement
         disp(strcat('Scenario ', num2str(scenario), ' iter ', num2str(sim_n), ' samp ', num2str(samp_n), ' already exists.'));
     else
+        
+        tic
         %% Get data variables
-        k_max = 50;    % Upper limit for number of classes
         data_vars = wtd_get_data_vars_latent(samp_data);
-
+        k_max = 30;    % Upper limit for number of classes
+        
         %% Initialize priors and variables for OFMM model
         sp_k = k_max;                   % Denom constant to restrict alpha size and num classes for OFMM model
         alpha = ones(1, k_max) / sp_k;  % Hyperparam for class membership probs. R package 'Zmix' allows diff options
         eta = ones(1, data_vars.d_max); % Hyperparam for item response probs. 
-        OFMM_params = init_OFMM_params_latent(data_vars, k_max, alpha, eta);
+        OFMM_params = wtd_init_OFMM_params_latent(data_vars, k_max, alpha, eta);
 
         %% Initialize priors and variables for probit model
+        % Factor variable version
         q_dem = dummyvar(samp_data.true_Si);        % Matrix of demographic covariates in cell-means format. Default contains subpop.                               
-        clear samp_data;                            % Reduce memory burden
         S = size(q_dem, 2);                         % Number of demographic covariates in the probit model
-        p_cov = k_max + S;                          % Number of covariates in probit model
+        p_cov = k_max * S;                          % Number of covariates in probit model
         mu_0 = normrnd(0, 1, [p_cov, 1]);           % Mean hyperparam drawn from MVN(0,1)
         Sig_0 = 1 ./ gamrnd(5/2, 2/5, [p_cov, 1]);  % Var hyperparam drawn from MVGamma(shape=5/2, scale=5/2)
         Sig_0 = diag(Sig_0);                        % Assume indep components. (pcov)x(pcov) matrix of variances. 
@@ -59,46 +64,77 @@ function wsOFMM_main_latent(scenario, sim_n, samp_n)
         %% Run adaptive sampler to obtain number of classes
         n_runs = 25000;  % Number of MCMC iterations
         burn = 15000;    % Burn-in period
+%                 n_runs = 250;  % Number of MCMC iterations
+%                 burn = 150;    % Burn-in period        
         thin = 5;        % Thinning factor
-        [MCMC_out, ~, ~] = wtd_run_MCMC_latent(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_max, q_dem, p_cov, alpha, eta, mu_0, Sig_0);
-        k_fixed = median(sum(MCMC_out.pi > 0.05, 2)); % Obtain fixed number of classes to use in the fixed sampler
-        clear OFMM_params probit_params MCMC_out;           % Reduce memory burden
+        [MCMC_out, ~, ~] = wtd_run_MCMC_latent(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_max, q_dem, p_cov, alpha, eta, mu_0, Sig_0, S);
+        % Post-processing for adaptive sampler
+        post_MCMC_out = post_process_latent(MCMC_out, data_vars, S);
+        % Array of posterior median item-response probs
+        theta_med_temp = reshape(median(post_MCMC_out.theta), [data_vars.p, post_MCMC_out.k_med, data_vars.d_max]);  
+        % Matrix of most likely consump level based on item-response probs, for each item and class across MCMC runs
+        [~, ind0] = max(theta_med_temp, [], 3); 
+        t_ind0 = transpose(ind0);
+        % Identify unique classes   
+        [~, ia, ~] = unique(t_ind0, 'rows');  % Vector of class indices corresponding to unique classes
+        k_fixed = length(ia);          % Number of unique classes
+        clear OFMM_params probit_params MCMC_out post_MCMC_out;  % Reduce memory burden
+                %k_fixed = round(median(sum(MCMC_out.pi > 0.05, 2))); % Obtain fixed number of classes to use in the fixed sampler
+                %clear OFMM_params probit_params MCMC_out;           % Reduce memory burden
 
         %% Run fixed sampler to obtain posteriors and save output
-        % Initialize OFMM model using fixed number of classes
+        % Initialize OFMM model using fixed number of classes  
         sp_k = k_fixed;                   % Denom constant to restrict alpha size and num classes for OFMM model
         alpha = ones(1, k_fixed) / sp_k;  % Hyperparam for class membership probs. R package 'Zmix' allows diff options
-        OFMM_params = init_OFMM_params_latent(data_vars, k_fixed, alpha, eta);
+        OFMM_params = wtd_init_OFMM_params_latent(data_vars, k_fixed, alpha, eta);
 
         % Initialize probit model using fixed number of classes
-        p_cov = k_fixed + S;                        % Number of covariates in probit model
+        % Factor variable version
+        p_cov = S * k_fixed;                          % Number of covariates; from interactions
+%                 p_cov = k_fixed + S;                        % Number of covariates in probit model
         mu_0 = normrnd(0, 1, [p_cov, 1]);           % Mean hyperparam drawn from MVN(0,1)
         Sig_0 = 1 ./ gamrnd(5/2, 2/5, [p_cov, 1]);  % Var hyperparam drawn from MVInvGamma(shape=5/2, scale=5/2)
         Sig_0 = diag(Sig_0);                        % Assume indep components. (pcov)x(pcov) matrix of variances. 
         probit_params = init_probit_params_latent(data_vars, k_fixed, q_dem, mu_0, Sig_0, OFMM_params);
 
         % Run MCMC algorithm using fixed number of classes
-        [MCMC_out, ~, ~] = wtd_run_MCMC_latent(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_fixed, q_dem, p_cov, alpha, eta, mu_0, Sig_0);
-        % Save MCMC output
-        if samp_n > 0  % If working with sample 
-            save(strcat(out_dir, 'wsOFMM_MCMC_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'MCMC_out');
-        else
-            save(strcat(out_dir, 'wsOFMM_MCMC_scen', num2str(scenario), '_iter', num2str(sim_n)), 'MCMC_out');
-        end    
+        [MCMC_out, ~, ~] = wtd_run_MCMC_latent(data_vars, OFMM_params, probit_params, n_runs, burn, thin, k_fixed, q_dem, p_cov, alpha, eta, mu_0, Sig_0, S);
+%         % Save MCMC output
+%         if samp_n > 0  % If working with sample 
+%             save(strcat(out_dir, 'wsOFMM_latent_MCMC_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'MCMC_out');
+%         else
+%             save(strcat(out_dir, 'wsOFMM_latent_MCMC_scen', num2str(scenario), '_iter', num2str(sim_n)), 'MCMC_out');
+%         end    
 
         %% Post-processing to recalibrate labels and remove extraneous empty classes
         post_MCMC_out = post_process_latent(MCMC_out, data_vars, S);
-        clear OFMM_params probit_params MCMC_out;  % Reduce memory burden
 
         %% Obtain posterior estimates, reduce number of classes, analyze results, and save output
-        analysis = analyze_results_latent(post_MCMC_out, data_vars, q_dem, S, p_cov);
-        % Save parameter estimates and analysis results
+        analysis = analyze_results_latent(MCMC_out, post_MCMC_out, data_vars, q_dem, S, p_cov);
+
+        runtime = toc;
+        
+%                 figure; %check ordered pi
+%                 plot(post_MCMC_out.pi) 
+%                 
+%                 figure; % check ordered theta
+%                 plot(post_MCMC_out.theta(:,1,1,1))
+%                 hold on
+%                 plot(post_MCMC_out.theta(:,1,1,2))
+%                 hold off
+%                 
+%                 figure; % check ordered xi
+%                 plot(post_MCMC_out.xi)
+% 
+%                 sum(abs(sort(samp_data.true_xi) - sort(analysis.xi_med)))
+
+        %% Save parameter estimates and analysis results
         if samp_n > 0  % If working with sample 
-            save(strcat(out_dir, 'wsOFMM_results_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'post_MCMC_out', 'analysis');
+            save(strcat(out_dir, 'wsOFMM_latent_results_scen', num2str(scenario), '_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'post_MCMC_out', 'analysis', 'runtime');
         else
-            save(strcat(out_dir, 'wsOFMM_results_scen', num2str(scenario), '_iter', num2str(sim_n)), 'post_MCMC_out', 'analysis');
+            save(strcat(out_dir, 'wsOFMM_latent_results_scen', num2str(scenario), '_iter', num2str(sim_n)), 'post_MCMC_out', 'analysis', 'runtime');
         end 
-    end  
+   end  
 end
 
 

@@ -20,7 +20,18 @@ function probit_params = init_probit_params_latent(data_vars, k_max, q_dem, mu_0
     
     % Probit model latent variable z_i 
     probit_params.z_i = zeros(data_vars.n, 1);   % Initialize latent probit variable, z_i
-    Q = [q_dem OFMM_params.x_ci];                % Design matrix with demographic covariates and initial latent classes
+    % Factor variable coding design matrix with demographic covariates and initial latent classes
+    S = size(q_dem, 2); 
+    Q = zeros(data_vars.n, S * k_max);
+    for s = 1:S
+        for k = 1:k_max
+            Q(:, ((s-1) * k_max) + k) = q_dem(:, s) .* OFMM_params.x_ci(:, k);
+        end
+    end
+%             % Reference cell coding design matrix with demographic covariates and initial latent classes
+%             q_design = horzcat(q_dem, OFMM_params.c_i);
+%             Q = x2fx(q_design, 'interaction', [1 2], [length(unique(q_dem)), k_max]);
+%             Q = [q_dem OFMM_params.x_ci];                % Design matrix with demographic covariates and initial latent classes
     lin_pred = Q * transpose(probit_params.xi);  % Linear predictor, Q*xi. Mean of truncated normal dist
     % For cases, z_i ~ TruncNormal(mean=Q*xi, var=1, low=0, high=Inf)
     probit_params.z_i(data_vars.y == 1) = truncnormrnd(1, lin_pred(data_vars.y == 1), 1, 0, Inf); 
@@ -39,9 +50,18 @@ function probit_params = init_probit_params_latent(data_vars, k_max, q_dem, mu_0
     % Probit likelihood component of posterior class membership P(c_i|-) with assumed classes
     probit_params.indiv_lik_probit_class = zeros(data_vars.n, k_max); % Initialize matrix of indiv probit likelihood assuming each class       
     for k = 1:k_max
-       q_class = zeros(data_vars.n, k_max);                  % Initialize design matrix for class membership
-       q_class(:, k) = ones(data_vars.n, 1);                 % Temporarily assign all indivs to class k
-       Q_temp = [q_dem q_class];                             % Form temporary covariate design matrix
+        % Factor variable coding temporarily assign all indivs to class k
+        Q_temp = zeros(data_vars.n, S * k_max);  % Initialize temp design matrix for class membership
+        for s = 1:S
+            Q_temp(:, ((s-1) * k_max) + k) = q_dem(:, s);         % Temporarily assign all indivs to class k
+        end
+%                % Reference cell coding temporarily assign all indivs to class k
+%                class_temp = ones(data_vars.n, 1) * k;
+%                q_design_temp = horzcat(q_dem, class_temp);
+%                Q_temp = x2fx(q_design_temp, 'interaction', [1 2], [length(unique(q_dem)), k_max]);
+%                q_class = zeros(data_vars.n, k_max);                  % Initialize design matrix for class membership
+%                q_class(:, k) = ones(data_vars.n, 1);                 % Temporarily assign all indivs to class k
+%                Q_temp = [q_dem q_class];                             % Form temporary covariate design matrix
        lin_pred_temp = Q_temp * transpose(probit_params.xi); % Linear predictor, Q*xi
        % Update indiv probit likelihood assuming class k
        probit_params.indiv_lik_probit_class(:, k) = normpdf(probit_params.z_i,lin_pred_temp,1).*((data_vars.y==1).*(probit_params.z_i>0)+(data_vars.y==0).*(probit_params.z_i<=0));

@@ -35,7 +35,7 @@ function [MCMC_out, OFMM_params, probit_params] = run_MCMC_latent(data_vars, OFM
     tic                  % Start timer
     for iter = 1:n_runs  % For each MCMC run
         % Update parameters and variables
-        [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, data_vars, OFMM_params, probit_params, thin, k_max, q_dem, alpha, eta, mu_0, Sig_0, iter);
+        [MCMC_out, OFMM_params, probit_params] = update_MCMC_latent(MCMC_out, data_vars, OFMM_params, probit_params, thin, k_max, q_dem, alpha, eta, mu_0, Sig_0, iter, S);
     
         % Relabel classes every 10 iterations to encourage mixing
         if mod(iter, 10) == 0

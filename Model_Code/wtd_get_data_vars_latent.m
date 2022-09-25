@@ -28,8 +28,8 @@ function data_vars = wtd_get_data_vars_latent(samp_data)
     
     % Item-response combinations with assumed class
     item_idx = repmat(1:data_vars.p, data_vars.n, 1);  % nxp matrix of item id's. Replicates 1:p row n times
-    item_idx = item_idx(:);                                 % cols of idz, concat by col into vector of length np. 1(x n),2(x n),...
-    x_idx = data_vars.food(:);                      % Food item responses as a long vector (corresponds to idz) 
+    item_idx = item_idx(:);                            % cols of idz, concat by col into vector of length np. 1(x n),2(x n),...
+    x_idx = data_vars.food(:);                         % Food item responses as a long vector (corresponds to idz) 
     % lin_idx: np vector of unique item-response (idz x y_d) combo indices
     % Each unique combo has corresp linear index. Those with same combo have same lin_idx value
     data_vars.lin_idx = sub2ind([data_vars.p, data_vars.d_max], item_idx, x_idx);

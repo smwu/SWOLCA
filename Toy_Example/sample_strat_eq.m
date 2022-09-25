@@ -16,6 +16,8 @@ function sample_strat_eq(scenario, sim_n, samp_n)
     end 
     in_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Toy_Example/";   % Input directory
     out_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Toy_Example/";  % Output directory 
+     in_dir = strcat(pwd, "/");
+     out_dir = strcat(pwd, "/");    
     % Load population simulated dataset
     load(strcat(in_dir, 'simdata_scen', num2str(scenario), '_iter', num2str(sim_n), '.mat'), 'sim_data')      
               
@@ -35,9 +37,13 @@ function sample_strat_eq(scenario, sim_n, samp_n)
     sample_data = sample_indivs(N_s, n_s, S, true, sim_data.true_Si, sim_data.true_Ci, sim_data.true_Li, sim_data.X_data, sim_data.Y_data, sim_data.true_Phi, sim_data.true_K, sim_data);
     sim_data = sample_data; 
     % Save sample data
-    save(strcat(out_dir, 'simdata_scen', num2str(scenario + 12),'_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'sim_data');
+    save(strcat(out_dir, 'simdata_scen', num2str(scenario + 8),'_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'sim_data');
 end  
 
 % Testing Code
 %     in_dir = "C:/Users/Lang/Documents/Harvard/Research/Briana/supRPC/wsOFMM/Toy_Example/";   % Input directory
 %     out_dir = "C:/Users/Lang/Documents/Harvard/Research/Briana/supRPC/wsOFMM/Toy_Example/";  % Output directory 
+%   
+% for samp_n = 1:20
+%     sample_strat_eq(20, 1, samp_n);
+% end  
