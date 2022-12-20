@@ -1,35 +1,48 @@
 data {
-  int K;  // number of clusters, known at the time of post-processing
-  int p;  // number of food items
-  int d;  // number of consumption levels
-  int n;  // number of subjects
-  int q;  // number of covariates in probit regression
-  array[n, p] int X;  // categorical food data
-  array[n] int y;  // binary outcome data
-  //real V[n, q]; // covariate design matrix for probit regression. Categorical variables listed before continuous
-  real V_k[n, q, K]; // covariate matrix where all units are assigned to k
+  int<lower=1> K;  // number of clusters, known at the time of post-processing
+  int<lower=1> p;  // number of food items
+  int<lower=1> d;  // number of consumption levels
+  int<lower=1> n;  // number of subjects
+  int<lower=1> q;  // number of covariates in probit regression
+  
+  array[n, p] int X;                // categorical food data
+  array[n] int<lower=0, upper=1> y; // binary outcome data
+  array[K] matrix[n, q] V_k;        // covariate matrix where all units are assigned to k
+  vector<lower=0>[n] weights;       // individual-level survey weights
+  
+  vector[K] alpha;         // hyperparameter for pi prior
+  array[K] vector[d] eta;  // hyperparameter for theta prior
+  vector[q] mu0;           // hyperparameter for mean of xi prior
+  cov_matrix[q] Sig0;      // hyperparameter for covariance of xi prior
 }
 parameters {
-  simplex[K] pi;  // cluster probabilities
-  real<lower=0, upper=1> theta[p, K, d];  // cluster-specific item consumption probabilities
-  real xi[q];  // regression coefficients
-  
+  simplex[K] pi;                // cluster probabilities
+  array[p, K] simplex[d] theta; // cluster-specific item consumption probabilities
+  vector[q] xi;                 // regression coefficients
 }
-model {
-  real log_lik[K];
+transformed parameters {
+  array[n] vector[K] log_cond_c; // log p(c_i=k| -)
   for (i in 1:n) {
-    for (k in 1:K) {
-      real log_mult_k;  // multinomial log-pmf for cluster k
-      for (j in 1:p) {
-        vector[d] theta_k = to_vector(theta[j,k,]);  // theta[j,k,] vector of consumption probabilities
-        log_mult_k += categorical_lpmf(X[i,j] | theta_k);
+    log_cond_c[i] = log(pi);
+    for (j in 1:p) {
+      for (k in 1:K) {
+        log_cond_c[i, k] = log_cond_c[i, k] + log(theta[j, k, X[i, j]])
+                            + bernoulli_lpmf(y[i] | Phi(to_row_vector(V_k[k, i]) * xi));
       }
-      log_lik[k] = log(pi[k]) + log_mult_k + 
-        bernoulli_lpmf(y[i] | Phi(to_row_vector(V_k[i, ,k]) * to_vector(xi)));
     }
-    target += log_sum_exp(log_lik);
   }
 }
-generated quantities {
-  real log_lik[K];
+model {
+  pi ~ dirichlet(alpha);  // prior for pi
+  for (j in 1:p) {        // prior for theta
+    for (k in 1:K) {
+      theta[j, k] ~ dirichlet(eta[k]);
+    }
+  }
+  xi ~ multi_normal(mu0, Sig0);
+
+  for (i in 1:n) {  // increment log-probability
+    target += weights[i] * log_sum_exp(log_cond_c[i]);
+  }
 }
+

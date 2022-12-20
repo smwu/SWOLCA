@@ -3,27 +3,47 @@ library(rstan)
 library(survey)
 library(tidyverse)
 library(R.matlab)
+library(plyr)
 set.seed(11152022)
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
-######### Helper functions ###################
-## 'grad_par()' helper function nested withi 'withReplicates()' to obtain gradient.
+#===================== Helper functions ========================================
+
+## 'grad_par()' helper function nested in 'withReplicates()' to obtain gradient.
 ## Stan will pass warnings from calling 0 chains, but will still create an 
 ## out_stan object for the 'grad_log_prob()' method
-grad_par <- function(pwts, svydata, stanmod, standata, par_stan, par_hat) {
+grad_par <- function(pwts, svydata, stanmod, standata, par_stan, upars) {
   standata$weights <- pwts
   out_stan <- sampling(object = stanmod, data = standata, pars = par_stan,
-                       chains = 0, warmup = 0)
-  gradpar <- grad_log_prob(out_stan, par_hat)
+                       chains = 0, iter = 0)
+  gradpar <- grad_log_prob(out_stan, upars)
   return(gradpar)
 }
 
 ## 'DEadj()' helper function to apply matrix rotation
 DEadj <- function(par, par_hat, R2R1) {
   par_adj <- (par - par_hat) %*% R2R1 + par_hat
+  par_adj <- as.vector(par_adj)
   return(par_adj)
 }
+
+# 'unconstrain' converts from constrained space to unconstrained space for one 
+# row, given input arrays of MCMC parameter output
+# Inputs:
+#   i: row index
+#   stan_model: stan model
+#   pi: MCMC matrix output for pi; M rows
+#   theta: MCMC array output for theta; dim 1 length = M
+#   xi: MCMC matrix output for xi: M rows
+# Output: vector of unconstrained parameters
+unconstrain <- function(i, stan_model, pi, theta, xi) {
+  upars <- unconstrain_pars(stan_model, list("pi" = pi[i,], 
+                                             "theta" = theta[i,,,], "xi" = xi[i,]))
+  return(upars)
+}
+
+#================= Read in data ===============================================
 
 setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
 data_dir <- "Data/"
@@ -33,9 +53,6 @@ model <- "wsOFMM"
 scen_samp <- 101
 iter_pop <- 1
 samp_n <- 1
-
-### ADD IN FOR LOOP ACROSS ITERATIONS
-### NEED SAMPLED DATA AS AN OUTPUT
 
 # Read in Matlab output
 sim_samp_path <- paste0(data_dir, "simdata_scen", scen_samp,"_iter", iter_pop, "_samp", samp_n, ".mat")
@@ -58,6 +75,8 @@ if (!file.exists(sim_samp_path) | !file.exists(sim_res_path)) {
   names(analysis) <- str_replace_all(dimnames(analysis)[[1]], "[.]", "_")
 } 
 
+#================= Create Stan data ============================================
+
 # Posterior estimates from MCMC sampler
 K <- c(analysis$k_red)
 p <- dim(analysis$theta_med)[1]
@@ -67,29 +86,71 @@ q <- length(analysis$xi_med)
 X <- sim_samp$X_data
 y <- c(sim_samp$Y_data)
 S <- 2
+weights <- c(sim_samp$sample_wt / sum(sim_samp$sample_wt) * n)
+n_chains <- 1
+
+alpha <- rep(1, K)/K
+eta <- matrix(1, nrow=K, ncol=d)
+mu0 <- rep(0, q)
+Sig0 <- diag(rep(1, q), nrow=q, ncol=q)
 
 # Change xi to reference cell coding 
 # No need to adjust for label switching
-xi_ref <- analysis$xi_med[1]
-for (i in 2:q) {
-  if (i < (K+S)) {
-    xi_ref[i] <- analysis$xi_med[i] - analysis$xi_med[1]
+#xi_ref <- analysis$xi_med[1]
+xi_red_ref <- analysis$xi_red
+for (v in 2:q) {
+  if (v < (K+S)) {
+    #xi_ref[v] <- analysis$xi_med[v] - analysis$xi_med[1]
+    xi_red_ref[, v] <- analysis$xi_red[, v] - analysis$xi_red[, 1]
   } else {
-    xi_ref[i] <- analysis$xi_med[i] - analysis$xi_med[K+S-1] - xi_ref[i - K]
+    #xi_ref[v] <- analysis$xi_med[v] - analysis$xi_med[K+S-1] - xi_ref[v - K]
+    xi_red_ref[, v] <- analysis$xi_red[, v] - analysis$xi_red[, K+S-1] - xi_red_ref[, v - K]
   }
 }
+xi_ref <- apply(xi_red_ref, 2, median)
 
+# Get posterior MCMC chains as a matrix with dimensions (M)x(# parameters)
 # Converting theta array to vector order: dim j -> dim k -> dim r
 # First 1:p for k=1 and d=1, then 1:p for k=2 and d=1, then 1:p for k=3 and d=1, 
 # then 1:p for k=1 and d=2, then 1:p for k=2 and d=2, then 1:p for k=3 and d=2,... 
-names_array <- array(1:(p*K*d), dim =c(p, K, d))
+M <- dim(analysis$pi_red)[1]
+theta_vectorized <- analysis$theta_red
+dim(theta_vectorized) <- c(M, p*K*d)
+par_samps <- cbind(analysis$pi_red, theta_vectorized, xi_red_ref)
+colnames(par_samps) <- c(paste0("pi", 1:K), 
+                         paste0("theta", 1:p, "_", rep(1:K, each=p), "_", rep(1:d, each=p*K)),
+                         paste0("xi", 1:q))
+
+# Get mean posterior parameter estimates
+par_hat_mean <- colMeans(par_samps)
+
+# Get median posterior parameter estimates
 par_hat <- c(analysis$pi_med, c(analysis$theta_med), xi_ref)
 names(par_hat) <- c(paste0("pi", 1:K), 
                     paste0("theta", 1:p, "_", rep(1:K, each=p), "_", rep(1:d, each=p*K)),
                     paste0("xi", 1:q))
-## Can I run grad_log_prob on a stan model with 0 chains? Yes, see grad_par function
-## How do I plug in the posterior estimates from the MCMC sampler? Use par_hat
 
+# true_pars <- c(0.64, 0.14, 0.22, c(sim_samp$true_global_thetas), 1,-2,-1,-0.5, 0.5, 0.5)
+# sum(abs(par_hat_mean - true_pars))
+# sum(abs(par_hat - true_pars))
+
+# Define probit design matrix
+probit_data <- data.frame(s = factor(sim_samp$true_Si),
+                          c = factor(analysis$c_i, levels=1:K))
+V <- model.matrix(~ c * s, data = probit_data)
+# Create array with assigned classes
+V_k <- array(NA, dim=c(K, n, q))
+for (k in 1:K) {
+  temp_data <- data.frame(s = factor(sim_samp$true_Si), 
+                          c = factor(rep(k, n), levels=1:K))
+  V_k[k, ,] <- model.matrix(~ c * s, data = temp_data) 
+}
+
+data_stan <- list(K = K, p = p, d = d, n = n, q = q, X = X, y = y, V_k = V_k,
+                  weights = weights, alpha = alpha, eta = eta, mu0 = mu0, Sig0 = Sig0)
+
+
+#=============== Run Stan model ================================================
 
 # Create Stan model
 mod_stan <- stan_model(paste0(analysis_dir, "mixture_model.stan"))
@@ -97,79 +158,159 @@ mod_stan <- stan_model(paste0(analysis_dir, "mixture_model.stan"))
 # Stan parameters of interest
 par_stan <- c('pi', 'theta', 'xi')  # subset of parameters interested in
 
-# Create Stan data
-
-# Define probit design matrix
-probit_data <- data.frame(s = sim_samp$true_Si,
-                          c = factor(analysis$c_i, levels=1:K))
-V <- model.matrix(~ c * s, data = probit_data)
-# Create array with assigned classes
-V_k <- array(NA, dim=c(n, q, K))
-for (k in 1:K) {
-  temp_data <- data.frame(s = sim_samp$true_Si, 
-                          c = factor(rep(k, n), levels=1:K))
-  V_k[, ,k] <- model.matrix(~ c * s, data = temp_data) 
-}
-
-data_stan <- list(K = K, p = p, d = d, n = n, q = q, X = X, y = y, V = V, V_k = V_k)
-
-
-# Create survey design
-svy_data <- data.frame(s = sim_samp$true_Si, 
-                       x = sim_samp$X_data,
-                       y = sim_samp$Y_data, 
-                       wts = sim_samp$sample_wt)
-svydes <- svydesign(ids = ~1, strata = ~s, weights = ~wts, data = svy_data)
-# create svrepdesign
-svyrep <- as.svrepdesign(design = svydes, type = ctrl_rep$type, 
-                         replicates = ctrl_rep$replicates)
-
 # Run Stan model
 # Stan will pass warnings from calling 0 chains, but will still create an 
 # out_stan object for the 'grad_log_prob()' method
 out_stan <- sampling(object = mod_stan, data = data_stan, pars = par_stan,
-                     chains = 0, warmup = 0)
-# 368 unconstrained parameters
-# adjust_transform = FALSE
-temp <- stan(file = paste0(analysis_dir, "mixture_model.stan"),
-             data = data_stan, 
-             iter = 100, chains = 4)
+                     chains = 0, iter = 0)
 
-upars <- unconstrain_pars(out_stan, list("pi" = c(analysis$pi_med),
-                                "theta" = analysis$theta_med,
-                                "xi" = xi_ref))
-grad_log_prob(out_stan, upars)
+#=============== Convert to unconstrained parameters ===========================
+
+# get dimension of unconstrained parameter space
+get_num_upars(out_stan)  #278 unconstrained, 369 constrained
+# convert params from constrained space to unconstrained space
+unc_par_hat <- unconstrain_pars(out_stan, list("pi" = c(analysis$pi_med),
+                                               "theta" = analysis$theta_med,
+                                               "xi" = xi_ref))
+# Unconstrained parameters for all MCMC samples
+unc_par_samps <- lapply(1:M, unconstrain, stan_model = out_stan,
+                       pi = analysis$pi_red, theta = analysis$theta_red, xi = xi_red_ref)
+unc_par_samps <- matrix(unlist(unc_par_samps), byrow = TRUE, nrow = M)
+
+#=============== Post-processing adjustment in unconstrained space =============
 
 # Estimate Hessian
-Hhat <- -1*optimHess(par_hat, 
-                     gr = function(x){grad_log_prob(out_stan, x, 
-                                                    adjust_transform = FALSE)})
+Hhat <- -1*optimHess(unc_par_hat, gr = function(x){grad_log_prob(out_stan, x)})
 
 # Estimate Jhat = Var(gradient)
 print('gradient evaluation')
 
+# Create survey design
+svy_data <- data.frame(s = sim_samp$true_Si, 
+                       x = X,
+                       y = y, 
+                       wts = weights)
+svydes <- svydesign(ids = ~1, strata = ~s, weights = ~wts, data = svy_data)
+# create svrepdesign
+svyrep <- as.svrepdesign(design = svydes, type = "mrbbootstrap", 
+                         replicates = 100)
+
 rep_temp <- withReplicates(design = svyrep, theta = grad_par, 
                            stanmod = mod_stan, standata = data_stan, 
-                           par_stan = par_stan, par_hat = par_hat)
+                           par_stan = par_stan, upars = unc_par_hat)
 Jhat <- vcov(rep_temp)
 
 # compute adjustment
 Hi <- solve(Hhat)
 V1 <- Hi %*% Jhat %*% Hi
-R1 <- chol(V1)
-R2i <- chol(Hi)
+# check issue with p.d. projection
+if (min(diag(V1)) < 0) {
+  print("V1 has negative variances")
+}
+if (min(diag(Hi)) < 0) {
+  print("Hi has negative variances")
+}
+# if matrices are not p.d. due to rounding issues, convert to nearest p.d. matrix
+# first, using method proposed in Higham (2002)
+if (min(eigen(V1)$values) < 1e-10) { 
+  V1_pd <- nearPD(V1)
+  R1 <- chol(V1_pd$mat)
+} else {
+  R1 <- chol(V1)
+}
+if (min(eigen(Hi)$values) < 1e-10) {
+  Hi_pd <- nearPD(Hi)
+  R2i <- chol(Hi_pd$mat)
+} else {
+  R2i <- chol(Hi)
+}
+# R1 <- chol(V1)
+# R2i <- chol(Hi)
 R2 <- solve(R2i)
 R2R1 <- R2 %*% R1
 
+# Combine chains together
+dim(unc_par_samps) <- c(M, n_chains*length(unc_par_hat))
+
 # Adjust samples
-par_adj <- aaply(par_samps, 1, DEadj, par_hat = par_hat, R2R1 = R2R1, 
-                 .drop = FALSE)
-
-output <- list(stan_fit = out_stan, sampled_params = par_samps, 
-               adjusted_params = par_adj)
+# unc_par_samps: posterior estimates from the MCMC samples in unconstrained space
+par_adj <- apply(unc_par_samps, 1, DEadj, par_hat = unc_par_hat, R2R1 = R2R1, simplify = FALSE)
+par_adj <- matrix(unlist(par_adj), byrow=TRUE, nrow=M)
 
 
+#=============== Convert adjusted to constrained space =========================
+
+# Constrained adjusted parameters for all MCMC samples
+pi_red_adj <- matrix(NA, nrow=M, ncol=K)
+theta_red_adj <- array(NA, dim=c(M, p, K, d))
+xi_red_ref_adj <- matrix(NA, nrow=M, ncol=q)
+for (i in 1:M) {
+  constr_pars <- constrain_pars(out_stan, par_adj[i,])
+  pi_red_adj[i, ] <- constr_pars$pi
+  theta_red_adj[i,,,] <- constr_pars$theta
+  xi_red_ref_adj[i, ] <- constr_pars$xi
+}
+
+# Change xi back to factor variable coding
+xi_red_adj <- xi_red_ref_adj
+for (v in 2:q) {
+  if (v < (K+S)) {
+    xi_red_adj[, v] <- xi_red_ref_adj[, 1] + xi_red_ref_adj[, v] 
+  } else {
+    xi_red_adj[, v] <- xi_red_adj[, K+S-1] + xi_red_ref_adj[, v - K] + xi_red_ref_adj[, v]
+  }
+}
+
+#=============== Output adjusted parameters ====================================
+pi_mean_adj <- colMeans(pi_red_adj)
+theta_mean_adj <- apply(theta_red_adj, c(2,3,4), mean)
+xi_mean_adj <- colMeans(xi_red_adj)
+
+adjusted <- list(pi_red_adj = pi_red_adj, theta_red_adj = theta_red_adj, 
+                 xi_red_adj = xi_red_adj, 
+                 pi_mean_adj = pi_mean_adj, theta_mean_adj = theta_mean_adj, 
+                 xi_mean_adj = xi_mean_adj)
+
+
+#=============== MISC EXTRA CODE ===============================================
+#temp_par_samps <- rstan::extract(out_stan, pars = par_stan, permuted = FALSE)
+
+#pars <- constrain_pars(out_stan, upars)
+#grad_constr <- grad_log_prob(out_stan, upars = upars, adjust_transform = FALSE)
+# grad_unconstr <- grad_log_prob(out_stan, upars = upars)
+# grad_constr <- constrain_pars(out_stan, grad_unconstr)
+
+# HHat_list <- list()
+# for (i in 1500:2000) {
+#   temp_upars <- unconstrain_pars(out_stan, list("pi" = c(analysis$pi_red[i,]),
+#                                                "theta" = analysis$theta_red[i,,,],
+#                                                "xi" = analysis$xi_red[i,]))
+#   temp_HHat <- -1*optimHess(temp_upars, gr = function(x){grad_log_prob(out_stan, x)})
+#   HHat_list[[i]] <- temp_HHat
+# }
+# HHat_MCMC <- Reduce("+", HHat_list) / length(HHat_list)
+# Hi_MCMC <- solve(HHat_MCMC)
   
-  
 
+# # aaply: split array by rows (margins=1) and apply function DEadj to get 
+# # adjusted version of each piece. Resulting array has same dimensions as input: 
+# # (#iter)x(#chains)x(#params)
+# # unc_par_samps: posterior estimates from the MCMC samples in unconstrained space
+# # unc_par_hat: posterior point estimates in unconstrained space; parameter for DEadj function
+# # R2R1: projection matrix to apply adjustment; parameter for DEadj function
+# par_adj <- aaply(unc_par_samps, 1, DEadj, par_hat = unc_par_hat, R2R1 = R2R1, 
+#                  .drop = FALSE)
 
+# # 'constrain' converts from unconstrained space to constrained space for one 
+# # row, given input MCMC matrix of unconstrained adjusted parameters
+# # Inputs:
+# #   i: row index
+# #   stan_model: stan model
+# #   upars_mat: MCMC matrix of unconstrained parameters 
+# # Output: vector of constrained parameters
+# constrain <- function(i, stan_model, upars_mat) {
+#   constr_pars <- constrain_pars(stan_model, upars_mat[i,])
+#   return(list(pi = constr_pars$pi, theta = constr_pars$theta, xi = constr_pars$xi))
+# }
+# 
+# constr_par_samps <- lapply(1:M, constrain, stan_model = out_stan, upars_mat = par_adj)
