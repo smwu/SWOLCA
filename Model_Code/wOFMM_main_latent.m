@@ -92,12 +92,15 @@ function wOFMM_main_latent(scenario, sim_n, samp_n)
         Q_ref.Properties.VariableNames = ["S_i", "c_i", "y"];
         fit = fitglm(Q_ref, 'y ~ S_i*c_i', 'Distribution', 'binomial', 'link', 'probit');
         coefs = fit.Coefficients.Estimate;
+        ci = coefCI(fit);
         % Convert to factor variable coding from reference cell coding
         S = length(unique(samp_data.true_Si));
         analysis.xi_med = zeros(1, S * analysis.k_red);
         for s = 1:S
             for c = 1:analysis.k_red
                 analysis.xi_med((s-1)*analysis.k_red + c) = coefs(1) + (c ~= 1)*coefs(S+(c-1)) + (s ~= 1)*coefs(s) + (c ~= 1)*(s ~= 1)*coefs(S + (analysis.k_red-1) + (c-1));
+                analysis.xi_med_lb((s-1)*analysis.k_red + c) = ci(1,1) + (c ~= 1)*ci(S+(c-1),1) + (s ~= 1)*ci(s,1) + (c ~= 1)*(s ~= 1)*ci(S + (analysis.k_red-1) + (c-1),1);
+                analysis.xi_med_ub((s-1)*analysis.k_red + c) = ci(1,2) + (c ~= 1)*ci(S+(c-1),2) + (s ~= 1)*ci(s,2) + (c ~= 1)*(s ~= 1)*ci(S + (analysis.k_red-1) + (c-1),2);
             end
         end
         
