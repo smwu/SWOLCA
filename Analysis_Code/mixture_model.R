@@ -1,9 +1,24 @@
-library(csSampling)
-library(rstan)
+##First read in the arguments listed at the command line
+args = commandArgs(trailingOnly=TRUE)
+##args is now a list of character vectors
+## First check to see if arguments are passed.
+## Then cycle through each element of the list and evaluate the expressions.
+if(length(args)==0){
+  print("No arguments supplied.")
+  R_seq <- 1  # sample iteration
+}else{
+  R_seq <- args[1]
+}
+print(paste0("Sample: ", R_seq))
+
 library(survey)
 library(tidyverse)
 library(R.matlab)
 library(plyr)
+#remove.packages(c("StanHeaders", "rstan"))
+#install.packages("StanHeaders", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+#install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+library(rstan)
 set.seed(11152022)
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
@@ -16,7 +31,7 @@ options(mc.cores = parallel::detectCores())
 grad_par <- function(pwts, svydata, stanmod, standata, par_stan, upars) {
   standata$weights <- pwts
   out_stan <- sampling(object = stanmod, data = standata, pars = par_stan,
-                       chains = 0, iter = 0)
+                       chains = 0, iter = 0, refresh = 0)
   gradpar <- grad_log_prob(out_stan, upars)
   return(gradpar)
 }
@@ -44,7 +59,7 @@ unconstrain <- function(i, stan_model, pi, theta, xi) {
 }
 
 #================= Main post-processing adjustment function ====================
-coverage_adj <- function(analysis, sim_samp, stan_mod_file, sim_adj_path) {
+coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   
   #================= Create Stan data ==========================================
   
@@ -118,9 +133,6 @@ coverage_adj <- function(analysis, sim_samp, stan_mod_file, sim_adj_path) {
   
   #=============== Run Stan model ==============================================
   
-  # Create Stan model
-  mod_stan <- stan_model(paste0(analysis_dir, stan_mod_file))
-  
   # Stan parameters of interest
   par_stan <- c('pi', 'theta', 'xi')  # subset of parameters interested in
   
@@ -128,7 +140,7 @@ coverage_adj <- function(analysis, sim_samp, stan_mod_file, sim_adj_path) {
   # Stan will pass warnings from calling 0 chains, but will still create an 
   # out_stan object for the 'grad_log_prob()' method
   out_stan <- sampling(object = mod_stan, data = data_stan, pars = par_stan,
-                       chains = 0, iter = 0)
+                       chains = 0, iter = 0, refresh = 0)
   
   #=============== Convert to unconstrained parameters =========================
   
@@ -178,13 +190,13 @@ coverage_adj <- function(analysis, sim_samp, stan_mod_file, sim_adj_path) {
   }
   # if matrices are not p.d. due to rounding issues, convert to nearest p.d. matrix
   # first, using method proposed in Higham (2002)
-  if (min(eigen(V1)$values) < 1e-10) { 
+  if (min(Re(eigen(V1)$values)) < 1e-10) { 
     V1_pd <- nearPD(V1)
     R1 <- chol(V1_pd$mat)
   } else {
     R1 <- chol(V1)
   }
-  if (min(eigen(Hi)$values) < 1e-10) {
+  if (min(Re(eigen(Hi)$values)) < 1e-10) {
     Hi_pd <- nearPD(Hi)
     R2i <- chol(Hi_pd$mat)
   } else {
@@ -204,6 +216,8 @@ coverage_adj <- function(analysis, sim_samp, stan_mod_file, sim_adj_path) {
   par_adj <- matrix(unlist(par_adj), byrow=TRUE, nrow=M)
   
   #=============== Convert adjusted to constrained space =======================
+  
+  print("preparing output")
   
   # Constrained adjusted parameters for all MCMC samples
   pi_red_adj <- matrix(NA, nrow=M, ncol=K)
@@ -250,47 +264,75 @@ coverage_adj <- function(analysis, sim_samp, stan_mod_file, sim_adj_path) {
   return(analysis)
 }
 
+
+
+#=== Function to read data and apply post-processing adjustment for all samples
+
+run_adj_samples <- function(data_dir, res_dir, analysis_dir, iter_pop, scen_samp,
+                            model, R_seq, mod_stan) {
+  for (i in 1:length(R_seq)) { 
+    samp_n = R_seq[i]
+    print(samp_n)
+    # File name for adjusted output
+    sim_adj_path <- paste0(res_dir, model, "_latent_results_adj_scen", scen_samp, 
+                           "_iter", iter_pop, "_samp", samp_n, ".RData")
+    
+    # Read in Matlab output
+    sim_samp_path <- paste0(data_dir, "simdata_scen", scen_samp,"_iter", iter_pop, "_samp", samp_n, ".mat")
+    sim_res_path <- paste0(res_dir, model, "_latent_results_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".mat")
+    if (!file.exists(sim_samp_path) | !file.exists(sim_res_path)) {
+      if (!file.exists(sim_samp_path)) {
+        print(paste0("File does not exist: simdata_scen", scen_samp,"_iter", iter_pop, "_samp", samp_n))
+      }
+      if (!file.exists(sim_res_path)) {
+        print(paste0("File does not exist: ", model, "_latent_results_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".mat"))
+      }
+    } else if (file.exists(sim_adj_path)) { # do nothing if adjusted file exists
+      print(paste0("File already exists: ", model, "_latent_results_adj_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".RData"))
+    } else {
+      # Load simulated sample data for the iteration
+      sim_samp <- readMat(sim_samp_path)$sim.data
+      names(sim_samp) <- str_replace_all(dimnames(sim_samp)[[1]], "[.]", "_")
+      
+      # Load model output and extract analysis portion
+      output <- readMat(sim_res_path)
+      analysis <- output$analysis
+      names(analysis) <- str_replace_all(dimnames(analysis)[[1]], "[.]", "_")
+      
+      adjusted <- coverage_adj(analysis=analysis, sim_samp=sim_samp, 
+                               mod_stan=mod_stan, sim_adj_path=sim_adj_path) 
+    }
+  } 
+}
+
 #===== Read in data and apply post-processing adjustment for all samples========
-setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Analysis_Code/")
+setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
 #setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
 data_dir <- "Data/"
 res_dir <- "Results/"
 analysis_dir <- "Analysis_Code/"
-model <- "wsOFMM"
-scen_samp <- 101
 iter_pop <- 1
+scen_samp <- 101
+model <- "wsOFMM"
 R_seq=1:100
-stan_mod_file <- "mixture_model.stan"
-sim_adj_path <- paste0(res_dir, model, "_latent_results_adj_scen", scen_samp, 
-                       "_iter", iter_pop, "_samp", samp_n, ".RData")
-#samp_n <- 1
 
-for (i in 1:R) { 
-  samp_n = R_seq[i]
-  
-  # Read in Matlab output
-  sim_samp_path <- paste0(data_dir, "simdata_scen", scen_samp,"_iter", iter_pop, "_samp", samp_n, ".mat")
-  sim_res_path <- paste0(res_dir, model, "_latent_results_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".mat")
-  if (!file.exists(sim_samp_path) | !file.exists(sim_res_path)) {
-    if (!file.exists(sim_samp_path)) {
-      print(paste0("File does not exist: simdata_scen", scen_samp,"_iter", iter_pop, "_samp", samp_n))
-    }
-    if (!file.exists(sim_res_path)) {
-      print(paste0("File does not exist: ", model, "_latent_results_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".mat"))
-    }
-  } else {
-    # Load simulated sample data for the iteration
-    sim_samp <- readMat(sim_samp_path)$sim.data
-    names(sim_samp) <- str_replace_all(dimnames(sim_samp)[[1]], "[.]", "_")
-    
-    # Load model output and extract analysis portion
-    output <- readMat(sim_res_path)
-    analysis <- output$analysis
-    names(analysis) <- str_replace_all(dimnames(analysis)[[1]], "[.]", "_")
-  }
-  
-  adjusted <- coverage_adj(analysis, sim_samp, stan_mod_file, sim_adj_path) 
-} 
+#samp_n <- 1
+# Create Stan model
+mod_stan <- stan_model(paste0(analysis_dir, "mixture_model.stan"))
+
+start_time <- Sys.time()
+run_adj_samples(data_dir=data_dir, res_dir=res_dir, analysis_dir=anaysis_dir, 
+                iter_pop=iter_pop, scen_samp=scen_samp, model=model, R_seq=R_seq, 
+                mod_stan = mod_stan)
+end_time <- Sys.time()
+print(paste0("Runtime SRS: ", end_time - start_time))
+
+start_time <- Sys.time()
+run_adj_samples(data_dir=data_dir, res_dir=res_dir, analysis_dir=anaysis_dir, 
+                iter_pop=iter_pop, scen_samp=201, model=model, R_seq=R_seq, 
+                mod_stan = mod_stan)
+end_time <- Sys.time()
+print(paste0("Runtime Strat: ", end_time - start_time))
 
 
 #=============== MISC EXTRA CODE ===============================================
@@ -311,7 +353,7 @@ for (i in 1:R) {
 # }
 # HHat_MCMC <- Reduce("+", HHat_list) / length(HHat_list)
 # Hi_MCMC <- solve(HHat_MCMC)
-  
+
 
 # # aaply: split array by rows (margins=1) and apply function DEadj to get 
 # # adjusted version of each piece. Resulting array has same dimensions as input: 

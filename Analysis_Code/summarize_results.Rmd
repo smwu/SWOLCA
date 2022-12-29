@@ -1,7 +1,7 @@
 ---
 title: "Results Summary"
 author: "Stephanie Wu"
-date: "9/20/2022"
+date: "12/26/2022"
 output:
   html_document: default
   pdf_document: default
@@ -292,7 +292,7 @@ GeomHpline <- ggproto("GeomHpline", GeomSegment,
 #   theta_cover_avg: if coverage = TRUE, coverage of theta estimate
 #   xi_cover_avg: if coverage = TRUE, coverage of xi estimate
 get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, model, 
-                    coverage = TRUE, adjust = TRUE,
+                    coverage = TRUE, adjust = FALSE,
                     posthoc=FALSE, plot_pi=TRUE, plot_theta=TRUE, plot_xi=TRUE) {
   R <- length(R_seq)  # Number of samples
   
@@ -334,6 +334,7 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
   # For each sample iteration
   for (i in 1:R) { 
     samp_n = R_seq[i]
+    print(samp_n)
     
     sim_samp_path <- paste0(data_dir, "simdata_scen", scen_samp,"_iter", iter_pop, "_samp", samp_n, ".mat")
     sim_res_path <- paste0(res_dir, model, "_latent_results_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".mat")
@@ -345,25 +346,36 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
         print(paste0("File does not exist: ", model, "_latent_results_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".mat"))
       }
     } else {
+      # Load simulated sample data for the iteration
+      sim_samp <- readMat(sim_samp_path)$sim.data
+      names(sim_samp) <- str_replace_all(dimnames(sim_samp)[[1]], "[.]", "_")
       
       # If post-processing adjustment has been applied, use the adjusted RData
       if (adjust) {
         sim_adj_path <- paste0(res_dir, model, "_latent_results_adj_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".RData")
-        load(sim_adj_path)
+        if (!file.exists(sim_adj_path)) {
+          print(paste0("File does not exist: ", model, "_latent_results_adj_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".RData"))
+        } else {
+          #print("Using adjusted file for sample ", samp_n)
+          load(sim_adj_path)
+        }
+        
       # If no post-processing, read in Matlab data
       } else {
-        # Load simulated sample data for the iteration
-        sim_samp <- readMat(sim_samp_path)$sim.data
-        names(sim_samp) <- str_replace_all(dimnames(sim_samp)[[1]], "[.]", "_")
-        
         # Load model output and extract analysis portion
         output <- readMat(sim_res_path)
         analysis <- output$analysis
         names(analysis) <- str_replace_all(dimnames(analysis)[[1]], "[.]", "_")
       }
       
-      # If number of classes is incorrect, fill remaining components with 0's
+      true_K <- as.vector(sim_pop$true_K)
       S <- length(unique(sim_samp$true_Si))
+      M <- dim(analysis$theta_red)[1]
+      p <- dim(analysis$theta_red)[2]
+      d <- dim(analysis$theta_red)[4]
+      K <- sim_pop$true_K
+      
+      # If number of classes is incorrect, fill remaining components with 0's
       if (analysis$k_red > sim_pop$true_K) {
         extra <- analysis$k_red - sim_pop$true_K
         true_params$true_pi <- c(true_params$true_pi, rep(0, extra))
@@ -375,11 +387,21 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
         analysis$pi_med <- c(analysis$pi_med, rep(0, missing))
         analysis$xi_med <- c(analysis$xi_med, rep(0, missing*S))
         filler <- array(0, dim=c(dim(analysis$theta_med)[1], missing, dim(analysis$theta_med)[3]))
-        analysis$theta_med <- abind(analysis$theta_med, filler, along = 2)      
+        analysis$theta_med <- abind(analysis$theta_med, filler, along = 2)  
+        
+        if (coverage) {
+          analysis$pi_red <- abind(analysis$pi_red, array(0, dim=c(M, missing)), along=2)
+          analysis$theta_red <- abind(analysis$theta_red, array(0, dim=c(M, p, missing, d)), along = 3)
+          if (model == "wOFMM") {
+            analysis$xi_med_lb <- c(analysis$xi_med_lb, rep(0, missing*S))
+            analysis$xi_med_ub <- c(analysis$xi_med_ub, rep(0, missing*S))
+          } else {
+            analysis$xi_red <- abind(analysis$xi_red, array(0, dim=c(M, missing*S)), along = 2)
+          }
+        }
       }
-      
-      true_K <- as.vector(sim_pop$true_K)
-      
+
+            
       ########### Distance estimates for MSE ###############
       ##### Number of classes, K
       K_dist[samp_n] <- (analysis$k_red - sim_pop$true_K)^2
@@ -437,13 +459,20 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
         }
         
         ##### xi
-        # With factor variable coding
-        xi_red_perm <- analysis$xi_red
-        for (s in 1:S) {
-          xi_red_perm[ , (s-1)*true_K + (1:true_K)] <- analysis$xi_red[ , (s-1)*true_K + order]
+        if (model == "wOFMM") {
+          # For two-step model, 'coefCI(fitglm)' is used in the matlab code to 
+          # extract CI from the regression model
+          xi_CI <- rbind(analysis$xi_med_lb, analysis$xi_med_ub)
+        } else {
+          # With factor variable coding
+          xi_red_perm <- analysis$xi_red
+          for (s in 1:S) {
+            xi_red_perm[ , (s-1)*true_K + (1:true_K)] <- analysis$xi_red[ , (s-1)*true_K + order]
+          }
+          # Obtain credible intervals for each of the K true clusters
+          xi_CI <- apply(xi_red_perm, 2, function(x) quantile(x, c(0.025, 0.975)))
         }
-        # Obtain credible intervals for each of the K true clusters
-        xi_CI <- apply(xi_red_perm, 2, function(x) quantile(x, c(0.025, 0.975)))
+
         # Assign 1 if interval covers true value, 0 if not
         xi_cover[samp_n, ] <- ifelse((true_params$true_xi >= xi_CI[1,]) & 
                                        (true_params$true_xi <= xi_CI[2,]), 1, 0)        
@@ -648,6 +677,83 @@ ggarrange(pi_plot, theta_plot, nrow = 1, common.legend = TRUE, legend = "top")
 xi_plot
 ```
 
+
+### Coverage plots for adjusted
+```{r, echo=FALSE, cache=TRUE}
+data_dir <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/"
+res_dir <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Results/"
+scen_pop=1
+scen_samp=101
+iter_pop=1
+R_seq=1:100
+posthoc=FALSE
+coverage = TRUE
+plot_pi =TRUE
+plot_theta=TRUE
+plot_xi=TRUE
+
+MSE_SRS_ws <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_samp=101, 
+                      iter_pop=iter_pop, R_seq=R_seq, model="wsOFMM", adjust = TRUE)
+MSE_SRS_s <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_samp=101, 
+                      iter_pop=iter_pop, R_seq=R_seq, model="sOFMM")
+MSE_SRS_unsup <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_samp=101, 
+                        iter_pop=iter_pop, R_seq=R_seq, model="wOFMM")
+MSE_Strat_ws <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_samp=201, 
+                        iter_pop=iter_pop, R_seq=R_seq, model="wsOFMM", adjust = TRUE)
+MSE_Strat_s <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_samp=201, 
+                       iter_pop=iter_pop, R_seq=R_seq, model="sOFMM")
+MSE_Strat_unsup <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_samp=201, 
+                           iter_pop=iter_pop, R_seq=R_seq, model="wOFMM")
+
+plot_pi_cov <- data.frame(
+  coverage = c(MSE_SRS_s$pi_cover_avg, MSE_SRS_ws$pi_cover_avg, 
+               MSE_Strat_s$pi_cover_avg, MSE_Strat_ws$pi_cover_avg),
+  pi = rep(c("pi (k=1)", "pi (k=2)", "pi (k=3)"), times=4),
+  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)"), each=3), times=2),
+  sampling = rep(c("SRS", "Stratified"), each=6)
+)
+pi_plot <- plot_pi_cov %>%  ggplot(aes(x=pi, y=coverage, color=model)) +
+  theme_bw() +
+  labs(x = expression(pi), y = "Coverage", color = "Model") +
+  geom_point(size=2.5, position = position_dodge(0.3)) + 
+  geom_hline(aes(yintercept=0.95)) +
+  scale_y_continuous(limits=c(0,1), breaks=sort(c(seq(0, 1, length.out=5), 0.95))) + 
+  facet_grid(~sampling)
+
+plot_theta_cov <- data.frame(
+  coverage = c(MSE_SRS_s$theta_cover_avg, MSE_SRS_ws$theta_cover_avg, 
+               MSE_Strat_s$theta_cover_avg, MSE_Strat_ws$theta_cover_avg),
+  theta = rep(c("theta_1", "theta_2", "theta_3"), times=4),
+  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)"), each=3), times=2),
+  sampling = rep(c("SRS", "Stratified"), each=6)
+)
+theta_plot <- plot_theta_cov %>%  ggplot(aes(x=theta, y=coverage, color=model)) +
+  theme_bw() +
+  labs(x = expression(theta), y = "Coverage", color = "Model") +
+  geom_point(size=2.5, position = position_dodge(0.3)) + 
+  geom_hline(aes(yintercept=0.95)) +
+  scale_y_continuous(limits=c(0,1), breaks=sort(c(seq(0, 1, length.out=5), 0.95))) + 
+  facet_grid(~sampling)
+
+plot_xi_cov <- data.frame(
+  coverage = c(MSE_SRS_s$xi_cover_avg, MSE_SRS_ws$xi_cover_avg, 
+               MSE_Strat_s$xi_cover_avg, MSE_Strat_ws$xi_cover_avg),
+  xi = rep(c("xi_1", "xi_2", "xi_3", "xi_4", "xi_5", "xi_6"), times=4),
+  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)"), each=6), times=2),
+  sampling = rep(c("SRS", "Stratified"), each=12)
+)
+xi_plot <- plot_xi_cov %>%  ggplot(aes(x=xi, y=coverage, color=model)) +
+  theme_bw() +
+  labs(x = expression(xi), y = "Coverage", color = "Model") +
+  geom_point(size=2.5, position = position_dodge(0.3)) + 
+  geom_hline(aes(yintercept=0.95)) +
+  scale_y_continuous(limits=c(0,1), breaks=sort(c(seq(0, 1, length.out=5), 0.95))) + 
+  facet_grid(~sampling)
+
+
+ggarrange(pi_plot, theta_plot, nrow = 1, common.legend = TRUE, legend = "top")
+xi_plot
+```
 
 ### Plot pi as grouped boxplot over iterations
 
