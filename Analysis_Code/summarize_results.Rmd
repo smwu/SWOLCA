@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
-setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Analysis_Code/")
+setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
 #setwd("C:/Users/Lang/Documents/Harvard/Research/Briana/supRPC/wsOFMM/Toy_Example/")
 
 library(R.matlab)
@@ -706,11 +706,11 @@ MSE_Strat_unsup <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_
                            iter_pop=iter_pop, R_seq=R_seq, model="wOFMM")
 
 plot_pi_cov <- data.frame(
-  coverage = c(MSE_SRS_s$pi_cover_avg, MSE_SRS_ws$pi_cover_avg, 
-               MSE_Strat_s$pi_cover_avg, MSE_Strat_ws$pi_cover_avg),
-  pi = rep(c("pi (k=1)", "pi (k=2)", "pi (k=3)"), times=4),
-  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)"), each=3), times=2),
-  sampling = rep(c("SRS", "Stratified"), each=6)
+  coverage = c(MSE_SRS_s$pi_cover_avg, MSE_SRS_ws$pi_cover_avg, MSE_SRS_unsup$pi_cover_avg, 
+               MSE_Strat_s$pi_cover_avg, MSE_Strat_ws$pi_cover_avg, MSE_Strat_unsup$pi_cover_avg),
+  pi = rep(c("pi (k=1)", "pi (k=2)", "pi (k=3)"), times=6),
+  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)", "WOLCA (Unsupervised)"), each=3), times=2),
+  sampling = rep(c("SRS", "Stratified"), each=9)
 )
 pi_plot <- plot_pi_cov %>%  ggplot(aes(x=pi, y=coverage, color=model)) +
   theme_bw() +
@@ -721,11 +721,11 @@ pi_plot <- plot_pi_cov %>%  ggplot(aes(x=pi, y=coverage, color=model)) +
   facet_grid(~sampling)
 
 plot_theta_cov <- data.frame(
-  coverage = c(MSE_SRS_s$theta_cover_avg, MSE_SRS_ws$theta_cover_avg, 
-               MSE_Strat_s$theta_cover_avg, MSE_Strat_ws$theta_cover_avg),
-  theta = rep(c("theta_1", "theta_2", "theta_3"), times=4),
-  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)"), each=3), times=2),
-  sampling = rep(c("SRS", "Stratified"), each=6)
+  coverage = c(MSE_SRS_s$theta_cover_avg, MSE_SRS_ws$theta_cover_avg, MSE_SRS_unsup$theta_cover_avg,
+               MSE_Strat_s$theta_cover_avg, MSE_Strat_ws$theta_cover_avg, MSE_Strat_unsup$theta_cover_avg),
+  theta = rep(c("theta_1", "theta_2", "theta_3"), times=6),
+  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)", "WOLCA (Unsupervised)"), each=3), times=2),
+  sampling = rep(c("SRS", "Stratified"), each=9)
 )
 theta_plot <- plot_theta_cov %>%  ggplot(aes(x=theta, y=coverage, color=model)) +
   theme_bw() +
@@ -736,14 +736,15 @@ theta_plot <- plot_theta_cov %>%  ggplot(aes(x=theta, y=coverage, color=model)) 
   facet_grid(~sampling)
 
 plot_xi_cov <- data.frame(
-  coverage = c(MSE_SRS_s$xi_cover_avg, MSE_SRS_ws$xi_cover_avg, 
-               MSE_Strat_s$xi_cover_avg, MSE_Strat_ws$xi_cover_avg),
-  xi = rep(c("xi_1", "xi_2", "xi_3", "xi_4", "xi_5", "xi_6"), times=4),
-  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)"), each=6), times=2),
-  sampling = rep(c("SRS", "Stratified"), each=12)
+  coverage = c(MSE_SRS_s$xi_cover_avg, MSE_SRS_ws$xi_cover_avg, MSE_SRS_unsup$xi_cover_avg,
+               MSE_Strat_s$xi_cover_avg, MSE_Strat_ws$xi_cover_avg, MSE_Strat_unsup$xi_cover_avg),
+  xi = rep(c("xi_1", "xi_2", "xi_3", "xi_4", "xi_5", "xi_6"), times=6),
+  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)", "WOLCA (Unsupervised)"), each=6), times=2),
+  sampling = rep(c("SRS", "Stratified"), each=18)
 )
 xi_plot <- plot_xi_cov %>%  ggplot(aes(x=xi, y=coverage, color=model)) +
   theme_bw() +
+  theme(legend.position="top") +
   labs(x = expression(xi), y = "Coverage", color = "Model") +
   geom_point(size=2.5, position = position_dodge(0.3)) + 
   geom_hline(aes(yintercept=0.95)) +
