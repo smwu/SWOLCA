@@ -432,9 +432,6 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
       
       ############ Coverage probabilities #################
       if (coverage) {
-        M <- dim(analysis$theta_red)[1]
-        p <- dim(analysis$theta_red)[2]
-        K <- sim_pop$true_K
         
         ##### pi
         # Obtain credible intervals for each of the K true clusters
@@ -462,7 +459,11 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
         if (model == "wOFMM") {
           # For two-step model, 'coefCI(fitglm)' is used in the matlab code to 
           # extract CI from the regression model
-          xi_CI <- rbind(analysis$xi_med_lb, analysis$xi_med_ub)
+          xi_CI_unord <- rbind(analysis$xi_med_lb, analysis$xi_med_ub)
+          xi_CI <- xi_CI_unord
+          for (s in 1:S) {
+            xi_CI[, (s-1)*true_K + (1:true_K)] <- xi_CI_unord[, (s-1)*true_K + order]
+          }
         } else {
           # With factor variable coding
           xi_red_perm <- analysis$xi_red
