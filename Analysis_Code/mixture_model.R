@@ -1,21 +1,9 @@
-# ##First read in the arguments listed at the command line
-# args = commandArgs(trailingOnly=TRUE)
-# ##args is now a list of character vectors
-# ## First check to see if arguments are passed.
-# ## Then cycle through each element of the list and evaluate the expressions.
-# if(length(args)==0){
-#   print("No arguments supplied.")
-#   R_seq <- 1  # sample iteration
-# }else{
-#   R_seq <- args[1]
-# }
-# print(paste0("Sample: ", R_seq))
-
 library(survey)
 library(tidyverse)
 library(R.matlab)
 library(plyr)
 library(fastDummies)
+# Uncomment these lines if mixture_model.stan has syntax errors
 #remove.packages(c("StanHeaders", "rstan"))
 #install.packages("StanHeaders", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
 #install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
@@ -60,6 +48,17 @@ unconstrain <- function(i, stan_model, pi, theta, xi) {
 }
 
 #================= Main post-processing adjustment function ====================
+# 'coverage_adj' applies the post-processing adjustment to one iteration of the
+# model parameters and saves the adjusted results in an .RData file
+# Inputs:
+#   analysis: model output
+#   sim_samp: dataset
+#   mod_stan: stan model
+#   sim_adj_path: path for adjusted file
+# Outputs: saves the adjusted results in an .RData file and outputs list with:
+#   analysis: model output with adjusted estimates replacing original estimates
+#   neg_V1_Hi: vector of length 2 taking on value 1 if any negative variances 
+#              V1 and Hi respectively
 coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   
   #================= Create Stan data ==========================================
@@ -170,10 +169,13 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   Hi <- solve(Hhat)
   V1 <- Hi %*% Jhat %*% Hi
   # check issue with p.d. projection
+  neg_V1_Hi <- numeric(2)
   if (min(diag(V1)) < 0) {
+    neg_V1_Hi[1] <- 1
     print("V1 has negative variances")
   }
   if (min(diag(Hi)) < 0) {
+    neg_V1_Hi[2] <- 1
     print("Hi has negative variances")
   }
   # if matrices are not p.d. due to rounding issues, convert to nearest p.d. matrix
@@ -234,15 +236,29 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   
   # Save and return results
   save(analysis, file = sim_adj_path)
-  return(analysis)
+  return(list(analysis=analysis, neg_V1_Hi=neg_V1_Hi))
 }
 
 
 
 #=== Function to read data and apply post-processing adjustment for all samples
-
+# 'run_adj_samples' applies the post-processing adjustment to all iterations of
+# the simulated data
+# Inputs:
+#   data_dir: directory where data is stored
+#   res_dir: directory where model results are stored
+#   analysis_dir: directory where analysis code is stored
+#   iter_pop: numeric population iteration, usually 1
+#   scen_samp: scenario denoting sampling design
+#   model: model type, one of "sOFMM", "wsOFMM", or "wOFMM"
+#   R_seq: numeric sequence listing simulation scenarios
+#   mod_stan: stan model
 run_adj_samples <- function(data_dir, res_dir, analysis_dir, iter_pop, scen_samp,
                             model, R_seq, mod_stan) {
+  # Track which iterations have negative matrix diagonals
+  # Col 1 is V1, col 2 is Hi
+  neg_V1_Hi_var <- matrix(0, nrow=length(R_seq), ncol=2)
+  
   for (i in 1:length(R_seq)) { 
     samp_n = R_seq[i]
     print(samp_n)
@@ -273,14 +289,18 @@ run_adj_samples <- function(data_dir, res_dir, analysis_dir, iter_pop, scen_samp
       names(analysis) <- str_replace_all(dimnames(analysis)[[1]], "[.]", "_")
       
       adjusted <- coverage_adj(analysis=analysis, sim_samp=sim_samp, 
-                               mod_stan=mod_stan, sim_adj_path=sim_adj_path) 
+                               mod_stan=mod_stan, sim_adj_path=sim_adj_path)
+      neg_V1_Hi_var[samp_n, ] <- adjusted$neg_V1_Hi
     }
-  } 
+  }
+  return(neg_V1_Hi_var)
 }
 
+
 #===== Read in data and apply post-processing adjustment for all samples========
+
 # setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
-setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
+#setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
 #setwd("/Users/Stephanie/Documents/GitHub/wsOFMM")
 data_dir <- "Data/"
 res_dir <- "Results/"
@@ -294,19 +314,25 @@ R_seq=1:100
 # Create Stan model
 mod_stan <- stan_model(paste0(analysis_dir, "mixture_model.stan"))
 
-start_time <- Sys.time()
-run_adj_samples(data_dir=data_dir, res_dir=res_dir, analysis_dir=anaysis_dir, 
-                iter_pop=iter_pop, scen_samp=scen_samp, model=model, R_seq=R_seq, 
-                mod_stan = mod_stan)
-end_time <- Sys.time()
-print(paste0("Runtime SRS: ", end_time - start_time))
+# SRS: Scenario 101
+start_time101 <- Sys.time()
+out101 <- run_adj_samples(data_dir=data_dir, res_dir=res_dir, analysis_dir=anaysis_dir, 
+                          iter_pop=iter_pop, scen_samp=scen_samp, model=model, 
+                          R_seq=R_seq, mod_stan = mod_stan)
+end_time101 <- Sys.time()
+# Stratified: Scenario 201
+start_time201 <- Sys.time()
+out201 <- run_adj_samples(data_dir=data_dir, res_dir=res_dir, analysis_dir=anaysis_dir, 
+                          iter_pop=iter_pop, scen_samp=201, model=model, 
+                          R_seq=R_seq, mod_stan = mod_stan)
+end_time201 <- Sys.time()
 
-start_time <- Sys.time()
-run_adj_samples(data_dir=data_dir, res_dir=res_dir, analysis_dir=anaysis_dir, 
-                iter_pop=iter_pop, scen_samp=201, model=model, R_seq=R_seq, 
-                mod_stan = mod_stan)
-end_time <- Sys.time()
-print(paste0("Runtime Strat: ", end_time - start_time))
+print(paste0("Runtime SRS: ", end_time101 - start_time101))
+colSums(out101)
+print(out101)
+print(paste0("Runtime Strat: ", end_time201 - start_time201))
+colSums(out201)
+print(out201)
 
 
 #=============== MISC EXTRA CODE ===============================================
