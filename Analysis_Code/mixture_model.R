@@ -1,20 +1,21 @@
-##First read in the arguments listed at the command line
-args = commandArgs(trailingOnly=TRUE)
-##args is now a list of character vectors
-## First check to see if arguments are passed.
-## Then cycle through each element of the list and evaluate the expressions.
-if(length(args)==0){
-  print("No arguments supplied.")
-  R_seq <- 1  # sample iteration
-}else{
-  R_seq <- args[1]
-}
-print(paste0("Sample: ", R_seq))
+# ##First read in the arguments listed at the command line
+# args = commandArgs(trailingOnly=TRUE)
+# ##args is now a list of character vectors
+# ## First check to see if arguments are passed.
+# ## Then cycle through each element of the list and evaluate the expressions.
+# if(length(args)==0){
+#   print("No arguments supplied.")
+#   R_seq <- 1  # sample iteration
+# }else{
+#   R_seq <- args[1]
+# }
+# print(paste0("Sample: ", R_seq))
 
 library(survey)
 library(tidyverse)
 library(R.matlab)
 library(plyr)
+library(fastDummies)
 #remove.packages(c("StanHeaders", "rstan"))
 #install.packages("StanHeaders", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
 #install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
@@ -80,21 +81,6 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   mu0 <- rep(0, q)
   Sig0 <- diag(rep(1, q), nrow=q, ncol=q)
   
-  # Change xi to reference cell coding 
-  # No need to adjust for label switching
-  #xi_ref <- analysis$xi_med[1]
-  xi_red_ref <- analysis$xi_red
-  for (v in 2:q) {
-    if (v < (K+S)) {
-      #xi_ref[v] <- analysis$xi_med[v] - analysis$xi_med[1]
-      xi_red_ref[, v] <- analysis$xi_red[, v] - analysis$xi_red[, 1]
-    } else {
-      #xi_ref[v] <- analysis$xi_med[v] - analysis$xi_med[K+S-1] - xi_ref[v - K]
-      xi_red_ref[, v] <- analysis$xi_red[, v] - analysis$xi_red[, K+S-1] - xi_red_ref[, v - K]
-    }
-  }
-  xi_ref <- apply(xi_red_ref, 2, median)
-  
   # Get posterior MCMC chains as a matrix with dimensions (M)x(# parameters)
   # Converting theta array to vector order: dim j -> dim k -> dim r
   # First 1:p for k=1 and d=1, then 1:p for k=2 and d=1, then 1:p for k=3 and d=1, 
@@ -102,7 +88,7 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   M <- dim(analysis$pi_red)[1]
   theta_vectorized <- analysis$theta_red
   dim(theta_vectorized) <- c(M, p*K*d)
-  par_samps <- cbind(analysis$pi_red, theta_vectorized, xi_red_ref)
+  par_samps <- cbind(analysis$pi_red, theta_vectorized, analysis$xi_red)
   colnames(par_samps) <- c(paste0("pi", 1:K), 
                            paste0("theta", 1:p, "_", rep(1:K, each=p), "_", rep(1:d, each=p*K)),
                            paste0("xi", 1:q))
@@ -111,21 +97,23 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   par_hat_mean <- colMeans(par_samps)
   
   # Get median posterior parameter estimates
-  par_hat <- c(analysis$pi_med, c(analysis$theta_med), xi_ref)
+  par_hat <- c(analysis$pi_med, c(analysis$theta_med), analysis$xi_med)
   names(par_hat) <- c(paste0("pi", 1:K), 
                       paste0("theta", 1:p, "_", rep(1:K, each=p), "_", rep(1:d, each=p*K)),
                       paste0("xi", 1:q))
   
-  # Define probit design matrix
-  probit_data <- data.frame(s = factor(sim_samp$true_Si),
-                            c = factor(analysis$c_i, levels=1:K))
-  V <- model.matrix(~ c * s, data = probit_data)
+  # Create probit design matrix from dummy variables
+  dummy_s <- dummy_cols(data.frame(s = factor(sim_samp$true_Si)), 
+                        remove_selected_columns = TRUE)
+  dummy_c <- dummy_cols(data.frame(c = factor(analysis$c_i, levels=1:K)), 
+                        remove_selected_columns = TRUE)
+  V <- as.data.frame(apply(dummy_s, 2, function(col) t(col) * dummy_c))
   # Create array with assigned classes
   V_k <- array(NA, dim=c(K, n, q))
   for (k in 1:K) {
-    temp_data <- data.frame(s = factor(sim_samp$true_Si), 
-                            c = factor(rep(k, n), levels=1:K))
-    V_k[k, ,] <- model.matrix(~ c * s, data = temp_data) 
+    temp_c <- dummy_cols(data.frame(c = factor(rep(k, n), levels=1:K)), 
+                         remove_selected_columns = TRUE)
+    V_k[k, ,] <- array(unlist(apply(dummy_s, 2, function(col) t(col) * temp_c)), c(n,q))
   }
   
   data_stan <- list(K = K, p = p, d = d, n = n, q = q, X = X, y = y, V_k = V_k,
@@ -149,10 +137,10 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   # convert params from constrained space to unconstrained space
   unc_par_hat <- unconstrain_pars(out_stan, list("pi" = c(analysis$pi_med),
                                                  "theta" = analysis$theta_med,
-                                                 "xi" = xi_ref))
+                                                 "xi" = c(analysis$xi_med)))
   # Unconstrained parameters for all MCMC samples
   unc_par_samps <- lapply(1:M, unconstrain, stan_model = out_stan,
-                          pi = analysis$pi_red, theta = analysis$theta_red, xi = xi_red_ref)
+                          pi = analysis$pi_red, theta = analysis$theta_red, xi = analysis$xi_red)
   unc_par_samps <- matrix(unlist(unc_par_samps), byrow = TRUE, nrow = M)
   
   #=============== Post-processing adjustment in unconstrained space ===========
@@ -222,42 +210,27 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   # Constrained adjusted parameters for all MCMC samples
   pi_red_adj <- matrix(NA, nrow=M, ncol=K)
   theta_red_adj <- array(NA, dim=c(M, p, K, d))
-  xi_red_ref_adj <- matrix(NA, nrow=M, ncol=q)
+  xi_red_adj <- matrix(NA, nrow=M, ncol=q)
   for (i in 1:M) {
     constr_pars <- constrain_pars(out_stan, par_adj[i,])
     pi_red_adj[i, ] <- constr_pars$pi
     theta_red_adj[i,,,] <- constr_pars$theta
-    xi_red_ref_adj[i, ] <- constr_pars$xi
-  }
-  
-  # Change xi back to factor variable coding
-  xi_red_adj <- xi_red_ref_adj
-  for (v in 2:q) {
-    if (v < (K+S)) {
-      xi_red_adj[, v] <- xi_red_ref_adj[, 1] + xi_red_ref_adj[, v] 
-    } else {
-      xi_red_adj[, v] <- xi_red_adj[, K+S-1] + xi_red_ref_adj[, v - K] + xi_red_ref_adj[, v]
-    }
+    xi_red_adj[i, ] <- constr_pars$xi
   }
   
   #=============== Output adjusted parameters ==================================
   
-  pi_mean_adj <- colMeans(pi_red_adj)
-  theta_mean_adj <- apply(theta_red_adj, c(2,3,4), mean)
-  xi_mean_adj <- colMeans(xi_red_adj)
-  
-  # adjusted <- list(pi_red_adj = pi_red_adj, theta_red_adj = theta_red_adj, 
-  #                  xi_red_adj = xi_red_adj, 
-  #                  pi_mean_adj = pi_mean_adj, theta_mean_adj = theta_mean_adj, 
-  #                  xi_mean_adj = xi_mean_adj)
+  pi_med_adj <- apply(pi_red_adj, 2, median)
+  theta_med_adj <- apply(theta_red_adj, c(2,3,4), median)
+  xi_med_adj <- apply(xi_red_adj, 2, median)
   
   # Replace estimates with adjusted versions
   analysis$pi_red <- pi_red_adj
   analysis$theta_red <- theta_red_adj
   analysis$xi_red <- xi_red_adj
-  analysis$pi_med <- pi_mean_adj
-  analysis$theta_med <- theta_mean_adj
-  analysis$xi_med <- xi_mean_adj
+  analysis$pi_med <- pi_med_adj
+  analysis$theta_med <- theta_med_adj
+  analysis$xi_med <- xi_med_adj
   
   # Save and return results
   save(analysis, file = sim_adj_path)
@@ -306,8 +279,9 @@ run_adj_samples <- function(data_dir, res_dir, analysis_dir, iter_pop, scen_samp
 }
 
 #===== Read in data and apply post-processing adjustment for all samples========
-setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
-#setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
+# setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
+setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
+#setwd("/Users/Stephanie/Documents/GitHub/wsOFMM")
 data_dir <- "Data/"
 res_dir <- "Results/"
 analysis_dir <- "Analysis_Code/"
