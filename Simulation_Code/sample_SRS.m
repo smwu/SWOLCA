@@ -8,11 +8,7 @@
 % Outputs a simulated sample dataset
 function sample_SRS(sim_n, scenario, samp_n)
     %% Specifications
-    if samp_n >1  % If more than one sample per iteration, set seed based on sample
-        rng(samp_n, 'twister');                        
-    else          % If only one sample per iteration, set seed based on iteration
-        rng(sim_n, 'twister');
-    end    
+    rng(samp_n, 'twister');                            
     in_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/";   % Input directory
     out_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/";  % Output directory
 %             in_dir = strcat(pwd, "/");
@@ -39,7 +35,7 @@ function sample_SRS(sim_n, scenario, samp_n)
     save(strcat(out_dir, 'simdata_scen', num2str(scenario + 100),'_iter', num2str(sim_n), '_samp', num2str(samp_n)), 'sim_data');
 end
  
-% for samp_n = 1:20
+% for samp_n = 1:100
 %     sample_SRS(1, 1, samp_n);
 % end  
 

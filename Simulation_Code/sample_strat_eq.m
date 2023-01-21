@@ -9,11 +9,7 @@
 % Outputs a simulated sample dataset
 function sample_strat_eq(sim_n, scenario, samp_n)
     %% Specifications
-    if samp_n >1  % If more than one sample per iteration, set seed based on sample
-        rng(samp_n, 'twister');                        
-    else          % If only one sample per iteration, set seed based on iteration
-        rng(sim_n, 'twister');
-    end 
+    rng(samp_n, 'twister');                        
     in_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/";   % Input directory
     out_dir = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/";  % Output directory 
 %          in_dir = strcat(pwd, "/");
