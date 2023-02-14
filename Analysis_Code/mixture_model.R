@@ -3,10 +3,11 @@ library(tidyverse)
 library(R.matlab)
 library(plyr)
 library(fastDummies)
-# Uncomment these lines if mixture_model.stan has syntax errors
-#remove.packages(c("StanHeaders", "rstan"))
-#install.packages("StanHeaders", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
-#install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+# # Uncomment these lines if mixture_model.stan has syntax errors
+# remove.packages(c("StanHeaders", "rstan"))
+# if (file.exists(".RData")) file.remove(".RData")
+# install.packages("StanHeaders", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+# install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
 library(rstan)
 set.seed(11152022)
 rstan_options(auto_write = TRUE)
@@ -299,7 +300,7 @@ run_adj_samples <- function(data_dir, res_dir, analysis_dir, iter_pop, scen_samp
 
 #===== Read in data and apply post-processing adjustment for all samples========
 
-# setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
+setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
 #setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
 #setwd("/Users/Stephanie/Documents/GitHub/wsOFMM")
 data_dir <- "Data/"

@@ -1,7 +1,7 @@
 ---
 title: "Results Summary"
 author: "Stephanie Wu"
-date: "1/4/2023"
+date: "2/12/2023"
 output:
   html_document: default
   pdf_document: default
@@ -581,6 +581,7 @@ scen_pop=1
 scen_samp=101
 iter_pop=1
 R_seq=1:100
+R <- length(R_seq)
 posthoc=FALSE
 coverage = TRUE
 plot_pi =TRUE
@@ -588,13 +589,13 @@ plot_theta=TRUE
 plot_xi=TRUE
 
 MSE_SRS_ws <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_samp=101, 
-                      iter_pop=iter_pop, R_seq=R_seq, model="wsOFMM")
+                      iter_pop=iter_pop, R_seq=R_seq, model="wsOFMM", adjust=TRUE)
 MSE_SRS_s <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_samp=101, 
                       iter_pop=iter_pop, R_seq=R_seq, model="sOFMM")
 MSE_SRS_unsup <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_samp=101, 
                         iter_pop=iter_pop, R_seq=R_seq, model="wOFMM")
 MSE_Strat_ws <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_samp=201, 
-                        iter_pop=iter_pop, R_seq=R_seq, model="wsOFMM")
+                        iter_pop=iter_pop, R_seq=R_seq, model="wsOFMM", adjust=TRUE)
 MSE_Strat_s <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_samp=201, 
                        iter_pop=iter_pop, R_seq=R_seq, model="sOFMM")
 MSE_Strat_unsup <- get_MSE(data_dir=data_dir, res_dir=res_dir, scen_pop=1, scen_samp=201, 
@@ -765,11 +766,9 @@ scen_pop=1
 iter_pop=1
 sim_pop <- readMat(paste0(data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".mat"))$sim.data
 names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
-
 # Obtain true observed population parameters
 true_params <- get_true_params(sim_pop)
 
-R <- length(R_seq)
 pi_plot_data <- as.data.frame(rbind(MSE_Strat_s$pi_all,  MSE_Strat_ws$pi_all, MSE_Strat_unsup$pi_all))
 if (any(is.na(pi_plot_data))) {
   colnames(pi_plot_data) <- paste0("pi_", 1:ncol(pi_plot_data))
@@ -813,6 +812,13 @@ if (any(is.na(pi_plot_data))) {
 ### Plot xi over 100 iterations
 
 ```{r, echo=FALSE}
+data_dir <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/"
+scen_pop=1
+iter_pop=1
+sim_pop <- readMat(paste0(data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".mat"))$sim.data
+names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
+# Obtain true observed population parameters
+true_params <- get_true_params(sim_pop)
 xi_plot_data <- as.data.frame(rbind(MSE_Strat_s$xi_all,  MSE_Strat_ws$xi_all, MSE_Strat_unsup$xi_all))
 colnames(xi_plot_data) <- paste0("xi_", 1:ncol(xi_plot_data))
 xi_plot_data$Model <- c(rep("sOFMM", times=R), rep("wsOFMM", times=R), rep("wOFMM", times=R))
@@ -830,9 +836,41 @@ ggplot(xi_plot_data, aes(x=xi_component, y=value, fill=Model)) +
 
 ```
 
+```{r, echo=FALSE}
+data_dir <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/"
+scen_pop=1
+iter_pop=1
+sim_pop <- readMat(paste0(data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".mat"))$sim.data
+names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
+# Obtain true observed population parameters
+true_params <- get_true_params(sim_pop)
+xi_plot_data <- as.data.frame(rbind(MSE_SRS_s$xi_all,  MSE_SRS_ws$xi_all, MSE_SRS_unsup$xi_all))
+colnames(xi_plot_data) <- paste0("xi_", 1:ncol(xi_plot_data))
+xi_plot_data$Model <- c(rep("sOFMM", times=R), rep("wsOFMM", times=R), rep("wOFMM", times=R))
+xi_plot_data <- xi_plot_data %>% gather("xi_component", "value", -Model)
+ggplot(xi_plot_data, aes(x=xi_component, y=value, fill=Model)) +
+  theme_bw() +
+  geom_boxplot() +
+  geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_xi[1], yend=true_params$true_xi[1]),color="forestgreen") +
+  geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_xi[2], yend=true_params$true_xi[2]),color="forestgreen") +
+  geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_xi[3], yend=true_params$true_xi[3]),color="forestgreen") +
+  geom_segment(mapping=aes(x=3.5, xend=4.5, y=true_params$true_xi[4], yend=true_params$true_xi[4]),color="forestgreen") +
+  geom_segment(mapping=aes(x=4.5, xend=5.5, y=true_params$true_xi[5], yend=true_params$true_xi[5]),color="forestgreen") +
+  geom_segment(mapping=aes(x=5.5, xend=6.5, y=true_params$true_xi[6], yend=true_params$true_xi[6]),color="forestgreen") +
+  ggtitle("Parameter estimation for xi under simple random sampling, \ndisplayed across 100 samples")
+
+```
+
 ### Plot Phi over 100 iterations
 
 ```{r, echo=FALSE}
+data_dir <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/Data/"
+scen_pop=1
+iter_pop=1
+sim_pop <- readMat(paste0(data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".mat"))$sim.data
+names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
+# Obtain true observed population parameters
+true_params <- get_true_params(sim_pop)
 Phi_plot_data <- as.data.frame(rbind(pnorm(MSE_Strat_s$xi_all),  pnorm(MSE_Strat_ws$xi_all), 
                                      pnorm(MSE_Strat_unsup$xi_all)))
 colnames(Phi_plot_data) <- c("(S=1,C=1)", "(S=1,C=2)", "(S=1,C=3)", "(S=2,C=1)", "(S=2,C=2)", "(S=2,C=3)")
