@@ -43,12 +43,13 @@ DEadj <- function(par, par_hat, R2R1) {
 # row, given input arrays of MCMC parameter output
 # Inputs:
 #   i: row index
+#   K: number of classes
 #   stan_model: stan model
 #   pi: MCMC matrix output for pi; M rows
 #   theta: MCMC array output for theta; dim 1 length = M
 #   xi: MCMC matrix output for xi: M rows
 # Output: vector of unconstrained parameters
-unconstrain <- function(i, stan_model, pi, theta, xi) {
+unconstrain <- function(i, K, stan_model, pi, theta, xi) {
   xi_mat <- matrix(xi[i,], byrow = FALSE, nrow = K)
   upars <- unconstrain_pars(stan_model, list("pi" = pi[i,], 
                                              "theta" = theta[i,,,], 
@@ -127,7 +128,7 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
                                                  "theta" = analysis$theta_med,
                                                  "xi" = c(analysis$xi_med)))
   # Unconstrained parameters for all MCMC samples
-  unc_par_samps <- lapply(1:M, unconstrain, stan_model = out_stan,
+  unc_par_samps <- lapply(1:M, unconstrain, stan_model = out_stan, K = K, 
                           pi = analysis$pi_red, theta = analysis$theta_red, 
                           xi = analysis$xi_red)
   unc_par_samps <- matrix(unlist(unc_par_samps), byrow = TRUE, nrow = M)
@@ -246,7 +247,8 @@ run_adj_samples <- function(data_dir, res_dir, analysis_dir, iter_pop, scen_samp
                             model, R_seq, mod_stan) {
   # Track which iterations have negative matrix diagonals
   # Col 1 is V1, col 2 is Hi
-  neg_V1_Hi_var <- matrix(0, nrow=length(R_seq), ncol=2)
+  neg_V1_Hi_var <- matrix(NA, nrow=max(R_seq), ncol=2)
+  neg_V1_Hi_var[R_seq, ] <- 0
   
   for (i in 1:length(R_seq)) { 
     samp_n = R_seq[i]
@@ -317,10 +319,10 @@ out201 <- run_adj_samples(data_dir=data_dir, res_dir=res_dir, analysis_dir=anays
 end_time201 <- Sys.time()
 
 print(paste0("Runtime SRS: ", end_time101 - start_time101))
-colSums(out101)
+colSums(out101, na.rm = TRUE)
 print(out101)
 print(paste0("Runtime Strat: ", end_time201 - start_time201))
-colSums(out201)
+colSums(out201, na.rm = TRUE)
 print(out201)
 
 
