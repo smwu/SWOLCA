@@ -7,7 +7,8 @@ data {
   
   array[n, p] int X;                // categorical food data
   array[n] int<lower=0, upper=1> y; // binary outcome data
-  array[K] matrix[n, q] V_k;        // covariate matrix where all units are assigned to k
+  vector[n] c;      // class assignments
+  array[n, q] real V;        // covariate matrix excluding class assignment
   vector<lower=0>[n] weights;       // individual-level survey weights
   
   vector[K] alpha;         // hyperparameter for pi prior
@@ -18,16 +19,15 @@ data {
 parameters {
   simplex[K] pi;                // cluster probabilities
   array[p, K] simplex[d] theta; // cluster-specific item consumption probabilities
-  vector[q] xi;                 // regression coefficients
+  array[K] vector[q] xi;                 // regression coefficients
 }
 transformed parameters {
   array[n] vector[K] log_cond_c; // log p(c_i=k| -)
   for (i in 1:n) {
-    log_cond_c[i] = log(pi);
     for (j in 1:p) {
       for (k in 1:K) {
-        log_cond_c[i, k] = log_cond_c[i, k] + log(theta[j, k, X[i, j]])
-                            + bernoulli_lpmf(y[i] | Phi(to_row_vector(V_k[k, i]) * xi));
+        log_cond_c[i, k] = log(pi[k]) + log(theta[j, k, X[i, j]])
+                            + bernoulli_lpmf(y[i] | Phi(to_row_vector(V[i, ]) * xi[k]));
       }
     }
   }
@@ -39,7 +39,9 @@ model {
       theta[j, k] ~ dirichlet(eta[k]);
     }
   }
-  xi ~ multi_normal(mu0, Sig0);
+  for (k in 1:K) {
+    xi[k] ~ multi_normal(mu0, Sig0);
+  }
 
   for (i in 1:n) {  // increment log-probability
     target += weights[i] * log_sum_exp(log_cond_c[i]);

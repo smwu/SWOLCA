@@ -8,6 +8,8 @@ library(fastDummies)
 #install.packages("StanHeaders", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
 #install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
 library(rstan)
+library(abind)
+
 set.seed(11152022)
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
@@ -25,7 +27,11 @@ grad_par <- function(pwts, svydata, stanmod, standata, par_stan, upars) {
   return(gradpar)
 }
 
-## 'DEadj()' helper function to apply matrix rotation
+#' Helper function to apply matrix rotation
+#' @param par unadjusted parameter estimates
+#' @param par_hat unadjusted mean parameter estimates
+#' @param R2R1 adjustment matrix
+#' @return adjusted parameter estimates
 DEadj <- function(par, par_hat, R2R1) {
   par_adj <- (par - par_hat) %*% R2R1 + par_hat
   par_adj <- as.vector(par_adj)
@@ -42,8 +48,10 @@ DEadj <- function(par, par_hat, R2R1) {
 #   xi: MCMC matrix output for xi: M rows
 # Output: vector of unconstrained parameters
 unconstrain <- function(i, stan_model, pi, theta, xi) {
+  xi_mat <- matrix(xi[i,], byrow = FALSE, nrow = K)
   upars <- unconstrain_pars(stan_model, list("pi" = pi[i,], 
-                                             "theta" = theta[i,,,], "xi" = xi[i,]))
+                                             "theta" = theta[i,,,], 
+                                             "xi" = xi_mat))
   return(upars)
 }
 
@@ -67,14 +75,21 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   K <- c(analysis$k_red)
   p <- dim(analysis$theta_med)[1]
   d <- dim(analysis$theta_med)[3]
+  M <- dim(analysis$theta_red)[1]
   n <- length(analysis$c_i)
   q <- length(analysis$xi_med)
-  X <- sim_samp$X_data
-  y <- c(sim_samp$Y_data)
-  S <- length(unique(sim_samp$true_Si))
-  weights <- c(sim_samp$sample_wt / sum(sim_samp$sample_wt) * n)
-  n_chains <- 1
+  x_mat <- sim_samp$X_data
+  y_all <- c(sim_samp$Y_data)
+  s_all <- sim_samp$true_Si
+  S <- length(unique(s_all))
+  s_mat <- dummy_cols(data.frame(s = factor(sim_samp$true_Si)), 
+                      remove_selected_columns = TRUE)
+  q <- S  # number of additional covariates other than class assignment
+  w_all <- c(sim_samp$sample_wt / sum(sim_samp$sample_wt) * n)
+  c_all <- c(analysis$c_i)
+  xi_mat <- matrix(analysis$xi_med, byrow = FALSE, nrow = K)  # KxS matrix
   
+  n_chains <- 1
   alpha <- rep(1, K)/K
   eta <- matrix(1, nrow=K, ncol=d)
   mu0 <- rep(0, q)
@@ -84,7 +99,6 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   # Converting theta array to vector order: dim j -> dim k -> dim r
   # First 1:p for k=1 and d=1, then 1:p for k=2 and d=1, then 1:p for k=3 and d=1, 
   # then 1:p for k=1 and d=2, then 1:p for k=2 and d=2, then 1:p for k=3 and d=2,... 
-  M <- dim(analysis$pi_red)[1]
   theta_vectorized <- analysis$theta_red
   dim(theta_vectorized) <- c(M, p*K*d)
   par_samps <- cbind(analysis$pi_red, theta_vectorized, analysis$xi_red)
@@ -92,31 +106,16 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
                            paste0("theta", 1:p, "_", rep(1:K, each=p), "_", rep(1:d, each=p*K)),
                            paste0("xi", 1:q))
   
-  # Get mean posterior parameter estimates
-  par_hat_mean <- colMeans(par_samps)
-  
-  # Get median posterior parameter estimates
-  par_hat <- c(analysis$pi_med, c(analysis$theta_med), analysis$xi_med)
-  names(par_hat) <- c(paste0("pi", 1:K), 
-                      paste0("theta", 1:p, "_", rep(1:K, each=p), "_", rep(1:d, each=p*K)),
-                      paste0("xi", 1:q))
-  
   # Create probit design matrix from dummy variables
-  dummy_s <- dummy_cols(data.frame(s = factor(sim_samp$true_Si)), 
+  dummy_s <- dummy_cols(data.frame(s = factor(s_all)), 
                         remove_selected_columns = TRUE)
   dummy_c <- dummy_cols(data.frame(c = factor(analysis$c_i, levels=1:K)), 
                         remove_selected_columns = TRUE)
-  V <- as.data.frame(apply(dummy_s, 2, function(col) t(col) * dummy_c))
-  # Create array with assigned classes
-  V_k <- array(NA, dim=c(K, n, q))
-  for (k in 1:K) {
-    temp_c <- dummy_cols(data.frame(c = factor(rep(k, n), levels=1:K)), 
-                         remove_selected_columns = TRUE)
-    V_k[k, ,] <- array(unlist(apply(dummy_s, 2, function(col) t(col) * temp_c)), c(n,q))
-  }
+  V <- as.data.frame(dummy_s)
   
-  data_stan <- list(K = K, p = p, d = d, n = n, q = q, X = X, y = y, V_k = V_k,
-                    weights = weights, alpha = alpha, eta = eta, mu0 = mu0, Sig0 = Sig0)
+  data_stan <- list(K = K, p = p, d = d, n = n, q = q, X = x_mat, y = y_all, 
+                    c = c_all, V = V, weights = w_all, 
+                    alpha = alpha, eta = eta, mu0 = mu0, Sig0 = Sig0)
   
   #=============== Run Stan model ==============================================
   
@@ -139,7 +138,8 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
                                                  "xi" = c(analysis$xi_med)))
   # Unconstrained parameters for all MCMC samples
   unc_par_samps <- lapply(1:M, unconstrain, stan_model = out_stan,
-                          pi = analysis$pi_red, theta = analysis$theta_red, xi = analysis$xi_red)
+                          pi = analysis$pi_red, theta = analysis$theta_red, 
+                          xi = analysis$xi_red)
   unc_par_samps <- matrix(unlist(unc_par_samps), byrow = TRUE, nrow = M)
   
   #=============== Post-processing adjustment in unconstrained space ===========
@@ -147,14 +147,11 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   # Estimate Hessian
   Hhat <- -1*optimHess(unc_par_hat, gr = function(x){grad_log_prob(out_stan, x)})
   
-  # Estimate Jhat = Var(gradient)
-  print('gradient evaluation')
-  
   # Create survey design
-  svy_data <- data.frame(s = sim_samp$true_Si, 
-                         x = X,
-                         y = y, 
-                         wts = weights)
+  svy_data <- data.frame(s = s_all, 
+                         x = x_mat,
+                         y = y_all, 
+                         wts = w_all)
   svydes <- svydesign(ids = ~1, strata = ~s, weights = ~wts, data = svy_data)
   # create svrepdesign
   svyrep <- as.svrepdesign(design = svydes, type = "mrbbootstrap", 
@@ -168,7 +165,7 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   # compute adjustment
   Hi <- solve(Hhat)
   V1 <- Hi %*% Jhat %*% Hi
-  # check issue with p.d. projection
+  # Check for issues with negative diagonals
   neg_V1_Hi <- numeric(2)
   if (min(diag(V1)) < 0) {
     neg_V1_Hi[1] <- 1
@@ -178,23 +175,26 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
     neg_V1_Hi[2] <- 1
     print("Hi has negative variances")
   }
-  # if matrices are not p.d. due to rounding issues, convert to nearest p.d. matrix
-  # first, using method proposed in Higham (2002)
-  if (min(Re(eigen(V1)$values)) < 1e-10) { 
+  # If matrices are not p.d. due to rounding issues, convert to nearest p.d. 
+  # matrix using method proposed in Higham (2002)
+  if (min(Re(eigen(V1)$values)) < 0) { 
     V1_pd <- nearPD(V1)
     R1 <- chol(V1_pd$mat)
+    print(paste0("V1: absolute eigenvalue difference to nearest p.d. matrix: ", 
+                 sum(abs(eigen(V1)$values - eigen(nearPD(V1)$mat)$values))))
   } else {
     R1 <- chol(V1)
   }
-  if (min(Re(eigen(Hi)$values)) < 1e-10) {
+  if (min(Re(eigen(Hi)$values)) < 0) {
     Hi_pd <- nearPD(Hi)
-    R2i <- chol(Hi_pd$mat)
+    R2_inv <- chol(Hi_pd$mat)
+    print(paste0("Hi: absolute eigenvalue difference to nearest p.d. matrix: ", 
+                 sum(abs(eigen(Hi)$values - eigen(nearPD(Hi)$mat)$values))))
   } else {
-    R2i <- chol(Hi)
+    R2_inv <- chol(Hi)
   }
-  # R1 <- chol(V1)
-  # R2i <- chol(Hi)
-  R2 <- solve(R2i)
+  # Obtain the variance adjustment matrix
+  R2 <- solve(R2_inv)
   R2R1 <- R2 %*% R1
   
   # Combine chains together
@@ -202,29 +202,28 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   
   # Adjust samples
   # unc_par_samps: posterior estimates from the MCMC samples in unconstrained space
-  par_adj <- apply(unc_par_samps, 1, DEadj, par_hat = unc_par_hat, R2R1 = R2R1, simplify = FALSE)
+  par_adj <- apply(unc_par_samps, 1, DEadj, par_hat = unc_par_hat, R2R1 = R2R1, 
+                   simplify = FALSE)
   par_adj <- matrix(unlist(par_adj), byrow=TRUE, nrow=M)
   
   #=============== Convert adjusted to constrained space =======================
   
-  print("preparing output")
-  
   # Constrained adjusted parameters for all MCMC samples
   pi_red_adj <- matrix(NA, nrow=M, ncol=K)
   theta_red_adj <- array(NA, dim=c(M, p, K, d))
-  xi_red_adj <- matrix(NA, nrow=M, ncol=q)
+  xi_red_adj <- array(NA, dim=c(M, K, q))
   for (i in 1:M) {
     constr_pars <- constrain_pars(out_stan, par_adj[i,])
     pi_red_adj[i, ] <- constr_pars$pi
     theta_red_adj[i,,,] <- constr_pars$theta
-    xi_red_adj[i, ] <- constr_pars$xi
+    xi_red_adj[i,,] <- constr_pars$xi
   }
   
   #=============== Output adjusted parameters ==================================
   
   pi_med_adj <- apply(pi_red_adj, 2, median)
   theta_med_adj <- apply(theta_red_adj, c(2,3,4), median)
-  xi_med_adj <- apply(xi_red_adj, 2, median)
+  xi_med_adj <- apply(xi_red_adj, c(2,3), median)
   
   # Replace estimates with adjusted versions
   analysis$pi_red <- pi_red_adj
