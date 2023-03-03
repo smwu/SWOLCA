@@ -96,17 +96,6 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   mu0 <- rep(0, q)
   Sig0 <- diag(rep(1, q), nrow=q, ncol=q)
   
-  # Get posterior MCMC chains as a matrix with dimensions (M)x(# parameters)
-  # Converting theta array to vector order: dim j -> dim k -> dim r
-  # First 1:p for k=1 and d=1, then 1:p for k=2 and d=1, then 1:p for k=3 and d=1, 
-  # then 1:p for k=1 and d=2, then 1:p for k=2 and d=2, then 1:p for k=3 and d=2,... 
-  theta_vectorized <- analysis$theta_red
-  dim(theta_vectorized) <- c(M, p*K*d)
-  par_samps <- cbind(analysis$pi_red, theta_vectorized, analysis$xi_red)
-  colnames(par_samps) <- c(paste0("pi", 1:K), 
-                           paste0("theta", 1:p, "_", rep(1:K, each=p), "_", rep(1:d, each=p*K)),
-                           paste0("xi", 1:q))
-  
   # Create probit design matrix from dummy variables
   dummy_s <- dummy_cols(data.frame(s = factor(s_all)), 
                         remove_selected_columns = TRUE)
