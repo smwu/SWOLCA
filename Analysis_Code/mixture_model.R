@@ -84,8 +84,9 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   y_all <- c(sim_samp$Y_data)
   s_all <- sim_samp$true_Si
   S <- length(unique(s_all))
-  s_mat <- dummy_cols(data.frame(s = factor(sim_samp$true_Si)), 
+  s_mat <- dummy_cols(data.frame(s = factor(s_all)), 
                       remove_selected_columns = TRUE)
+  V <- as.data.frame(s_mat)
   q <- S  # number of additional covariates other than class assignment
   w_all <- c(sim_samp$sample_wt / sum(sim_samp$sample_wt) * n)
   c_all <- c(analysis$c_i)
@@ -96,13 +97,6 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   eta <- matrix(1, nrow=K, ncol=d)
   mu0 <- rep(0, q)
   Sig0 <- diag(rep(1, q), nrow=q, ncol=q)
-  
-  # Create probit design matrix from dummy variables
-  dummy_s <- dummy_cols(data.frame(s = factor(s_all)), 
-                        remove_selected_columns = TRUE)
-  dummy_c <- dummy_cols(data.frame(c = factor(analysis$c_i, levels=1:K)), 
-                        remove_selected_columns = TRUE)
-  V <- as.data.frame(dummy_s)
   
   data_stan <- list(K = K, p = p, d = d, n = n, q = q, X = x_mat, y = y_all, 
                     c = c_all, V = V, weights = w_all, 
@@ -121,12 +115,12 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   
   #=============== Convert to unconstrained parameters =========================
   
-  # get dimension of unconstrained parameter space
-  get_num_upars(out_stan)  #278 unconstrained, 369 constrained
+  # # get dimension of unconstrained parameter space
+  # get_num_upars(out_stan)  #278 unconstrained, 369 constrained
   # convert params from constrained space to unconstrained space
   unc_par_hat <- unconstrain_pars(out_stan, list("pi" = c(analysis$pi_med),
                                                  "theta" = analysis$theta_med,
-                                                 "xi" = c(analysis$xi_med)))
+                                                 "xi" = xi_mat))
   # Unconstrained parameters for all MCMC samples
   unc_par_samps <- lapply(1:M, unconstrain, stan_model = out_stan, K = K, 
                           pi = analysis$pi_red, theta = analysis$theta_red, 
@@ -156,6 +150,7 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   # compute adjustment
   Hi <- solve(Hhat)
   V1 <- Hi %*% Jhat %*% Hi
+  
   # Check for issues with negative diagonals
   neg_V1_Hi <- numeric(2)
   if (min(diag(V1)) < 0) {

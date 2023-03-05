@@ -358,6 +358,10 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
         } else {
           #print("Using adjusted file for sample ", samp_n)
           load(sim_adj_path)
+          # Convert to previous xi format
+          dims_xi <- dim(analysis$xi_red)
+          dim(analysis$xi_red) <- c(dims_xi[1], dims_xi[2]*dims_xi[3])
+          analysis$xi_med <- c(analysis$xi_med)
         }
         
       # If no post-processing, read in Matlab data
@@ -414,9 +418,9 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
       order <- theta_perm$ordering
       # Theta mode consumption levels for each item and class (pxK)
       est_modes <- apply(analysis$theta_med[, order, ], c(1,2), which.max)
-      true_modes <- apply(true_params$true_theta[, order, ], c(1,2), which.max)
+      true_modes <- apply(true_params$true_theta[,,], c(1,2), which.max)
       # True modal probabilities for each item and class (pxK)
-      true_theta_modal <- apply(true_params$true_theta[, order, ], c(1,2), max)
+      true_theta_modal <- apply(true_params$true_theta[,,], c(1,2), max)  
       
       ##### pi 
       pi_perm <- get_pi_dist(analysis$pi_med, true_params$true_pi, order=order)
