@@ -7,8 +7,7 @@ data {
   
   array[n, p] int X;                // categorical food data
   array[n] int<lower=0, upper=1> y; // binary outcome data
-  vector[n] c;      // class assignments
-  array[n, q] real V;        // covariate matrix excluding class assignment
+  array[n, q] real V;               // covariate matrix excluding class assignment
   vector<lower=0>[n] weights;       // individual-level survey weights
   
   vector[K] alpha;         // hyperparameter for pi prior
@@ -17,9 +16,9 @@ data {
   cov_matrix[q] Sig0;      // hyperparameter for covariance of xi prior
 }
 parameters {
-  simplex[K] pi;                // cluster probabilities
-  array[p, K] simplex[d] theta; // cluster-specific item consumption probabilities
-  array[K] vector[q] xi;                 // regression coefficients
+  simplex[K] pi;                 // cluster probabilities
+  array[p, K] simplex[d] theta;  // cluster-specific item consumption probabilities
+  array[K] vector[q] xi;         // regression coefficients
 }
 transformed parameters {
   array[n] vector[K] log_cond_c; // log p(c_i=k| -)

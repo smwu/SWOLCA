@@ -360,7 +360,7 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
           load(sim_adj_path)
           # Convert to previous xi format
           dims_xi <- dim(analysis$xi_red)
-          dim(analysis$xi_red) <- c(dims_xi[1], dims_xi[2]*dims_xi[3])
+          analysis$xi_red <- matrix(analysis$xi_red, nrow = dims_xi[1], ncol = dims_xi[2]*dims_xi[3])
           analysis$xi_med <- c(analysis$xi_med)
         }
         

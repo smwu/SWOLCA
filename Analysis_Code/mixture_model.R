@@ -90,6 +90,7 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   w_all <- c(sim_samp$sample_wt / sum(sim_samp$sample_wt) * n)
   c_all <- c(analysis$c_i)
   xi_mat <- matrix(analysis$xi_med, byrow = FALSE, nrow = K)  # KxS matrix
+  # xi_mat <- matrix(colMeans(analysis$xi_red), byrow = FALSE, nrow = K)  # KxS matrix
   
   n_chains <- 1
   alpha <- rep(1, K)/K
@@ -209,6 +210,7 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
   pi_med_adj <- apply(pi_red_adj, 2, median)
   theta_med_adj <- apply(theta_red_adj, c(2,3,4), median)
   xi_med_adj <- apply(xi_red_adj, c(2,3), median)
+  # xi_med_adj <- apply(xi_red_adj, c(2,3), mean)
   
   # Replace estimates with adjusted versions
   analysis$pi_red <- pi_red_adj
@@ -251,7 +253,9 @@ run_adj_samples <- function(data_dir, res_dir, analysis_dir, iter_pop, scen_samp
     samp_n = R_seq[i]
     print(samp_n)
     # File name for adjusted output
-    sim_adj_path <- paste0(res_dir, model, "_latent_results_adj_scen", scen_samp, 
+    # sim_adj_path <- paste0(res_dir, model, "_latent_results_adj_scen", scen_samp, 
+    #                        "_iter", iter_pop, "_samp", samp_n, ".RData")
+    sim_adj_path <- paste0(res_dir, "postprocess_mean", model, "_latent_results_adj_scen", scen_samp,
                            "_iter", iter_pop, "_samp", samp_n, ".RData")
     
     # Read in Matlab output
@@ -304,13 +308,13 @@ mod_stan <- stan_model(paste0(analysis_dir, "mixture_model.stan"))
 
 # SRS: Scenario 101
 start_time101 <- Sys.time()
-out101 <- run_adj_samples(data_dir=data_dir, res_dir=res_dir, analysis_dir=anaysis_dir, 
+out101 <- run_adj_samples(data_dir=data_dir, res_dir=res_dir, analysis_dir=analysis_dir, 
                           iter_pop=iter_pop, scen_samp=scen_samp, model=model, 
                           R_seq=R_seq, mod_stan = mod_stan)
 end_time101 <- Sys.time()
 # Stratified: Scenario 201
 start_time201 <- Sys.time()
-out201 <- run_adj_samples(data_dir=data_dir, res_dir=res_dir, analysis_dir=anaysis_dir, 
+out201 <- run_adj_samples(data_dir=data_dir, res_dir=res_dir, analysis_dir=analysis_dir, 
                           iter_pop=iter_pop, scen_samp=201, model=model, 
                           R_seq=R_seq, mod_stan = mod_stan)
 end_time201 <- Sys.time()
