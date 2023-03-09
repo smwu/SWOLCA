@@ -253,10 +253,10 @@ run_adj_samples <- function(data_dir, res_dir, analysis_dir, iter_pop, scen_samp
     samp_n = R_seq[i]
     print(samp_n)
     # File name for adjusted output
-    # sim_adj_path <- paste0(res_dir, model, "_latent_results_adj_scen", scen_samp, 
-    #                        "_iter", iter_pop, "_samp", samp_n, ".RData")
-    sim_adj_path <- paste0(res_dir, "postprocess_mean", model, "_latent_results_adj_scen", scen_samp,
+    sim_adj_path <- paste0(res_dir, model, "_latent_results_adj_scen", scen_samp,
                            "_iter", iter_pop, "_samp", samp_n, ".RData")
+    # sim_adj_path <- paste0(res_dir, "postprocess_mean", model, "_latent_results_adj_scen", scen_samp,
+    #                        "_iter", iter_pop, "_samp", samp_n, ".RData")
     
     # Read in Matlab output
     sim_samp_path <- paste0(data_dir, "simdata_scen", scen_samp,"_iter", iter_pop, "_samp", samp_n, ".mat")
