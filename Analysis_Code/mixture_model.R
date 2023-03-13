@@ -226,9 +226,9 @@ coverage_adj <- function(analysis, sim_samp, mod_stan, sim_adj_path) {
 }
 
 # ## Troubleshooting
-# quantile(pi_red_adj[,1], c(0.025, 0.975))
-# quantile(theta_red_adj[,1,3,4], c(0.025, 0.975))
-# c(xi_med_adj)
+quantile(pi_red_adj[,1], c(0.025, 0.975))
+quantile(theta_red_adj[,1,3,4], c(0.025, 0.975))
+c(xi_med_adj)
 
 #=== Function to read data and apply post-processing adjustment for all samples
 # 'run_adj_samples' applies the post-processing adjustment to all iterations of
