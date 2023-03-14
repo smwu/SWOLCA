@@ -2,6 +2,52 @@
 # Author: Stephanie Wu
 # Date updated: 2023/03/08
 
+
+
+#===================== Helper functions ========================================
+
+## 'grad_par()' helper function nested in 'withReplicates()' to obtain gradient.
+## Stan will pass warnings from calling 0 chains, but will still create an 
+## out_stan object for the 'grad_log_prob()' method
+grad_par <- function(pwts, svydata, stanmod, standata, par_stan, upars) {
+  standata$weights <- pwts
+  out_stan <- sampling(object = stanmod, data = standata, pars = par_stan,
+                       chains = 0, iter = 0, refresh = 0)
+  gradpar <- grad_log_prob(out_stan, upars)
+  return(gradpar)
+}
+
+#' Helper function to apply matrix rotation
+#' @param par unadjusted parameter estimates
+#' @param par_hat unadjusted mean parameter estimates
+#' @param R2R1 adjustment matrix
+#' @return adjusted parameter estimates
+DEadj <- function(par, par_hat, R2R1) {
+  par_adj <- (par - par_hat) %*% R2R1 + par_hat
+  par_adj <- as.vector(par_adj)
+  return(par_adj)
+}
+
+# 'unconstrain' converts from constrained space to unconstrained space for one 
+# row, given input arrays of MCMC parameter output
+# Inputs:
+#   i: row index
+#   K: number of classes
+#   stan_model: stan model
+#   pi: MCMC matrix output for pi; M rows
+#   theta: MCMC array output for theta; dim 1 length = M
+#   xi: MCMC matrix output for xi: M rows
+# Output: vector of unconstrained parameters
+unconstrain <- function(i, K, stan_model, pi, theta, xi) {
+  upars <- unconstrain_pars(stan_model, list("pi" = pi[i,], 
+                                             "theta" = theta[i,,,], 
+                                             "xi" = xi[i,,]))
+  return(upars)
+}
+
+
+
+  
 library(survey)
 library(tidyverse)
 library(R.matlab)
@@ -20,16 +66,12 @@ set.seed(11152022)
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
+# setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
+# setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
+# setwd("/Users/Stephanie/Documents/GitHub/wsOFMM")
 
-#setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
-setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
-#setwd("/Users/Stephanie/Documents/GitHub/wsOFMM")
-
-
-#================= FIXED SAMPLER ===============================================
-
-#================= Create Stan data ============================================
-# Read in data
+#================= Read in data ================================================
+# Define directories and scenarios
 data_dir <- "Data/"
 res_dir <- "Results/"
 analysis_dir <- "Analysis_Code/"
@@ -39,6 +81,7 @@ model <- "wsOFMM"
 R_seq=1:100
 samp_n <- 84
 
+# Read in data
 sim_samp_path <- paste0(data_dir, "simdata_scen", scen_samp,"_iter", iter_pop, 
                         "_samp", samp_n, ".mat")
 sim_res_path <- paste0(res_dir, model, "_latent_results_scen", scen_samp, 
@@ -48,6 +91,10 @@ already_done <- file.exists(sim_res_path)
 # Load simulated sample data for the iteration
 sim_samp <- readMat(sim_samp_path)$sim.data
 names(sim_samp) <- str_replace_all(dimnames(sim_samp)[[1]], "[.]", "_")
+
+#================= FIXED SAMPLER ===============================================
+
+
 
 # Posterior estimates from MCMC sampler
 K <- 3
@@ -80,18 +127,15 @@ data_stan <- list(K = K, p = p, d = d, n = n, q = q, X = x_mat, y = y_all,
 
 #=============== Run Stan model ================================================
 
-# # Stan parameters of interest
-# par_stan <- c('pi', 'theta', 'xi')  # subset of parameters interested in
-
 # Run Stan model
 # Stan will pass warnings from calling 0 chains, but will still create an 
 # out_stan object for the 'grad_log_prob()' method
-start_time201 <- Sys.time()
+start_time <- Sys.time()
 out_stan <- sampling(object = mod_stan, data = data_stan, 
                      chains = 2, iter = 2500, warmup = 1500, thin = 5)
-end_time201 <- Sys.time()
+end_time <- Sys.time()
 
-print(paste0("Runtime: ", end_time101 - start_time101))
+print(paste0("Runtime: ", end_time- start_time))
 
 #=============== Check convergence =============================================
 
@@ -109,20 +153,22 @@ post_class_probs <- post_par$pred_class_probs  # M x n x K
 post_class_probs[1:5, 15, ]
 # post_class_temp <- ((post_class_probs[,,1] > 0.5) * 1) + 1
 post_class <- apply(post_class_probs, c(1,2), function(x) which.max(x))  # M x n
+post_class[M, 1:50]
+sim_samp$true_Ci[1:50]
 
 M <- dim(post_class)[1]
 num_comp_params <- (K + (p*K*d) + (S*K)) / K  # 123
 # Initialize mcmc arrays
 mcmc <- array(NA, dim = c(M, K, num_comp_params))
 # Assign posterior draws to the array
-mcmc[, , 1] <- pi
+mcmc[, , 1] <- post_par$pi
 for (r in 1:d) {
   for (j in 1:p) {
-    mcmc[, , 1 + (r-1)*p + j] <- theta[, j, , r]
+    mcmc[, , 1 + (r-1)*p + j] <- post_par$theta[, j, , r]
   }
 }
 for (s in 1:S) {
-  mcmc[, , (num_comp_params - S) + s] <- xi[, , s]
+  mcmc[, , (num_comp_params - S) + s] <- post_par$xi[, , s]
 }
 
 # Set of selected relabeling algorithms
@@ -139,14 +185,14 @@ mapindex = which.max(post_par$lp__)
 
 # switch labels
 label_switch <- label.switching(method = set, zpivot = post_class[mapindex,],
-    z = post_class, K = K, prapivot = mcmc[mapindex, ,], constraint = 1,
-    mcmc = mcmc, p = post_class_probs)
+                                z = post_class, K = K, prapivot = mcmc[mapindex, ,], constraint = 1,
+                                mcmc = mcmc, p = post_class_probs)
 
 label_switch$timings
-label_switch$similarity
+label_switch$similarity  # all match!
 
 # Permute posterior based on ECR method
-mcmc_permuted <- permute.mcmc(mcmc, label_switch$permutations$ECR)$output # MxKxnum_comp_pars
+mcmc_permuted <- permute.mcmc(mcmc, label_switch$permutations$`ECR-ITERATIVE-2`)$output # MxKxnum_comp_pars
 
 # Change dimension for each parameter to match order of Stan parameters
 change_mcmc_dim <- function(mcmc, num_comp_params, M, p, K, d, S, out_stan) {
@@ -157,110 +203,72 @@ change_mcmc_dim <- function(mcmc, num_comp_params, M, p, K, d, S, out_stan) {
                      matrix(aperm(mcmc_full_dim, c(1,3,2,4)), nrow = M), 
                      matrix(mcmc[, , -(1:(num_comp_params - S))], nrow = M))
   mcmc_flat <- array(mcmc_flat, dim = c(M, 1, ncol(mcmc_flat)), 
-                dimnames = list(NULL, NULL, param_names))
+                     dimnames = list(NULL, NULL, param_names))
   return(mcmc_flat)
 }
 
 
 mcmc_permuted_2 <- change_mcmc_dim(mcmc_permuted, num_comp_params, 
-                                 M, p, K, d, S, out_stan)
+                                   M, p, K, d, S, out_stan)
 
 # Reassess model convergence after relabelling
 fit_permuted <- monitor(mcmc_permuted_2, warmup = 0, digits_summary = 3)
 
 par_summary <- as.data.frame(fit_permuted)
-par_summary[1:250, c(1, 9, 10)]
-par_summary[-(1:250), c(1, 9, 10)]
+par_summary[1:250, c(1, 4, 8, 9, 10)]
+par_summary[-(1:250), c(1, 4, 8, 9, 10)]
 
-# Troubleshooting and sanity checks
-library(testthat)
+strata_prop <- prop.table(table(sim_samp$true_Si))
+true_pi <- c(strata_prop %*% sim_samp$true_pi)
+
+#================= Apply variance adjustment ===================================
+
+# Stan parameters of interest
+par_stan <- c('pi', 'theta', 'xi')  # subset of parameters interested in
+
+# Extract posterior model estimates
+pi_red <- array(mcmc_permuted_2[, , 1:K], dim = c(M, K), 
+                dimnames = dimnames(mcmc_permuted_2[,,1:K]))
+theta_red_flat <- array(mcmc_permuted_2[, , (K+1):(K*num_comp_params - S*K)], 
+                        dim = c(M, p*K*d), 
+                        dimnames = dimnames(mcmc_permuted_2[, , (K+1):(K*num_comp_params - S*K)]))
+theta_red <- array(theta_red_flat, dim = c(M, p, K, d))
+xi_red_flat <- array(mcmc_permuted_2[, , -(1:(K*num_comp_params - S*K))], 
+                     dim = c(M, K*S),
+                     dimnames = dimnames(mcmc_permuted_2[, , -(1:(K*num_comp_params - S*K))]))
+xi_red <- array(xi_red_flat, dim = c(M, K, S))
 # Sanity checks
-post_par$pi[1,] == mcmc_flat[1, 1:3]
-post_par$theta[1, 5, 1, 1] == mcmc_flat[1, 3 + 5]
-post_par$theta[1, 1, 2, 1] == mcmc_flat[1, 3 + 30 + 1]
-post_par$theta[1, 1, 1, 2] == mcmc_flat[1, 3 + 30*3 + 1]
-post_par$xi[1, 2, 1] == mcmc_flat[1, (3*121) + 2] 
-post_par$xi[1, 1, 2] == mcmc_flat[1, (3*121) + 4] 
+theta_red[1, 5, 1, 1] == theta_red_flat[1, 5]
+theta_red[4, 1, 3, 2] == theta_red_flat[4, 151]
+xi_red[1, 1, 2] == xi_red_flat[1, 4]
+xi_red[4, 3, 1] == xi_red_flat[4, 3]
+# Ensure valid simplexes
+pi_red <- t(apply(pi_red, 1, function(x) x/sum(x)))
+all(rowSums(pi_red) == 1)
+theta_red <- aperm(apply(theta_red, c(1,2,3), function(x) x/sum(x)), c(2,3,4,1))
+all(abs(apply(theta_red, c(1,2,3), sum) - 1) < 1e-10)
 
+pi_med <- apply(pi_red, 2, median)
+pi_med <- pi_med / sum(pi_med)
+theta_med <- apply(theta_red, c(2,3,4), median)
+theta_med <- aperm(apply(theta_med, c(1,2), function(x) x/sum(x)), c(2,3,1))
+xi_med <- apply(xi_red, c(2,3), median)
 
-test_mcmc <- array(NA, dim=c(5, 3, 11))
-# for (j in 1:2) {
-#   for (k in 1:3) {
-#     for (r in 1:4) {
-#       test_mcmc[, k, (j-1)*d + r] <- paste0(j,"_",k, "_", r)
-#     }
-#   }
-# }
-test_mcmc[,,1] <- rep(paste0("pi_", 1:3), each = 5)
-for (r in 1:4) {
-  for (k in 1:3) {
-    for (j in 1:2) {
-      test_mcmc[, k, 1+ (r-1)*2 + j] <- paste0(j,"_",k, "_", r)
-    }
-  }
-}
-test_mcmc[, , 10] <- rep(paste0("xi_s1_", 1:3), each = 5)
-test_mcmc[, , 11] <- rep(paste0("xi_s2_", 1:3), each = 5)
-array(test_mcmc, dim = c(5, 3*11))
-
-mod <- array(test_mcmc[, , -c(1, 10, 11)], c(5, K, 2, 4))
-cbind(matrix(test_mcmc[, , 1], nrow = 5), 
-      matrix(aperm(mod, c(1,3,2,4)), nrow = 5), 
-      matrix(test_mcmc[, , c(10, 11)], nrow = 5))
-
-mod <- array(test_mcmc[, , 2:9], dim=c(5, 3, 2, 4))
-mod_flat <- array(aperm(mod, c(1, 3, 2, 4)), dim=c(5, 3*2*4))
-test_mcmc_flat <- array(test_mcmc, dim=c(5, 3*11))
-test_mcmc_flat[, (K+1):9] <- mod_flat
-test_mcmc_flat
-# Check matches names output
-array(aperm(mod, c(1, 3, 2, 4)), dim=c(5, 3*2*4))[1,]
-pars[4:70]
-# array(aperm(test_mcmc, c(2, 1, 3)), dim=c(5, 3*8))
-# array(test_mcmc, dim=c(5, 3*8))
-
-get_indices <- function(j, r, d) {
-  return(1 + (j-1)*d + r)
-}
-test_that(desc = "Correct indices iter 17", code = {
-  expect_that(get_indices(1, 1, 4), equals(2))
-  expect_that(get_indices(1, 3, 4), equals(4))  
-  expect_that(get_indices(3, 2, 4), equals(11))
-  expect_that(get_indices(6, 1, 4), equals(22))
-})
-get_indices_2 <- function(j, r, p) {
-  return(1 + (r-1)*p + j)
-}
-test_that(desc = "Correct indices iter 17", code = {
-  expect_that(get_indices_2(1, 1, 30), equals(2))
-  expect_that(get_indices_2(1, 3, 30), equals(62))  
-  expect_that(get_indices_2(3, 2, 30), equals(34))
-  expect_that(get_indices_2(6, 1, 30), equals(7))
-})
-abs(rowSums(mcmc[1:5, , 1]) - 1) < 0.00001
-abs(apply(mcmc[1:5, , 2:5], c(1,2), sum) - 1) < 0.00001
-
-
-
-# Run Stan model
-# Stan will pass warnings from calling 0 chains, but will still create an 
-# out_stan object for the 'grad_log_prob()' method
-out_stan <- sampling(object = mod_stan, data = data_stan, pars = par_stan,
-                     chains = 0, iter = 0, refresh = 0)
-
-#=============== Convert to unconstrained parameters =========================
+# # Run Stan model
+# # Stan will pass warnings from calling 0 chains, but will still create an 
+# # out_stan object for the 'grad_log_prob()' method
+# out_stan <- sampling(object = mod_stan, data = data_stan, pars = par_stan,
+#                      chains = 0, iter = 0, refresh = 0)
 
 # # get dimension of unconstrained parameter space
 # get_num_upars(out_stan)  #278 unconstrained, 369 constrained
 # convert params from constrained space to unconstrained space
-unc_par_hat <- unconstrain_pars(out_stan, list("pi" = c(analysis$pi_med),
-                                               "theta" = analysis$theta_med,
-                                               "xi" = xi_mat))
+unc_par_hat <- unconstrain_pars(out_stan, list("pi" = pi_med,
+                                               "theta" = theta_med,
+                                               "xi" = xi_med))
 # Unconstrained parameters for all MCMC samples
-M <- dim(analysis$theta_red)[1]
 unc_par_samps <- lapply(1:M, unconstrain, stan_model = out_stan, K = K, 
-                        pi = analysis$pi_red, theta = analysis$theta_red, 
-                        xi = analysis$xi_red)
+                        pi = pi_red, theta = theta_red, xi = xi_red)
 unc_par_samps <- matrix(unlist(unc_par_samps), byrow = TRUE, nrow = M)
 
 #=============== Post-processing adjustment in unconstrained space ===========
@@ -319,8 +327,8 @@ if (min(Re(eigen(Hi)$values)) < 0) {
 R2 <- solve(R2_inv)
 R2R1 <- R2 %*% R1
 
-# Combine chains together
-dim(unc_par_samps) <- c(M, n_chains*length(unc_par_hat))
+# # Combine chains together
+# dim(unc_par_samps) <- c(M, n_chains*length(unc_par_hat))
 
 # Adjust samples
 # unc_par_samps: posterior estimates from the MCMC samples in unconstrained space
@@ -345,5 +353,115 @@ for (i in 1:M) {
 
 pi_med_adj <- apply(pi_red_adj, 2, median)
 theta_med_adj <- apply(theta_red_adj, c(2,3,4), median)
-# xi_med_adj <- apply(xi_red_adj, c(2,3), median)
-xi_med_adj <- apply(xi_red_adj, c(2,3), mean)
+xi_med_adj <- apply(xi_red_adj, c(2,3), median)
+
+# Estimation output
+red_adj_flat <- cbind(pi_red_adj, array(theta_red_adj, dim = c(M, p*K*d)),
+                      array(xi_red_adj, dim = c(M, K*S)))
+colnames(red_adj_flat) <- out_stan %>% names %>% `[` (1:(num_comp_params*K))  ### CHECK THIS!!!!
+adj_summary <- as.data.frame(t(apply(red_adj_flat, 2, 
+                                     function(x) quantile(x, c(0.025, 0.5, 0.975)))))
+
+
+
+
+
+
+
+# #=============== Troubleshooting and sanity checks =============================
+# library(testthat)
+# 
+# # Check estimates
+# order <- c(2,1,3)
+# pi_med_adj
+# true_pi[order]
+# c(xi_med_adj)
+# sim_samp$true_xi[c(2,1,3,5,4,6)]
+# 
+# # Check coverage
+# pi_CI <- apply(pi_red_adj, 2, function(x) quantile(x, c(0.025, 0.975)))
+# (pi_CI[1,] <= true_pi[order]) & (pi_CI[2, ] >= true_pi[order])
+# 
+# theta_CI <- apply(theta_red_adj, c(2,3,4), function(x) quantile(x, c(0.025, 0.975)))
+# (theta_CI[1, , , ] <= sim_samp$true_global_thetas[, order, ]) & 
+#   (theta_CI[2, , , ] >= sim_samp$true_global_thetas[, order, ])
+# mean((theta_CI[1, , , ] <= sim_samp$true_global_thetas[, order, ]) & 
+#        +         (theta_CI[2, , , ] >= sim_samp$true_global_thetas[, order, ]))
+# 
+# xi_CI <- matrix(apply(xi_red_adj, c(2,3), function(x) quantile(x, c(0.025, 0.975))),
+#                 nrow = 2)
+# (xi_CI[1,] <= sim_samp$true_xi[c(2,1,3,5,4,6)]) & 
+#   (xi_CI[2, ] >= sim_samp$true_xi[c(2,1,3,5,4,6)])
+# 
+# 
+# 
+# # Sanity checks
+# post_par$pi[1,] == mcmc_flat[1, 1:3]
+# post_par$theta[1, 5, 1, 1] == mcmc_flat[1, 3 + 5]
+# post_par$theta[1, 1, 2, 1] == mcmc_flat[1, 3 + 30 + 1]
+# post_par$theta[1, 1, 1, 2] == mcmc_flat[1, 3 + 30*3 + 1]
+# post_par$xi[1, 2, 1] == mcmc_flat[1, (3*121) + 2] 
+# post_par$xi[1, 1, 2] == mcmc_flat[1, (3*121) + 4] 
+# 
+# 
+# test_mcmc <- array(NA, dim=c(5, 3, 11))
+# # for (j in 1:2) {
+# #   for (k in 1:3) {
+# #     for (r in 1:4) {
+# #       test_mcmc[, k, (j-1)*d + r] <- paste0(j,"_",k, "_", r)
+# #     }
+# #   }
+# # }
+# test_mcmc[,,1] <- rep(paste0("pi_", 1:3), each = 5)
+# for (r in 1:4) {
+#   for (k in 1:3) {
+#     for (j in 1:2) {
+#       test_mcmc[, k, 1+ (r-1)*2 + j] <- paste0(j,"_",k, "_", r)
+#     }
+#   }
+# }
+# test_mcmc[, , 10] <- rep(paste0("xi_s1_", 1:3), each = 5)
+# test_mcmc[, , 11] <- rep(paste0("xi_s2_", 1:3), each = 5)
+# array(test_mcmc, dim = c(5, 3*11))
+# 
+# mod <- array(test_mcmc[, , -c(1, 10, 11)], c(5, K, 2, 4))
+# cbind(matrix(test_mcmc[, , 1], nrow = 5), 
+#       matrix(aperm(mod, c(1,3,2,4)), nrow = 5), 
+#       matrix(test_mcmc[, , c(10, 11)], nrow = 5))
+# 
+# mod <- array(test_mcmc[, , 2:9], dim=c(5, 3, 2, 4))
+# mod_flat <- array(aperm(mod, c(1, 3, 2, 4)), dim=c(5, 3*2*4))
+# test_mcmc_flat <- array(test_mcmc, dim=c(5, 3*11))
+# test_mcmc_flat[, (K+1):9] <- mod_flat
+# test_mcmc_flat
+# # Check matches names output
+# array(aperm(mod, c(1, 3, 2, 4)), dim=c(5, 3*2*4))[1,]
+# pars[4:70]
+# # array(aperm(test_mcmc, c(2, 1, 3)), dim=c(5, 3*8))
+# # array(test_mcmc, dim=c(5, 3*8))
+# 
+# get_indices <- function(j, r, d) {
+#   return(1 + (j-1)*d + r)
+# }
+# test_that(desc = "Correct indices iter 17", code = {
+#   expect_that(get_indices(1, 1, 4), equals(2))
+#   expect_that(get_indices(1, 3, 4), equals(4))  
+#   expect_that(get_indices(3, 2, 4), equals(11))
+#   expect_that(get_indices(6, 1, 4), equals(22))
+# })
+# get_indices_2 <- function(j, r, p) {
+#   return(1 + (r-1)*p + j)
+# }
+# test_that(desc = "Correct indices iter 17", code = {
+#   expect_that(get_indices_2(1, 1, 30), equals(2))
+#   expect_that(get_indices_2(1, 3, 30), equals(62))  
+#   expect_that(get_indices_2(3, 2, 30), equals(34))
+#   expect_that(get_indices_2(6, 1, 30), equals(7))
+# })
+# abs(rowSums(mcmc[1:5, , 1]) - 1) < 0.00001
+# abs(apply(mcmc[1:5, , 2:5], c(1,2), sum) - 1) < 0.00001
+# 
+# 
+
+
+
