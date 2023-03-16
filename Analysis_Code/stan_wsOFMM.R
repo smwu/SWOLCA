@@ -21,7 +21,7 @@ rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
 # setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
-# setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
+setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
 # setwd("/Users/Stephanie/Documents/GitHub/wsOFMM")
 
 #===================== Helper functions ========================================
@@ -69,11 +69,11 @@ grad_par <- function(pwts, svydata, stanmod, standata, par_stan, upars) {
   return(gradpar)
 }
 
-#' Helper function to apply matrix rotation
-#' @param par unadjusted parameter estimates
-#' @param par_hat unadjusted mean parameter estimates
-#' @param R2R1 adjustment matrix
-#' @return adjusted parameter estimates
+#'Helper function to apply matrix rotation
+#'@param par unadjusted parameter estimates
+#'@param par_hat unadjusted mean parameter estimates
+#'@param R2R1 adjustment matrix
+#'@return adjusted parameter estimates
 DEadj <- function(par, par_hat, R2R1) {
   par_adj <- (par - par_hat) %*% R2R1 + par_hat
   par_adj <- as.vector(par_adj)
@@ -103,7 +103,19 @@ unconstrain <- function(i, K, stan_model, pi, theta, xi) {
 #'@param scen_samp Data-generating scenario dictating sampling design
 #'@param iter_pop Population iteration. Usually 1. TAKE THIS OUT
 #'@param samp_n Sample iteration
+#'@return `analysis` list with the following components:
+#'   `out_stan` Stan model output
+#'   `label_switch` Label switching output
+#'   `mcmc_permuted_ordered` Pre-adjusted MCMC posterior samples after relabeling. MxKx(num_comp_params) array, where M=iterations*chains
+#'   `runtime` Runtime
+#'   `pi_red` MCMC samples for pi; MxK
+#'   `theta_red` MCMC samples for theta; MxpxKxd
+#'   `xi_red` MCMC samples for xi; MxKxS
+#'   `pi_med` Posterior median estimate for pi; vector of length K
+#'   `theta_med` Posterior median estimate for theta; pxKxd
+#'   `xi_med` Posterior median estimate for xi; KxS
 run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
+  start_time <- Sys.time()
   #================= Read in data ================================================
   # Define directories
   data_dir <- "Data/"
@@ -163,7 +175,7 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
   
   # Run Stan model
   out_stan <- sampling(object = mod_stan, data = data_stan, 
-                       chains = n_chains, iter = 2500, warmup = 1500, thin = 5)
+                       chains = n_chains, iter = 2000, warmup = 1000, thin = 5)
 
   #=============== Post-hoc relabeling =========================================
   # Obtain posterior class assignment probabilities P(c_i=k|-). Combines all chains
@@ -327,18 +339,20 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
   theta_med_adj <- apply(theta_red_adj, c(2,3,4), median)
   xi_med_adj <- apply(xi_red_adj, c(2,3), median)
   
-  # Estimation output
-  red_adj_flat <- cbind(pi_red_adj, array(theta_red_adj, dim = c(M, p*K*d)),
-                        array(xi_red_adj, dim = c(M, K*S)))
-  colnames(red_adj_flat) <- out_stan %>% names %>% `[` (1:(num_comp_params*K))  ### CHECK THIS!!!!
-  adj_summary <- as.data.frame(t(apply(red_adj_flat, 2, 
-                                       function(x) quantile(x, c(0.025, 0.5, 0.975)))))
+  runtime <- Sys.time() - start_time
   
+  analysis <- list(out_stan = out_stan, label_switch = label_switch,
+                   mcmc_permuted_ordered = mcmc_permuted_ordered, runtime = runtime,
+                   pi_red = pi_red_adj, theta_red = theta_red_adj, 
+                   xi_red = xi_red_adj, pi_med = pi_med_adj, 
+                   theta_med = theta_med_adj, xi_med = xi_med_adj)
   
-  return(list(out_stan = out_stan, label_switch = label_switch,
-              mcmc_permuted_ordered = mcmc_permuted_ordered))
+  # File name for adjusted output
+  sim_adj_path <- paste0(res_dir, model, "_stan", "_latent_results_adj_scen", scen_samp,
+                         "_iter", iter_pop, "_samp", samp_n, ".RData")
+  save(analysis, file = sim_adj_path)
   
-  
+  return(analysis)
 }
 
 
@@ -349,14 +363,20 @@ scen_samp <- args[[1]]
 iter_pop <- args[[2]]
 samp_n <- args[[3]]
 
-start_time <- Sys.time()
-run_WSOLCA(scen_samp = scen_samp, iter_pop = iter_pop, samp_n = samp_n)
-runtime <- Sys.time() - start_time
+analysis <- run_WSOLCA(scen_samp = scen_samp, iter_pop = iter_pop, samp_n = samp_n)
+
 
 
 
 # #=============== Troubleshooting and sanity checks =============================
 # library(testthat)
+# 
+# # Estimation output
+# red_adj_flat <- cbind(pi_red_adj, array(theta_red_adj, dim = c(M, p*K*d)),
+#                       array(xi_red_adj, dim = c(M, K*S)))
+# colnames(red_adj_flat) <- out_stan %>% names %>% `[` (1:(num_comp_params*K))  ### CHECK THIS!!!!
+# adj_summary <- as.data.frame(t(apply(red_adj_flat, 2, 
+#                                      function(x) quantile(x, c(0.025, 0.5, 0.975)))))
 #
 # # Check convergence
 # print(out_stan, c("pi", "theta", "xi", "xi_prod", "theta_prod"))
