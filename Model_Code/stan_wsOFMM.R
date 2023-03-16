@@ -20,10 +20,6 @@ set.seed(11152022)
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
-# setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
-# setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
-# setwd("/Users/Stephanie/Documents/GitHub/wsOFMM")
-
 #===================== Helper functions ========================================
 #'@description Change mcmc output to match ordering of Stan parameters
 #'@param out_stan Output from running stan model
@@ -357,6 +353,10 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
 
 
 #========= Read in function arguments and run fixed sampler ====================
+
+setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
+# setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
+# setwd("/Users/Stephanie/Documents/GitHub/wsOFMM")
 
 args <- commandArgs(trailingOnly = TRUE)
 scen_samp <- args[[1]]
