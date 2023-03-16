@@ -21,7 +21,7 @@ rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
 # setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
-setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
+# setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
 # setwd("/Users/Stephanie/Documents/GitHub/wsOFMM")
 
 #===================== Helper functions ========================================
