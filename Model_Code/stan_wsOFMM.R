@@ -21,16 +21,16 @@ rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
 #===================== Helper functions ========================================
-##'@description Change mcmc output to match ordering of Stan parameters
-##'@param out_stan Output from running stan model
-##'@param mcmc MxKx(num_comp_params) mcmc output
-##'@param num_comp_params Number of parameters for each class
-##'@param M Number of MCMC iterations combining all chains
-##'@param p Number of items
-##'@param K Number of classes
-##'@param d Number of exposure levels
-##'@param S Number of covariate variables excluding class
-##'@return `mcmc_flat` Mx1x(num_comp_params) array with order matching that of Stan parameter output
+# #'@description Change mcmc output to match ordering of Stan parameters
+# #'@param out_stan Output from running stan model
+# #'@param mcmc MxKx(num_comp_params) mcmc output
+# #'@param num_comp_params Number of parameters for each class
+# #'@param M Number of MCMC iterations combining all chains
+# #'@param p Number of items
+# #'@param K Number of classes
+# #'@param d Number of exposure levels
+# #'@param S Number of covariate variables excluding class
+# #'@return `mcmc_flat` Mx1x(num_comp_params) array with order matching that of Stan parameter output
 change_mcmc <- function(out_stan, mcmc, num_comp_params, M, p, K, d, S) {
   # Stan parameter names
   param_names <- out_stan %>% names %>% `[` (1:(num_comp_params*K))
@@ -47,16 +47,16 @@ change_mcmc <- function(out_stan, mcmc, num_comp_params, M, p, K, d, S) {
   return(mcmc_flat)
 }
 
-##'@description Helper function nested in 'withReplicates()' to obtain gradient
-##'@details  Stan will pass warnings from calling 0 chains, but will still create 
-##'an out_stan object for the 'grad_log_prob()' method
-##'@param pwts replicate weights from 'svyrepdesign' object
-##'@param svydata data frame containing all variables from 'svyrepdesign' object
-##'@param stanmod Stan model object
-##'@param standata Stan data input
-##'@param par_stan Parameters with respect to which gradient should be computed
-##'@param upars Unconstrained parameters estimates for evaluating gradient
-##'@return `gradpar` gradient evaluated at `upars` using replicate weights
+# #'@description Helper function nested in 'withReplicates()' to obtain gradient
+# #'@details  Stan will pass warnings from calling 0 chains, but will still create
+# #'an out_stan object for the 'grad_log_prob()' method
+# #'@param pwts replicate weights from 'svyrepdesign' object
+# #'@param svydata data frame containing all variables from 'svyrepdesign' object
+# #'@param stanmod Stan model object
+# #'@param standata Stan data input
+# #'@param par_stan Parameters with respect to which gradient should be computed
+# #'@param upars Unconstrained parameters estimates for evaluating gradient
+# #'@return `gradpar` gradient evaluated at `upars` using replicate weights
 grad_par <- function(pwts, svydata, stanmod, standata, par_stan, upars) {
   standata$weights <- pwts
   out_stan <- sampling(object = stanmod, data = standata, pars = par_stan,
@@ -65,26 +65,26 @@ grad_par <- function(pwts, svydata, stanmod, standata, par_stan, upars) {
   return(gradpar)
 }
 
-##'Helper function to apply matrix rotation
-##'@param par unadjusted parameter estimates
-##'@param par_hat unadjusted mean parameter estimates
-##'@param R2R1 adjustment matrix
-##'@return adjusted parameter estimates
+# #'Helper function to apply matrix rotation
+# #'@param par unadjusted parameter estimates
+# #'@param par_hat unadjusted mean parameter estimates
+# #'@param R2R1 adjustment matrix
+# #'@return adjusted parameter estimates
 DEadj <- function(par, par_hat, R2R1) {
   par_adj <- (par - par_hat) %*% R2R1 + par_hat
   par_adj <- as.vector(par_adj)
   return(par_adj)
 }
 
-##'@description Convert each row of an input array of MCMC parameter output 
-##'from constrained space to unconstrained space in Stan
-##'@param i row index
-##'@param K number of classes
-##'@param stan_model stan model
-##'@param pi MCMC matrix output for pi; MxK
-##'@param theta MCMC array output for theta; MxpxKxd
-##'@param xi MCMC matrix output for xi; MxKxS
-## Output: vector of unconstrained parameters
+# #'@description Convert each row of an input array of MCMC parameter output
+# #'from constrained space to unconstrained space in Stan
+# #'@param i row index
+# #'@param K number of classes
+# #'@param stan_model stan model
+# #'@param pi MCMC matrix output for pi; MxK
+# #'@param theta MCMC array output for theta; MxpxKxd
+# #'@param xi MCMC matrix output for xi; MxKxS
+# #'@return: vector of unconstrained parameters
 unconstrain <- function(i, K, stan_model, pi, theta, xi) {
   upars <- unconstrain_pars(stan_model, list("pi" = pi[i,], 
                                              "theta" = theta[i,,,], 
@@ -95,34 +95,36 @@ unconstrain <- function(i, K, stan_model, pi, theta, xi) {
 
 #================= FIXED SAMPLER MODEL =========================================
 
-##'@description Main function to run WSOLCA model with fixed sampler in Stan
-##'@param scen_samp Data-generating scenario dictating sampling design
-##'@param iter_pop Population iteration. Usually 1. TAKE THIS OUT
-##'@param samp_n Sample iteration
-##'@return `analysis` list with the following components:
-##'   `out_stan` Stan model output
-##'   `label_switch` Label switching output
-##'   `mcmc_permuted_ordered` Pre-adjusted MCMC posterior samples after relabeling. MxKx(num_comp_params) array, where M=iterations*chains
-##'   `runtime` Runtime
-##'   `pi_red` MCMC samples for pi; MxK
-##'   `theta_red` MCMC samples for theta; MxpxKxd
-##'   `xi_red` MCMC samples for xi; MxKxS
-##'   `pi_med` Posterior median estimate for pi; vector of length K
-##'   `theta_med` Posterior median estimate for theta; pxKxd
-##'   `xi_med` Posterior median estimate for xi; KxS
+# #'@description Main function to run WSOLCA model with fixed sampler in Stan
+# #'@param scen_samp Data-generating scenario dictating sampling design
+# #'@param iter_pop Population iteration. Usually 1. TAKE THIS OUT
+# #'@param samp_n Sample iteration
+# #'@return `analysis` list with the following components:
+# #'  `out_stan` Stan model output
+# #'  `label_switch` Label switching output
+# #'  `mcmc_permuted_ordered` Pre-adjusted MCMC posterior samples after relabeling. MxKx(num_comp_params) array, where M=iterations*chains
+# #'  `runtime` Runtime
+# #'  `pi_red` MCMC samples for pi; MxK
+# #'  `theta_red` MCMC samples for theta; MxpxKxd
+# #'  `xi_red` MCMC samples for xi; MxKxS
+# #'  `pi_med` Posterior median estimate for pi; vector of length K
+# #'  `theta_med` Posterior median estimate for theta; pxKxd
+# #'  `xi_med` Posterior median estimate for xi; KxS
 run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
   start_time <- Sys.time()
   #================= Read in data ================================================
   # Define directories
+  wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
+  wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
   data_dir <- "Data/"
   res_dir <- "Results/"
-  analysis_dir <- "Analysis_Code/"
+  model_dir <- "Model_Code/"
   model <- "wsOFMM"
   
   # Read in data
-  sim_samp_path <- paste0(data_dir, "simdata_scen", scen_samp,"_iter", iter_pop, 
+  sim_samp_path <- paste0(wd, data_dir, "simdata_scen", scen_samp,"_iter", iter_pop, 
                           "_samp", samp_n, ".mat")
-  sim_res_path <- paste0(res_dir, model, "_latent_results_scen", scen_samp, 
+  sim_res_path <- paste0(wd, res_dir, model, "_latent_results_scen", scen_samp, 
                          "_iter", iter_pop, "_samp", samp_n, ".mat")
   already_done <- file.exists(sim_res_path)
   # if (already_done) {
@@ -164,14 +166,18 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
                     Sig0 = Sig0)
   
   #=============== Run Stan model ================================================
-  n_chains <- 4                       # Number of MCMC chains to run
+  n_chains <- 2                       # Number of MCMC chains to run
   
   # Create Stan model
-  mod_stan <- stan_model(paste0(analysis_dir, "WSOLCA.stan"))
+  mod_stan <- stan_model(paste0(wd, model_dir, "WSOLCA.stan"))
   
   # Run Stan model
   out_stan <- sampling(object = mod_stan, data = data_stan, 
-                       chains = n_chains, iter = 2500, warmup = 1500, thin = 5)
+                       chains = n_chains, iter = 2000, warmup = 1000, thin = 5)
+                       # control = list(adapt_delta = 0.99))
+  
+  save(out_stan, file = paste0(wd, res_dir, model, "_stan", "_output", scen_samp,
+                         "_iter", iter_pop, "_samp", samp_n, ".RData"))
 
   #=============== Post-hoc relabeling =========================================
   # Obtain posterior class assignment probabilities P(c_i=k|-). Combines all chains
@@ -206,7 +212,7 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
   
   # Relabel to address label-switching issue
   label_switch <- label.switching(method = set,
-                                  pivot = post_class[mapindex,], # for ECR
+                                  zpivot = post_class[mapindex,], # for ECR
                                   z = post_class, K = K,         # for ECR-based
                                   prapivot = mcmc[mapindex, ,],  # for PRA
                                   constraint = 1, # for AIC. 1st parameter used to apply constraint
@@ -218,8 +224,9 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
   mcmc_permuted <- permute.mcmc(mcmc, label_switch$permutations$`ECR-ITERATIVE-2`)$output # MxKxnum_comp_pars
   
   # Change permuted output to match parameter order of Stan output
-  mcmc_permuted_ordered <- change_mcmc(mcmc_permuted, num_comp_params, 
-                                       M, p, K, d, S, out_stan)
+  mcmc_permuted_ordered <- change_mcmc(out_stan = out_stan, mcmc = mcmc_permuted, 
+                                       num_comp_params = num_comp_params, M = M, 
+                                       p = p, K = K, d = d, S = S)
 
   #================= Apply variance adjustment ===================================
   
@@ -344,7 +351,7 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
                    theta_med = theta_med_adj, xi_med = xi_med_adj)
   
   # File name for adjusted output
-  sim_adj_path <- paste0(res_dir, model, "_stan", "_latent_results_adj_scen", scen_samp,
+  sim_adj_path <- paste0(wd, res_dir, model, "_stan", "_latent_results_adj_scen", scen_samp,
                          "_iter", iter_pop, "_samp", samp_n, ".RData")
   save(analysis, file = sim_adj_path)
   
@@ -354,7 +361,7 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
 
 #========= Read in function arguments and run fixed sampler ====================
 
-setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
+# setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
 # setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
 # setwd("/Users/Stephanie/Documents/GitHub/wsOFMM")
 
@@ -363,7 +370,8 @@ scen_samp <- args[[1]]
 iter_pop <- args[[2]]
 samp_n <- args[[3]]
 
-analysis <- run_WSOLCA(scen_samp = scen_samp, iter_pop = iter_pop, samp_n = samp_n)
+analysis <- run_WSOLCA(scen_samp = scen_samp, iter_pop = iter_pop, 
+                       samp_n = samp_n)
 
 
 
