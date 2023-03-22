@@ -1,25 +1,33 @@
 # Running WSOLCA using Stan
 # Author: Stephanie Wu
 # Date updated: 2023/03/08
-
+print("survey")
 library(survey)
-library(tidyverse)
+print("stringr")
+library(stringr)
+print("R.matlab")
 library(R.matlab)
+print("plyr")
 library(plyr)
+print("fastDummies")
 library(fastDummies)
+print("rstan")
 # # Uncomment these lines if mixture_model.stan has syntax errors
 # remove.packages(c("StanHeaders", "rstan"))
 # if (file.exists(".RData")) file.remove(".RData")
 # install.packages("StanHeaders", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
 # install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
 library(rstan)
+print("abind")
 library(abind)
+print("label.switching")
 library(label.switching)
 
+print("setting seed")
 set.seed(11152022)
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
-
+print("helper functions")
 #===================== Helper functions ========================================
 # #'@description Change mcmc output to match ordering of Stan parameters
 # #'@param out_stan Output from running stan model
@@ -113,9 +121,10 @@ unconstrain <- function(i, K, stan_model, pi, theta, xi) {
 run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
   start_time <- Sys.time()
   #================= Read in data ================================================
+  print("Read in data")
   # Define directories
   wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
-  wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
+  # wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
   data_dir <- "Data/"
   res_dir <- "Results/"
   model_dir <- "Model_Code/"
@@ -155,7 +164,7 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
   q <- S                              # Number of regression covariates excluding class assignment
   w_all <- c(sim_samp$sample_wt / sum(sim_samp$sample_wt) * n) # Weights normalized to sum to n, nx1
   # Priors
-  alpha <- rep(1, K)/K                     # Prior for pi
+  alpha <- rep(5*K, K)/K                     # Prior for pi
   eta <- matrix(1, nrow=K, ncol=d)         # Prior for theta
   mu0 <- rep(0, q)                         # Prior for xi
   Sig0 <- diag(rep(1, q), nrow=q, ncol=q)  # Prior for xi
@@ -166,20 +175,24 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
                     Sig0 = Sig0)
   
   #=============== Run Stan model ================================================
-  n_chains <- 2                       # Number of MCMC chains to run
+  print("Run Stan model")
+  n_chains <- 4                       # Number of MCMC chains to run
   
+  print("Create Stan model")
   # Create Stan model
   mod_stan <- stan_model(paste0(wd, model_dir, "WSOLCA.stan"))
   
+  print("Run Stan model")
   # Run Stan model
   out_stan <- sampling(object = mod_stan, data = data_stan, 
-                       chains = n_chains, iter = 2000, warmup = 1000, thin = 5)
-                       # control = list(adapt_delta = 0.99))
+                       chains = n_chains, iter = 2500, warmup = 1500, thin = 5,
+                       control = list(adapt_delta = 0.99))
   
   save(out_stan, file = paste0(wd, res_dir, model, "_stan", "_output", scen_samp,
                          "_iter", iter_pop, "_samp", samp_n, ".RData"))
 
   #=============== Post-hoc relabeling =========================================
+  print("Post-hoc relabeling")
   # Obtain posterior class assignment probabilities P(c_i=k|-). Combines all chains
   post_par <- rstan::extract(out_stan, 
                              c("pi", "theta", "xi", "pred_class_probs", "lp__"))
@@ -229,7 +242,7 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
                                        p = p, K = K, d = d, S = S)
 
   #================= Apply variance adjustment ===================================
-  
+  print("Apply variance adjustment")
   # Stan subset parameters of interest for gradient evaluation
   par_stan <- c('pi', 'theta', 'xi')  
   
@@ -337,7 +350,7 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
   }
   
   #=============== Output adjusted parameters ==================================
-  
+  print("Output adjusted parameters")
   pi_med_adj <- apply(pi_red_adj, 2, median)
   theta_med_adj <- apply(theta_red_adj, c(2,3,4), median)
   xi_med_adj <- apply(xi_red_adj, c(2,3), median)
@@ -364,12 +377,13 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
 # setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
 # setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
 # setwd("/Users/Stephanie/Documents/GitHub/wsOFMM")
-
+print("Reading in input")
 args <- commandArgs(trailingOnly = TRUE)
 scen_samp <- args[[1]]
 iter_pop <- args[[2]]
 samp_n <- args[[3]]
 
+print("Running main function")
 analysis <- run_WSOLCA(scen_samp = scen_samp, iter_pop = iter_pop, 
                        samp_n = samp_n)
 

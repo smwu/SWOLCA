@@ -5,20 +5,20 @@ data {
   int<lower=1> n;  // number of subjects
   int<lower=1> q;  // number of covariates in probit regression
   
-  array[n, p] int X;                // categorical food data
-  array[n] int<lower=0, upper=1> y; // binary outcome data
-  array[n, q] real V;               // covariate matrix excluding class assignment
+  int X[n, p];                // categorical food data
+  int<lower=0, upper=1> y[n]; // binary outcome data
+  real V[n, q];               // covariate matrix excluding class assignment
   vector<lower=0>[n] weights;       // individual-level survey weights
   
   vector[K] alpha;         // hyperparameter for pi prior
-  array[K] vector[d] eta;  // hyperparameter for theta prior
+  vector[d] eta[K];  // hyperparameter for theta prior
   vector[q] mu0;           // hyperparameter for mean of xi prior
   cov_matrix[q] Sig0;      // hyperparameter for covariance of xi prior
 }
 parameters {
   simplex[K] pi;                 // cluster probabilities
-  array[p, K] simplex[d] theta;  // cluster-specific item consumption probabilities
-  array[K] vector[q] xi;         // regression coefficients
+  simplex[d] theta[p, K];  // cluster-specific item consumption probabilities
+  vector[q] xi[K];         // regression coefficients
 }
 transformed parameters {
   matrix[p, d] theta_prod;  // to check convergence up to permutation of labels
@@ -33,6 +33,8 @@ transformed parameters {
   }
 }
 model {
+  vector[K] log_cond_c[n]; // log p(c_i=k| -)
+  
   pi ~ dirichlet(alpha);  // prior for pi
   for (j in 1:p) {        // prior for theta
     for (k in 1:K) {
@@ -43,7 +45,6 @@ model {
     xi[k] ~ multi_normal(mu0, Sig0);
   }
   
-  array[n] vector[K] log_cond_c; // log p(c_i=k| -)
   for (i in 1:n) {
     for (k in 1:K) {
       log_cond_c[i, k] = log(pi[k]) + bernoulli_lpmf(y[i] | Phi(to_row_vector(V[i, ]) * xi[k]));
@@ -56,10 +57,10 @@ model {
   }
 }
 generated quantities {
-  array[n] simplex[K] pred_class_probs;  // posterior class probs for each individual
+  simplex[K] pred_class_probs[n];  // posterior class probs for each individual
   int<lower=1> pred_class[n];  // posterior predicted class for individuals
+  vector[K] log_cond_c[n]; // log p(c_i=k| -)
   
-  array[n] vector[K] log_cond_c; // log p(c_i=k| -)
   for (i in 1:n) {
     for (k in 1:K) {
       // need to recalculate log-density to avoid scope issues for 'log_cond_c'
