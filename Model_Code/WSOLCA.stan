@@ -76,3 +76,5 @@ generated quantities {
     pred_class[i] = categorical_rng(pred_class_probs[i, ]);
   }
 }
+
+

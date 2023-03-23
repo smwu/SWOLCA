@@ -25,7 +25,7 @@ library(label.switching)
 
 print("setting seed")
 set.seed(11152022)
-rstan_options(auto_write = TRUE)
+#rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 print("helper functions")
 #===================== Helper functions ========================================
@@ -146,6 +146,7 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
   # Load simulated sample data for the iteration
   sim_samp <- readMat(sim_samp_path)$sim.data
   names(sim_samp) <- str_replace_all(dimnames(sim_samp)[[1]], "[.]", "_")
+  # names(sim_samp) <- sapply(dimnames(sim_samp)[[1]], function(x) gsub("[.]", "_", x))
   
   # Obtain dimensions
   K <- 3                              # Fixed number of classes
