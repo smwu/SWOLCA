@@ -27,24 +27,24 @@ library(survey)
 
 # Define directories
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
-wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
+# wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
 data_dir <- "Data/"
 res_dir <- "Results/"
 model_dir <- "Model_Code/"
 model <- "wsOFMM"
 
-    # Testing code
-    scen_samp <- 101
-    iter_pop <- 1
-    samp_n <- 1
-    
+# # Testing code
+# scen_samp <- 101
+# iter_pop <- 1
+# samp_n <- 1
+
 # Define paths
 # REMOVE ITER_POP
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
-                        "_samp", samp_n, ".mat")   # Input dataset
+                    "_samp", samp_n, ".mat")   # Input dataset
 res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
-                       "_samp", samp_n, ".RData")  # Output file
-adj_path <- paste0(wd, res_dir, model, "_results_adj_scen", scen_samp, 
+                   "_samp", samp_n, ".RData")  # Output file
+adj_path <- paste0(wd, res_dir, model, "_results_adjR_scen", scen_samp, 
                    "_samp", samp_n, ".RData")      # Adjusted output file
 stan_path <- paste0(wd, model_dir, "WSOLCA_main.stan")  # Stan file
 
@@ -58,7 +58,10 @@ if (already_done) {
   print(paste0("Running WSOLCA_main for scenario ", scen_samp, ' iter ', 
                iter_pop,' samp ', samp_n))
   results_adj <- WSOLCA_main(data_path = data_path, res_path = res_path,
-                             adj_path = adj_path, stan_path = stan_path)
+                             adj_path = adj_path, stan_path = stan_path, 
+                             save_res = TRUE, n_runs = 25000, burn = 15000, 
+                             thin = 5)
+  print(paste0("Runtime: ", results_adj$runtime))
 }
 
 # 'WSOLCA_main' runs the WSOLCA model and saves and returns results
@@ -67,12 +70,17 @@ if (already_done) {
 #   res_path: String path for output file
 #   adj_path: String path for adjusted output file
 #   stan_path: String path for Stan file
+#   save_res: Boolean specifying if results should be saved. Default = TRUE
+#   n_runs: Number of MCMC iterations
+#   burn: Burn-in period
+#   thin: Thinning factor
 # Outputs: Saves and returns list `res` containing:
 #   analysis_adj: List of adjusted posterior model results
 #   runtime: Total runtime for model
 #   data_vars: Input dataset
 # Also saved 'analysis' MCMC output prior to variance adjustment
-WSOLCA_main <- function(data_path, res_path, adj_path, stan_path) {
+WSOLCA_main <- function(data_path, res_path, adj_path, stan_path, 
+                        save_res = TRUE, n_runs, burn, thin) {
   start_time <- Sys.time()
   
   #================= Read in data ==============================================
@@ -125,21 +133,13 @@ WSOLCA_main <- function(data_path, res_path, adj_path, stan_path) {
                                V = V, y_all = y_all, c_all = OLCA_params$c_all)
   
   #================= Run adaptive sampler to obtain number of classes ==========
-  n_runs <- 25000  # Number of MCMC iterations
-  burn <- 15000    # Burn-in period
-  thin <- 5        # Thinning factor
-        # Testing code
-        n_runs <- 250
-        burn <- 150
-        thin <- 5
-  
   # Obtain pi_MCMC, theta_MCMC, xi_MCMC, c_all_MCMC, z_all_MCMC, loglik_MCMC
   MCMC_out <- run_MCMC(OLCA_params = OLCA_params, probit_params = probit_params, 
                        n_runs = n_runs, burn = burn, thin = thin, K = K_max, 
                        p = p, d = d, n = n, q = q, w_all = w_all, x_mat = x_mat, 
-                       z_all = z_all, y_all = y_all, V = V, alpha = alpha, 
-                       eta = eta, Sig0 = Sig0, mu0 = mu0)
-
+                       y_all = y_all, V = V, alpha = alpha, eta = eta, 
+                       Sig0 = Sig0, mu0 = mu0)
+  
   #================= Post-processing for adaptive sampler ======================
   # Obtain K_med, pi, theta, xi
   post_MCMC_out <- post_process(MCMC_out = MCMC_out, p = p, d = d, q = q)
@@ -186,8 +186,8 @@ WSOLCA_main <- function(data_path, res_path, adj_path, stan_path) {
   MCMC_out <- run_MCMC(OLCA_params = OLCA_params, probit_params = probit_params, 
                        n_runs = n_runs, burn = burn, thin = thin, K = K_fixed, 
                        p = p, d = d, n = n, q = q, w_all = w_all, x_mat = x_mat, 
-                       z_all = z_all, y_all = y_all, V = V, alpha = alpha, 
-                       eta = eta, Sig0 = Sig0, mu0 = mu0)
+                       y_all = y_all, V = V, alpha = alpha, eta = eta, 
+                       Sig0 = Sig0, mu0 = mu0)
   
   # Post-processing to recalibrate labels and remove extraneous empty classes
   # Obtain K_med, pi, theta, xi, loglik_MCMC
@@ -197,9 +197,10 @@ WSOLCA_main <- function(data_path, res_path, adj_path, stan_path) {
   # Obtain K_red, pi_red, theta_red, xi_red, pi_med, theta_med, xi_med, Phi_med, 
   # c_all, pred_class_probs, loglik_med
   analysis <- analyze_results(MCMC_out = MCMC_out, post_MCMC_out = post_MCMC_out, 
-                              n = n, V = V, y_all = y_all, x_mat = x_mat)
-  
-  save(analysis, file = res_path)  # Save MCMC output
+                              n = n, p = p, V = V, y_all = y_all, x_mat = x_mat)
+  if (save_res) {
+    save(analysis, file = res_path)  # Save MCMC output
+  }
   
   #================= VARIANCE ADJUSTMENT =======================================
   print("Variance adjustment")
@@ -208,17 +209,19 @@ WSOLCA_main <- function(data_path, res_path, adj_path, stan_path) {
   # Apply variance adjustment for correct coverage
   # Obtain pi_red_adj, theta_red_adj, xi_red_adj, pi_med_adj, theta_med_adj, 
   # xi_med_adj, Phi_med_adj, c_all, pred_class_probs, log_lik_med
-  analysis_adj <- var_adjust(mod_stan = mod_stan, analysis = analysis, K = K, 
-                             p = p, d = d, n = n, q = q, x_mat = x_mat, 
-                             y_all = y_all, V = V, w_all = w_all, s_all = s_all, 
-                             alpha = alpha, eta = eta, mu0 = mu0, Sig0 = Sig0)
+  analysis_adj <- var_adjust(mod_stan = mod_stan, analysis = analysis, 
+                             K = analysis$K_red, p = p, d = d, n = n, q = q, 
+                             x_mat = x_mat, y_all = y_all, V = V, w_all = w_all, 
+                             s_all = s_all)
   
   runtime <- Sys.time() - start_time
   
   #================= Save and return output ====================================
   res <- list(analysis_adj = analysis_adj, runtime = runtime, 
               data_vars = data_vars)
-  save(res, file = adj_path)
+  if (save_res) {
+    save(res, file = adj_path)
+  }
   return(res)
 }
 
@@ -276,7 +279,7 @@ init_probit <- function(mu0, Sig0, K, q, n, V, y_all, c_all) {
   for (k in 1:K) {
     xi[k, ] <- rmvn(n = 1, mu = mu0[[k]], Sigma = Sig0[[k]])
   }
-
+  
   # Initialize probit model latent variable, z, following Albert and Chib (1993)
   # Linear predictor using covariate values and class assignment for each individual
   for (i in 1:n) {
@@ -284,10 +287,10 @@ init_probit <- function(mu0, Sig0, K, q, n, V, y_all, c_all) {
   }
   # For cases, z_i ~ TruncNormal(low=0, high=Inf, mean=V*xi[c_i], var=1)
   z_all[y_all == 1] <- rtruncnorm(n = 1, a = 0, b = Inf, 
-                                mean = lin_pred[y_all == 1], sd = 1)
+                                  mean = lin_pred[y_all == 1], sd = 1)
   # For controls, z_i ~ TruncNormal(low=-Inf, high=0, mean=V*xi[c_i], var=1)
   z_all[y_all == 0] <- rtruncnorm(n = 1, a = -Inf, b = 0, 
-                                mean = lin_pred[y_all == 0], sd = 1)
+                                  mean = lin_pred[y_all == 0], sd = 1)
   # Control extreme values
   z_all[z_all == Inf] <- qnorm(1 - (1e-10))
   z_all[z_all == -Inf] <- qnorm(1e-10)
@@ -324,7 +327,7 @@ init_probit <- function(mu0, Sig0, K, q, n, V, y_all, c_all) {
 #   z_all_MCMC: Matrix of posterior samples for z_all. (n_iter)xn
 #   loglik_MCMC: Vector of posterior samples for log-likelihood. (n_iter)x1
 run_MCMC <- function(OLCA_params, probit_params, n_runs, burn, thin, K, p, d, n, 
-                     q, w_all, x_mat, z_all, y_all, V, alpha, eta, mu0, Sig0) {
+                     q, w_all, x_mat, y_all, V, alpha, eta, mu0, Sig0) {
   n_storage <- ceiling(n_runs / thin)  # Number of MCMC iterations to store
   
   # Initialize variables
@@ -346,6 +349,7 @@ run_MCMC <- function(OLCA_params, probit_params, n_runs, burn, thin, K, p, d, n,
   pred_class_probs <- matrix(NA, nrow = n, ncol = K)  # Posterior class membership probabilities
   eta_post <- numeric(d)                              # Posterior parameters for theta
   loglik <- numeric(n)                                # Individual log-likelihood
+  lin_pred <- numeric(n)                              # Linear predictor, V*xi
   
   # Update parameters and variables
   for (m in 1:n_runs) {
@@ -420,7 +424,7 @@ run_MCMC <- function(OLCA_params, probit_params, n_runs, burn, thin, K, p, d, n,
     z_all[z_all == Inf] <- qnorm(1 - (1e-10))
     z_all[z_all == -Inf] <- qnorm(1e-10)
     
-
+    
     #============== Update individual log-likelihood  ==========================
     for (i in 1:n) {
       c_i <- c_all[i]
@@ -494,9 +498,9 @@ get_mode <- function(v) {
 #   q: Number of regression covariates excluding class assignment
 # Outputs: `post_MCMC_out` list containing the following items:
 #   K_med: Median, across iterations, of number of classes with >= 5% of individuals
-#   pi: Matrix of reduced and relabeled posterior samples for pi. (n_iter)xK_med
-#   theta: Array of reduced and relabeled posterior samples for theta. (n_iter)xpxK_medxd
-#   xi: Array of reduced and relabeled posterior samples for xi. (n_iter)xK_medxq
+#   pi: Matrix of reduced and relabeled posterior samples for pi. (n_iter)x(K_med)
+#   theta: Array of reduced and relabeled posterior samples for theta. (n_iter)xpx(K_med)xd
+#   xi: Array of reduced and relabeled posterior samples for xi. (n_iter)x(K_med)xq
 post_process <- function(MCMC_out, p, d, q) {
   # Get median number of classes with >= 5% of individuals, over all iterations
   M <- dim(MCMC_out$pi_MCMC)[1]  # Number of stored MCMC iterations
@@ -511,8 +515,8 @@ post_process <- function(MCMC_out, p, d, q) {
   # For each iteration, relabel new classes using the most common old class assignment
   relabel_red_classes <- matrix(NA, nrow = M, ncol = K_med)   # Apply new classes to each iteration
   for (k in 1:K_med) {
-    relabel_red_classes[, k] <- apply(MCMC_out$c_all_MCMC[, red_c_all == k], 1, 
-                                      get_mode)
+    relabel_red_classes[, k] <- apply(as.matrix(MCMC_out$c_all_MCMC[, red_c_all == k]), 
+                                      1, get_mode)
   }
   
   # Reduce and reorder parameter estimates using new classes
@@ -536,9 +540,11 @@ post_process <- function(MCMC_out, p, d, q) {
 
 # `analyze_results` obtains posterior parameter samples and estimates
 # Inputs:
-#   MCMC_out: Output from 'run_MCMC' containing 'pi_MCMC', 'theta_MCMC', 'xi_MCMC', 'c_all_MCMC', 'z_all_MCMC', and 'loglik_MCMC'
+#   MCMC_out: Output from 'run_MCMC' containing 'pi_MCMC', 'theta_MCMC', 'xi_MCMC', 
+# 'c_all_MCMC', 'z_all_MCMC', 'loglik_MCMC'
 #   post_MCMC_out: output from 'post_process' containing 'K_med', 'pi', 'theta', 'xi'
 #   n: Number of individuals
+#   p: Number of exposure items
 #   V: Regression design matrix without class assignment. nxq
 #   y_all: Vector of outcomes. nx1
 #   x_mat: Categorical exposure matrix. nxp
@@ -554,7 +560,7 @@ post_process <- function(MCMC_out, p, d, q) {
 #   c_all: Vector of final individual class assignments. nx1
 #   pred_class_probs: Matrix of individual posterior class probabilities. nx(K_red)
 #   loglik_med: Vector of final indiviudal log-likehoods. nx1
-analyze_results <- function(MCMC_out, post_MCMC_out, n, V, y_all, x_mat) {
+analyze_results <- function(MCMC_out, post_MCMC_out, n, p, V, y_all, x_mat) {
   
   #============== Identify unique classes using modal exposure categories ======
   # Posterior median estimate for theta across iterations
@@ -706,10 +712,6 @@ grad_par <- function(pwts, svydata, stan_mod, stan_data, par_stan, u_pars) {
 #   V: Regression design matrix without class assignment. nxq
 #   w_all: Weights normalized to sum to n. nx1
 #   s_all: Vector of stratifying variable for individuals. nx1
-#   alpha: Vector of hyperparameters for pi. Kx1
-#   eta: Vector of hyperparameters for theta. dx1
-#   mu0: List of vectors of mean hyperparameters for xi. List of K qx1 vectors
-#   Sig0: List of matrices of variance hyperparameters for xi. List of K qxq matrices
 # Outputs: `analysis_adj` list containing the following items:
 #   pi_red_adj: Matrix of adjusted posterior samples for pi. Mx(K_red)
 #   theta_red_adj: Array of adjusted posterior samples for theta. Mxpx(K_red)xd
@@ -722,9 +724,16 @@ grad_par <- function(pwts, svydata, stan_mod, stan_data, par_stan, u_pars) {
 #   pred_class_probs: Matrix of individual posterior class probabilities from `analyze_results`. nx(K_red)
 #   loglik_med: Vector of final indiviudal log-likehoods from `analyze_results`. nx1
 var_adjust <- function(mod_stan, analysis, K, p, d, n, q, x_mat, y_all, V, w_all, 
-                       s_all, alpha, eta, mu0, Sig0) {
+                       s_all) {
   #=============== Run Stan model ==============================================
   # Define data for Stan model
+  alpha <- rep(1, K) / K            # Hyperparameter for prior for pi
+  eta <- rep(1, d)                  # Hyperparameter for prior for theta
+  mu0 <- Sig0 <- vector("list", K)  # Hyperparameters for xi
+  for (k in 1:K) {
+    mu0[[k]] <- rnorm(n = q)
+    Sig0[[k]] <- diag(rinvgamma(n = q, shape = 3.5, scale = 6.25), nrow = q, ncol = q)
+  }
   data_stan <- list(K = K, p = p, d = d, n = n, q = q, X = x_mat, y = y_all, 
                     V = V, weights = w_all, alpha = alpha, eta = eta, mu0 = mu0, 
                     Sig0 = Sig0)
