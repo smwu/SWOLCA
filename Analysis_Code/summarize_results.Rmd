@@ -89,11 +89,11 @@ get_theta_dist <- function(est_theta, true_theta, order) {
     # Lowest dist out of all permutations
     min_dist <- min(dist_all_perms)
     # Obtain optimal ordering of classes
-    ordering <- all_perms[which.min(dist_all_perms), ]
+    order <- all_perms[which.min(dist_all_perms), ]
     est_theta_perm <- est_theta[ , order, ]
     
     # Return lowest dist, ordering, and reordered estimate
-    return(list("theta_dist" = min_dist, "ordering" = ordering, "est_theta_perm" = est_theta_perm))
+    return(list("theta_dist" = min_dist, "order" = order, "est_theta_perm" = est_theta_perm))
     
   } else {
     est_theta_perm <- est_theta[ , order, ]
@@ -297,7 +297,9 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
   R <- length(R_seq)  # Number of samples
   
   # Initialize vectors
-  K_dist <- pi_dist <- theta_dist <- xi_dist <- Phi_dist <- rep(NA, R)
+  # K_dist <- pi_dist <- theta_dist <- xi_dist <- Phi_dist <- rep(NA, R)
+  K_bias <- pi_bias <- theta_bias <- xi_bias <- Phi_bias <- rep(NA, R) # bias squared using posterior median
+  pi_var <- theta_var <- xi_var <- Phi_var <- rep(NA, R) # posterior variance
   
   # Initial dist vector for pi for sOFMM with posthoc correction
   if (posthoc) {
@@ -351,13 +353,17 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
       names(sim_samp) <- str_replace_all(dimnames(sim_samp)[[1]], "[.]", "_")
       
       # If post-processing adjustment has been applied, use the adjusted RData
+      # COMMENT OUT STAN IF NOT USING STAN MODEL
       if (adjust) {
-        sim_adj_path <- paste0(res_dir, model, "_latent_results_adj_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".RData")
+        sim_adj_path <- paste0(res_dir, model, "_stan",  "_latent_results_adj_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".RData")
         if (!file.exists(sim_adj_path)) {
-          print(paste0("File does not exist: ", model, "_latent_results_adj_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".RData"))
+          print(paste0("File does not exist: ", model, "_stan",  "_latent_results_adj_scen", scen_samp, "_iter", iter_pop, "_samp", samp_n, ".RData"))
         } else {
           #print("Using adjusted file for sample ", samp_n)
           load(sim_adj_path)
+          # ADDITIONAL STAN ADJUSTMENT
+          analysis$k_red <- length(analysis$pi_med)
+            
           # Convert to previous xi format
           dims_xi <- dim(analysis$xi_red)
           analysis$xi_red <- matrix(analysis$xi_red, nrow = dims_xi[1], ncol = dims_xi[2]*dims_xi[3])
@@ -408,14 +414,17 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
             
       ########### Distance estimates for MSE ###############
       ##### Number of classes, K
-      K_dist[samp_n] <- (analysis$k_red - sim_pop$true_K)^2
-      
+      # K_dist[samp_n] <- (analysis$k_red - sim_pop$true_K)^2
+      K_bias[samp_n] <- (analysis$k_red - sim_pop$true_K)^2
+
       ##### theta: get dist (Eucl norm) and optimal ordering
       theta_perm <- get_theta_dist(analysis$theta_med, 
                                         true_params$true_theta, 
                                         order=NULL)
-      theta_dist[samp_n] <- theta_perm$theta_dist
-      order <- theta_perm$ordering
+      # theta_dist[samp_n] <- theta_perm$theta_dist
+      theta_bias[samp_n] <- theta_perm$theta_dist
+      theta_var[samp_n] <- sum(var(theta_perm$est_theta_perm))
+      order <- theta_perm$order
       # Theta mode consumption levels for each item and class (pxK)
       est_modes <- apply(analysis$theta_med[, order, ], c(1,2), which.max)
       true_modes <- apply(true_params$true_theta[,,], c(1,2), which.max)
@@ -424,7 +433,9 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
       
       ##### pi 
       pi_perm <- get_pi_dist(analysis$pi_med, true_params$true_pi, order=order)
-      pi_dist[samp_n] <- pi_perm$pi_dist
+      # pi_dist[samp_n] <- pi_perm$pi_dist
+      pi_bias[samp_n] <- pi_perm$pi_dist
+      pi_var[samp_n] <- sum(var(pi_perm$est_pi_perm))
       if (posthoc) {
         pi_dist_posthoc[samp_n] <- get_pi_dist(data_s$posthoc_pi, true_params$true_pi, 
                                                order=order_s)$pi_dist
@@ -432,7 +443,9 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
       
       ##### xi
       xi_perm <- get_xi_dist(analysis$xi_med, true_params$true_xi, order, S)
-      xi_dist[samp_n] <- xi_perm$xi_dist
+      # xi_dist[samp_n] <- xi_perm$xi_dist
+      xi_bias[samp_n] <- xi_perm$xi_dist
+      xi_var[samp_n] <- sum(var(xi_perm$est_xi_perm))
       
       ############ Coverage probabilities #################
       if (coverage) {
@@ -533,13 +546,23 @@ get_MSE <- function(data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, R_seq, m
     }
   }
   # Obtain MSE by taking the mean over the independent samples
-  K_MSE <- mean(K_dist, na.rm = TRUE)
-  pi_MSE <- mean(pi_dist, na.rm = TRUE)
-  theta_MSE <- mean(theta_dist, na.rm = TRUE)
-  xi_MSE <- mean(xi_dist, na.rm = TRUE)
+  # K_MSE <- mean(K_dist, na.rm = TRUE)
+  # pi_MSE <- mean(pi_dist, na.rm = TRUE)
+  # theta_MSE <- mean(theta_dist, na.rm = TRUE)
+  # xi_MSE <- mean(xi_dist, na.rm = TRUE)
+  K_bias2 <- mean(K_bias, na.rm = TRUE)
+  pi_bias2 <- mean(pi_bias, na.rm = TRUE)
+  theta_bias2 <- mean(theta_bias, na.rm = TRUE)
+  xi_bias2 <- mean(xi_bias, na.rm = TRUE)
+  pi_var <- mean(pi_var, na.rm = TRUE)
+  theta_var <- mean(theta_var, na.rm = TRUE)
+  xi_var <- mean(xi_var, na.rm = TRUE)
 
   # List of returns
-  ret_list <- list(K_MSE = K_MSE, pi_MSE = pi_MSE, theta_MSE = theta_MSE, xi_MSE = xi_MSE)
+  # ret_list <- list(K_MSE = K_MSE, pi_MSE = pi_MSE, theta_MSE = theta_MSE, xi_MSE = xi_MSE)
+  ret_list <- list(K_bias2 = K_bias2, 
+                   pi_bias2 = pi_bias2, theta_bias2 = theta_bias2, xi_bias2 = xi_bias2, 
+                   pi_var = pi_var, theta_var = theta_var, xi_var = xi_var)
   if (posthoc) {
     posthoc_pi_MSE <- mean(pi_dist_posthoc)
     ret_list[["posthoc_pi_MSE"]] <- posthoc_pi_MSE
@@ -628,7 +651,32 @@ MSE_summ %>%
     columns = 3:6,
     decimals = 3
   ) 
-  
+```
+
+```{r}
+### Create table of MSEs with bias and variance
+MSE_summ <- as.data.frame(matrix(NA, nrow=6, ncol=9))
+colnames(MSE_summ) <- c("Sampling Scheme", "Model", 
+                        "K bias^2", "$\\pi$ bias^2", "$\\pi$ var", 
+                        "$\\theta$ bias^2", "$\\theta$ var", 
+                        "$\\xi$ bias^2", "$\\xi$ var")
+MSE_summ[, 1] <- c(rep("SRS", 3), rep("Stratified", 3))
+MSE_summ[, 2] <- rep(c("Unwtd(sOFMM)", "Wtd(wsOFMM)", "Unsup(wOFMM)"), 2)  ## latent versions
+output_inds <- c(1,2,5,3,6,4,7)
+MSE_summ[1, -c(1,2)] <- c(MSE_SRS_s[output_inds])
+MSE_summ[2, -c(1,2)] <- c(MSE_SRS_ws[output_inds])
+MSE_summ[3, -c(1,2)] <- c(MSE_SRS_unsup[output_inds])
+MSE_summ[4, -c(1,2)] <- c(MSE_Strat_s[output_inds])
+MSE_summ[5, -c(1,2)] <- c(MSE_Strat_ws[output_inds])
+MSE_summ[6, -c(1,2)] <- c(MSE_Strat_unsup[output_inds])
+MSE_summ %>% 
+gt(caption = "Baseline scenario MSE of posterior parameter estimates, averaged over 100 samples") %>%
+cols_label("$\\pi$ bias^2" = "π bias^2", "$\\theta$ bias^2" = "θ bias^2", "$\\xi$ bias^2" = "ξ bias^2",
+           "$\\pi$ var" = "π var", "$\\theta$ var" = "θ var", "$\\xi$ var" = "ξ var") %>%
+fmt_scientific(
+  columns = 3:9,
+  decimals = 3
+) 
 ```
 
 ### Coverage plots
@@ -781,7 +829,8 @@ if (any(is.na(pi_plot_data))) {
   pi_plot_data <- pi_plot_data %>% 
     group_by(Model, pi_component) %>% 
     mutate(num_points = sum(!is.na(value)))
-  ggplot(pi_plot_data, aes(x=pi_component, y=value, fill=Model, alpha=factor(num_points))) +
+  # ggplot(pi_plot_data, aes(x=pi_component, y=value, fill=Model, alpha=factor(num_points))) +
+  ggplot(pi_plot_data, aes(x=pi_component, y=value, fill=Model)) +
     theme_bw() +
     geom_boxplot() +
     scale_alpha_discrete(range = c(0.2, 1), guide = guide_legend(override.aes = list(fill = "black"),
@@ -824,6 +873,11 @@ names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
 # Obtain true observed population parameters
 true_params <- get_true_params(sim_pop)
 xi_plot_data <- as.data.frame(rbind(MSE_Strat_s$xi_all,  MSE_Strat_ws$xi_all, MSE_Strat_unsup$xi_all))
+    # which.max(MSE_Strat_ws$xi_all[,6])
+    # MSE_Strat_ws$xi_all[74,]
+    # temp_Strat_ws <- MSE_Strat_ws$xi_all
+    # temp_Strat_ws[74,]<- NA
+    # xi_plot_data <- as.data.frame(rbind(MSE_Strat_s$xi_all, temp_Strat_ws, MSE_Strat_unsup$xi_all))
 colnames(xi_plot_data) <- paste0("xi_", 1:ncol(xi_plot_data))
 xi_plot_data$Model <- c(rep("sOFMM", times=R), rep("wsOFMM", times=R), rep("wOFMM", times=R))
 xi_plot_data <- xi_plot_data %>% gather("xi_component", "value", -Model)
@@ -837,6 +891,17 @@ ggplot(xi_plot_data, aes(x=xi_component, y=value, fill=Model)) +
   geom_segment(mapping=aes(x=4.5, xend=5.5, y=true_params$true_xi[5], yend=true_params$true_xi[5]),color="forestgreen") +
   geom_segment(mapping=aes(x=5.5, xend=6.5, y=true_params$true_xi[6], yend=true_params$true_xi[6]),color="forestgreen") +
   ggtitle("Parameter estimation for xi under stratified sampling with unequal probabilities, \ndisplayed across 100 samples")
+
+# Troubleshooting
+load(paste0(res_dir, model, "_stan",  "_latent_results_adj_scen", scen_samp=201, "_iter", iter_pop, "_samp", samp_n=74, ".RData"))
+plot(analysis$xi_red[,3,2], type="l")
+plot(analysis$xi_red[,1,1], type="l")
+analysis$xi_med
+
+rstan::traceplot(analysis$out_stan, pars="xi")
+plot(analysis$mcmc_permuted_ordered[,1,369], type = "l")
+rstan::traceplot(analysis$out_stan, pars="pi")
+apply(analysis$mcmc_permuted_ordered[, 1, 364:369], 2, median)
 
 ```
 
