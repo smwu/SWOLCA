@@ -670,22 +670,31 @@ WSOLCA_main_Rcpp <- function(data_path, res_path, adj_path, stan_path,
                             Sig0 = Sig0, mu0 = mu0)
   
   #================= Post-processing for adaptive sampler ======================
-  # Obtain K_med, pi, theta, xi
-  post_MCMC_out <- post_process(MCMC_out = MCMC_out, p = p, d = d, q = q)
-  
-  # Identify unique classes using modal exposure categories
-  # Posterior median estimate for theta across iterations
-  theta_med_temp <- apply(post_MCMC_out$theta, c(2, 3, 4), median)
-  # Posterior modal exposure categories for each exposure item and reduced class
-  theta_modes <- apply(theta_med_temp, c(1, 2), which.max)
-  # Identify unique classes
-  unique_classes <- which(!duplicated(theta_modes, MARGIN = 2))
-  
+  # Get median number of classes with >= 5% of individuals, over all iterations
+  M <- dim(MCMC_out$pi_MCMC)[1]  # Number of stored MCMC iterations
+  K_med <- round(median(rowSums(MCMC_out$pi_MCMC >= 0.05)))
   # Get number of unique classes for fixed sampler
-  K_fixed <- length(unique_classes) 
-  
+  K_fixed <- K_med
+  print(paste0("K_fixed: ", K_fixed))
   # Reduce memory burden
-  rm(OLCA_params, probit_params, MCMC_out, post_MCMC_out)
+  rm(OLCA_params, probit_params, MCMC_out)
+  
+  # # Obtain K_med, pi, theta, xi
+  # post_MCMC_out <- post_process(MCMC_out = MCMC_out, p = p, d = d, q = q)
+  # 
+  # # Identify unique classes using modal exposure categories
+  # # Posterior median estimate for theta across iterations
+  # theta_med_temp <- apply(post_MCMC_out$theta, c(2, 3, 4), median)
+  # # Posterior modal exposure categories for each exposure item and reduced class
+  # theta_modes <- apply(theta_med_temp, c(1, 2), which.max)
+  # # Identify unique classes
+  # unique_classes <- which(!duplicated(theta_modes, MARGIN = 2))
+  # 
+  # # Get number of unique classes for fixed sampler
+  # K_fixed <- length(unique_classes) 
+  # 
+  # # Reduce memory burden
+  # rm(OLCA_params, probit_params, MCMC_out, post_MCMC_out)
   
   #================= FIXED SAMPLER =============================================
   print("Fixed sampler")
@@ -727,8 +736,10 @@ WSOLCA_main_Rcpp <- function(data_path, res_path, adj_path, stan_path,
   # c_all, pred_class_probs, loglik_med
   analysis <- analyze_results(MCMC_out = MCMC_out, post_MCMC_out = post_MCMC_out, 
                               n = n, p = p, V = V, y_all = y_all, x_mat = x_mat)
+  res_MCMC <- list(MCMC_out = MCMC_out, post_MCMC_out = post_MCMC_out,
+                   analysis = analysis)
   if (save_res) {
-    save(analysis, file = res_path)  # Save MCMC output
+    save(res_MCMC, file = res_path)  # Save MCMC output
   }
   
   #================= VARIANCE ADJUSTMENT =======================================
@@ -765,7 +776,7 @@ model_dir <- "Model_Code/"
 model <- "wsOFMM"
 
 # # Testing code
-# scen_samp <- 101
+# scen_samp <- 201
 # iter_pop <- 1
 # samp_n <- 1
 
@@ -775,7 +786,7 @@ data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".mat")   # Input dataset
 res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
-adj_path <- paste0(wd, res_dir, model, "_results_adjR_scen", scen_samp, 
+adj_path <- paste0(wd, res_dir, model, "_results_adjRcpp_scen", scen_samp, 
                    "_samp", samp_n, ".RData")      # Adjusted output file
 stan_path <- paste0(wd, model_dir, "WSOLCA_main.stan")  # Stan file
 
@@ -785,27 +796,27 @@ if (already_done) {
   print(paste0('Scenario ', scen_samp, ' iter ', iter_pop, ' samp ', samp_n,
                ' already exists.'))
 } else {
-  Rcpp::sourceCpp(paste0(model_dir, "WSOLCA_main_Rcpp.cpp"))
+  Rcpp::sourceCpp(paste0(wd, model_dir, "WSOLCA_main_Rcpp.cpp"))
   set.seed(samp_n)
   print(paste0("Running WSOLCA_main for scenario ", scen_samp, ' iter ', 
                iter_pop,' samp ', samp_n))
   results_adj <- WSOLCA_main_Rcpp(data_path = data_path, res_path = res_path,
                                   adj_path = adj_path, stan_path = stan_path, 
-                                  save_res = FALSE, n_runs = 50, burn = 25, 
-                                  thin = 1)
+                                  save_res = TRUE, n_runs = 25000, burn = 15000, 
+                                  thin = 5)
   print(paste0("Runtime: ", results_adj$runtime))
 }
 
-library(microbenchmark)
-microbenchmark(
-  run_MCMC(OLCA_params = OLCA_params, probit_params = probit_params, 
-            n_runs = 1, burn = 0, thin = 1, K = K_max, 
-            p = p, d = d, n = n, q = q, w_all = w_all, x_mat = x_mat, 
-            y_all = y_all, V = V, alpha = alpha, eta = eta, 
-            Sig0 = Sig0, mu0 = mu0),
-  run_MCMC_Rcpp(OLCA_params = OLCA_params, probit_params = probit_params, 
-                n_runs = 1, burn = 0, thin = 1, K = K_max, 
-                p = p, d = d, n = n, q = q, w_all = w_all, x_mat = x_mat, 
-                y_all = y_all, V = V, alpha = alpha, eta = eta, 
-                Sig0 = Sig0, mu0 = mu0)
-)
+# library(microbenchmark)
+# microbenchmark(
+#   run_MCMC(OLCA_params = OLCA_params, probit_params = probit_params, 
+#             n_runs = 1, burn = 0, thin = 1, K = K_max, 
+#             p = p, d = d, n = n, q = q, w_all = w_all, x_mat = x_mat, 
+#             y_all = y_all, V = V, alpha = alpha, eta = eta, 
+#             Sig0 = Sig0, mu0 = mu0),
+#   run_MCMC_Rcpp(OLCA_params = OLCA_params, probit_params = probit_params, 
+#                 n_runs = 1, burn = 0, thin = 1, K = K_max, 
+#                 p = p, d = d, n = n, q = q, w_all = w_all, x_mat = x_mat, 
+#                 y_all = y_all, V = V, alpha = alpha, eta = eta, 
+#                 Sig0 = Sig0, mu0 = mu0)
+# )

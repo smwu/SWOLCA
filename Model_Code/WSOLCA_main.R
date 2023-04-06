@@ -790,8 +790,10 @@ WSOLCA_main <- function(data_path, res_path, adj_path, stan_path,
   # c_all, pred_class_probs, loglik_med
   analysis <- analyze_results(MCMC_out = MCMC_out, post_MCMC_out = post_MCMC_out, 
                               n = n, p = p, V = V, y_all = y_all, x_mat = x_mat)
+  res_MCMC <- list(MCMC_out = MCMC_out, post_MCMC_out = post_MCMC_out,
+              analysis = analysis)
   if (save_res) {
-    save(analysis, file = res_path)  # Save MCMC output
+    save(res_MCMC, file = res_path)  # Save MCMC output
   }
   
   #================= VARIANCE ADJUSTMENT =======================================

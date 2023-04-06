@@ -9,7 +9,6 @@ library(R.matlab)
 library(stringr)
 library(abind)
 library(gtools)
-
 library(flextable)
 library(dplyr)
 library(bayesplot)
@@ -19,7 +18,7 @@ library(ggpubr)
 library(gridExtra)
 library(knitr)
 library(kableExtra)
-# library(gt)
+library(gt)
 
 #============== Helper functions ===============================================
 # get_true_params returns the observed simulated population values for the 
@@ -75,7 +74,7 @@ get_true_params <- function(sim_pop) {
 get_theta_dist <- function(est_theta, true_theta, order = NULL) {
   if (is.null(order)) {  # If no optimal ordering exists
     # Find all subsets of est_pi with size equal to true_pi
-    all_perms <- permutations(n=dim(est_theta)[2], r=dim(true_theta)[2])
+    all_perms <- gtools::permutations(n=dim(est_theta)[2], r=dim(true_theta)[2])
     # Obtain vector of dist (Frobenius norm) between est and true pi, calculated for each permutation
     dist_all_perms <- numeric(nrow(all_perms))
     for (i in 1:nrow(all_perms)) {
@@ -108,7 +107,7 @@ get_theta_dist <- function(est_theta, true_theta, order = NULL) {
 get_pi_dist <- function(est_pi, true_pi, order=NULL) {
   if (is.null(order)) {  # If no optimal ordering exists
     # Find all subsets of est_pi with size equal to true_pi
-    all_perms <- permutations(n=length(est_pi), r=length(true_pi))
+    all_perms <- gtools::permutations(n=length(est_pi), r=length(true_pi))
     # Obtain vector of dist between est and true pi, calculated for each permutation
     dist_all_perms <- numeric(nrow(all_perms))
     for (i in 1:nrow(all_perms)) {
@@ -171,7 +170,6 @@ get_Phi_dist <- function(est_Phi, true_Phi) {
 #   samp_n_seq: Vector sequence of sample indices
 #   model: String indicating type of model, e.g., "wsOFMM", "sOFMM", "wOFMM"
 #   coverage: Boolean indicating if coverage intervals should be calculated
-#   adjust: Boolean whether post-processing adjusted estimates should be used
 #   posthoc: Boolean indicating if a posthoc pi is included in the results
 #   plot_pi: Boolean indicating if output for pi plots is needed
 #   plot_theta: Boolean indicating if output for theta plots is needed
@@ -189,8 +187,9 @@ get_Phi_dist <- function(est_Phi, true_Phi) {
 #   pi_cover_avg: if coverage = TRUE, coverage of pi estimate
 #   theta_cover_avg: if coverage = TRUE, coverage of theta estimate
 #   xi_cover_avg: if coverage = TRUE, coverage of xi estimate
+#   runtime_avg: Average runtime across iterations
 get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, 
-                        samp_n_seq, model, adjust = TRUE, plot = TRUE) {
+                        samp_n_seq, model, plot = TRUE) {
   
   #============== Load data and initialize variables ===========================
   # Load simulated population data
@@ -203,6 +202,7 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
   
   # Initialize variables
   L <- length(samp_n_seq)  # Number of samples
+  runtime_all <- numeric(L)
   # Bias squared using posterior median
   K_dist <- pi_dist <- theta_dist <- xi_dist <- Phi_dist <- rep(NA, L) 
   # Posterior variance
@@ -236,38 +236,31 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
     sim_samp <- readMat(sim_samp_path)$sim.data
     names(sim_samp) <- str_replace_all(dimnames(sim_samp)[[1]], "[.]", "_")
     
-    # Read in results data, choosing either a file without a variance adjustment
-    # or a file with the variance adjustment
-    if (adjust) {
-      sim_res_path <- paste0(wd, res_dir, model, "_results_adjR_scen", scen_samp, 
+    # Read in results data
+    if (model == "wsOFMM") {
+      # wsOFMM model includes a variance adjustment
+      sim_res_path <- paste0(wd, res_dir, model, "_results_adjRcpp_scen", scen_samp, 
                              "_samp", samp_n, ".RData")
       if (!file.exists(sim_res_path)) {
-        print(paste0("File does not exist: ", model, "_results_adjR_scen", 
+        print(paste0("File does not exist: ", model, "_results_adjRcpp_scen", 
                      scen_samp, "_samp", samp_n, ".RData"))
         next
       } 
       load(sim_res_path)
       analysis <- res$analysis_adj
       names(analysis) <- str_replace_all(names(analysis), "_adj", "")
-    } else {
-      sim_res_path <- paste0(res_dir, model, "_latent_results_scen", scen_samp, 
-                             "_iter", iter_pop, "_samp", samp_n, ".mat")
+      runtime_all[l] <- res$runtime
+    } else {  # sOFMM and wOFMM models
+      sim_res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
+                             "_samp", samp_n, ".RData")
       if (!file.exists(sim_res_path)) {
-        print(paste0("File does not exist: ", model, "_latent_results_scen", 
-                     scen_samp, "_iter", iter_pop, "_samp", samp_n, ".mat"))
+        print(paste0("File does not exist: ", model, "_results_scen", 
+                     scen_samp, "_samp", samp_n, ".mat"))
         next
       } 
-      # Load model output and extract analysis portion
-      output <- readMat(sim_res_path)
-      analysis <- output$analysis
-      names(analysis) <- str_replace_all(dimnames(analysis)[[1]], "[.]", "_")
-      temp_K <- length(analysis$pi_med)
-      dims_xi <- dim(analysis$xi_med)
-      analysis$xi_med <- matrix(analysis$xi_med, nrow = temp_K, byrow = FALSE)
-      if (model != "wOFMM") {
-        analysis$xi_red <- array(analysis$xi_red, dim=c(dims_xi[1], temp_K, 
-                                                        dims_xi[2]/temp_K))
-      }
+      load(sim_res_path)
+      analysis <- res$analysis
+      runtime_all[l] <- res$runtime
     }
       
     S <- length(unique(sim_samp$true_Si))  # Number of strata
@@ -383,11 +376,11 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
       # For two-step model, 'coefCI(fitglm)' is used in the Matlab code to 
       # extract CI from the regression model
       xi_CI <- array(NA, dim = c(2, dim(analysis$xi_med)))
-      xi_CI[1, , ] <- analysis$xi_med_lb
-      xi_CI[2, , ] <- analysis$xi_med_ub
+      xi_CI[1, , ] <- analysis$xi_med_lb[order, ]
+      xi_CI[2, , ] <- analysis$xi_med_ub[order, ]
     } else {
       # Obtain credible intervals for each component
-      xi_CI <- apply(analysis$xi_red, c(2, 3), 
+      xi_CI <- apply(analysis$xi_red[, order, ], c(2, 3), 
                      function(x) quantile(x, c(0.025, 0.975)))
     }
     # Assign 1 if interval covers true value, 0 if not
@@ -452,12 +445,15 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
   # Coverage for xi: average over additional Q covariates
   xi_cover_avg <- rowMeans(colMeans(xi_cover, na.rm = TRUE), na.rm = TRUE)
   
+  runtime_avg <- mean(runtime_all, na.rm = TRUE)
+  
   #============== Return results ===============================================
   ret_list <- list(K_bias2 = K_bias2, pi_bias2 = pi_bias2, pi_var = pi_var, 
                    theta_bias2 = theta_bias2, theta_var = theta_var, 
                    xi_bias2 = xi_bias2, xi_var = xi_var, 
                    Phi_bias2 = Phi_bias2, pi_cover_avg = pi_cover_avg,
-                   theta_cover_avg = theta_cover_avg, xi_cover_avg = xi_cover_avg)
+                   theta_cover_avg = theta_cover_avg, xi_cover_avg = xi_cover_avg,
+                   runtime_avg = runtime_avg)
   
   if (plot) {
     ret_list[["pi_all"]] <- pi_all
@@ -492,19 +488,19 @@ metrics_SRS_ws <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir,
                               samp_n_seq=samp_n_seq, model="wsOFMM")
 metrics_SRS_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
                              scen_pop=1, scen_samp=101, iter_pop=1, 
-                             samp_n_seq=samp_n_seq,  model="sOFMM", adjust=FALSE)
+                             samp_n_seq=samp_n_seq,  model="sOFMM")
 metrics_SRS_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
                          scen_pop=1, scen_samp=101, iter_pop=1, 
-                         samp_n_seq=samp_n_seq, model="wOFMM", adjust=FALSE)
+                         samp_n_seq=samp_n_seq, model="wOFMM")
 metrics_Strat_ws <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
                                 scen_pop=1, scen_samp=201, iter_pop=1, 
                                 samp_n_seq=samp_n_seq, model="wsOFMM")
 metrics_Strat_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
                                scen_pop=1, scen_samp=201, iter_pop=1, 
-                               samp_n_seq=samp_n_seq, model="sOFMM", adjust=FALSE)
+                               samp_n_seq=samp_n_seq, model="sOFMM")
 metrics_Strat_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
                            scen_pop=1, scen_samp=201, iter_pop=1, 
-                           samp_n_seq=samp_n_seq, model="wOFMM", adjust=FALSE)
+                           samp_n_seq=samp_n_seq, model="wOFMM")
 
 ### Create table of metrics with bias and variance
 metrics_summ <- as.data.frame(matrix(NA, nrow=6, ncol=9))
@@ -529,17 +525,17 @@ metrics_summ %>%
     columns = 3:9,
     decimals = 3
   ) 
-metrics_summ %>% 
-  kbl(caption = "Posterior parameter metrics, averaged over 100 samples") %>%
-  kable_classic(full_width = FALSE)
+
 
 #================ COVERAGE PLOTS ===============================================
 
 plot_pi_cov <- data.frame(
-  coverage = c(MSE_SRS_s$pi_cover_avg, MSE_SRS_ws$pi_cover_avg, MSE_SRS_unsup$pi_cover_avg, 
-               MSE_Strat_s$pi_cover_avg, MSE_Strat_ws$pi_cover_avg, MSE_Strat_unsup$pi_cover_avg),
+  coverage = c(metrics_SRS_s$pi_cover_avg, metrics_SRS_ws$pi_cover_avg, 
+               metrics_SRS_unsup$pi_cover_avg, metrics_Strat_s$pi_cover_avg, 
+               metrics_Strat_ws$pi_cover_avg, metrics_Strat_unsup$pi_cover_avg),
   pi = rep(c("pi (k=1)", "pi (k=2)", "pi (k=3)"), times=6),
-  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)", "WOLCA (Unsupervised)"), each=3), times=2),
+  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)", 
+                    "WOLCA (Unsupervised)"), each=3), times=2),
   sampling = rep(c("SRS", "Stratified"), each=9)
 )
 pi_plot <- plot_pi_cov %>%  ggplot(aes(x=pi, y=coverage, color=model)) +
@@ -551,10 +547,12 @@ pi_plot <- plot_pi_cov %>%  ggplot(aes(x=pi, y=coverage, color=model)) +
   facet_grid(~sampling)
 
 plot_theta_cov <- data.frame(
-  coverage = c(MSE_SRS_s$theta_cover_avg, MSE_SRS_ws$theta_cover_avg, MSE_SRS_unsup$theta_cover_avg,
-               MSE_Strat_s$theta_cover_avg, MSE_Strat_ws$theta_cover_avg, MSE_Strat_unsup$theta_cover_avg),
+  coverage = c(metrics_SRS_s$theta_cover_avg, metrics_SRS_ws$theta_cover_avg, 
+               metrics_SRS_unsup$theta_cover_avg, metrics_Strat_s$theta_cover_avg, 
+               metrics_Strat_ws$theta_cover_avg, metrics_Strat_unsup$theta_cover_avg),
   theta = rep(c("theta_1", "theta_2", "theta_3"), times=6),
-  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)", "WOLCA (Unsupervised)"), each=3), times=2),
+  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)", 
+                    "WOLCA (Unsupervised)"), each=3), times=2),
   sampling = rep(c("SRS", "Stratified"), each=9)
 )
 theta_plot <- plot_theta_cov %>%  ggplot(aes(x=theta, y=coverage, color=model)) +
@@ -566,10 +564,12 @@ theta_plot <- plot_theta_cov %>%  ggplot(aes(x=theta, y=coverage, color=model)) 
   facet_grid(~sampling)
 
 plot_xi_cov <- data.frame(
-  coverage = c(MSE_SRS_s$xi_cover_avg, MSE_SRS_ws$xi_cover_avg, MSE_SRS_unsup$xi_cover_avg,
-               MSE_Strat_s$xi_cover_avg, MSE_Strat_ws$xi_cover_avg, MSE_Strat_unsup$xi_cover_avg),
+  coverage = c(metrics_SRS_s$xi_cover_avg, metrics_SRS_ws$xi_cover_avg, 
+               metrics_SRS_unsup$xi_cover_avg, metrics_Strat_s$xi_cover_avg, 
+               metrics_Strat_ws$xi_cover_avg, metrics_Strat_unsup$xi_cover_avg),
   xi = rep(c("xi_1", "xi_2", "xi_3", "xi_4", "xi_5", "xi_6"), times=6),
-  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)", "WOLCA (Unsupervised)"), each=6), times=2),
+  model = rep(rep(c("SOLCA (Unweighted)", "WSOLCA (Weighted)", 
+                    "WOLCA (Unsupervised)"), each=6), times=2),
   sampling = rep(c("SRS", "Stratified"), each=18)
 )
 xi_plot <- plot_xi_cov %>%  ggplot(aes(x=xi, y=coverage, color=model)) +
@@ -589,60 +589,89 @@ xi_plot
 
 #### Plot pi as grouped boxplot over iterations
 
-sim_pop <- readMat(paste0(data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".mat"))$sim.data
+sim_pop <- readMat(paste0(data_dir, "simdata_scen", scen_pop,"_iter", 
+                          iter_pop, ".mat"))$sim.data
 names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
 
 # Obtain true observed population parameters
 true_params <- get_true_params(sim_pop)
 
-pi_plot_data <- as.data.frame(rbind(MSE_Sup_Strat_s$pi_all,  MSE_Sup_Strat_ws$pi_all, MSE_Sup_Strat_unsup$pi_all))
+pi_plot_data <- as.data.frame(rbind(metrics_Strat_s$pi_all,  
+                                    metrics_Strat_ws$pi_all, 
+                                    metrics_Strat_unsup$pi_all))
 colnames(pi_plot_data) <- paste0("pi_", 1:ncol(pi_plot_data))
-pi_plot_data$Model <- c(rep("sOFMM", times=R), rep("wsOFMM", times=R), rep("wOFMM", times=R))
+pi_plot_data$Model <- c(rep("sOFMM", times=L), rep("wsOFMM", times=L), 
+                        rep("wOFMM", times=L))
 pi_plot_data <- pi_plot_data %>% gather("pi_component", "value", -Model)
 ggplot(pi_plot_data, aes(x=pi_component, y=value, fill=Model)) +
   theme_bw() +
   geom_boxplot() +
-  geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_pi[1], yend=true_params$true_pi[1]),color="forestgreen") +
-  geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_pi[2], yend=true_params$true_pi[2]),color="forestgreen") +
-  geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_pi[3], yend=true_params$true_pi[3]),color="forestgreen") +
-  ggtitle("Parameter estimation for pi under stratified sampling with \nunequal probabilities, displayed across 100 samples")
+  geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_pi[1], 
+                           yend=true_params$true_pi[1]),color="forestgreen") +
+  geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_pi[2], 
+                           yend=true_params$true_pi[2]),color="forestgreen") +
+  geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_pi[3], 
+                           yend=true_params$true_pi[3]),color="forestgreen") +
+  ggtitle("Parameter estimation for pi under stratified sampling with 
+          \nunequal probabilities, displayed across 100 samples")
+
 
 ### Plot xi over 100 iterations
 
-xi_plot_data <- as.data.frame(rbind(MSE_Sup_Strat_s$xi_all,  MSE_Sup_Strat_ws$xi_all, MSE_Sup_Strat_unsup$xi_all))
+xi_plot_data <- as.data.frame(rbind(t(apply(metrics_Strat_s$xi_all, 1, c)),  
+                                    t(apply(metrics_Strat_ws$xi_all, 1, c)), 
+                                    t(apply(metrics_Strat_unsup$xi_all, 1, c))))
 colnames(xi_plot_data) <- paste0("xi_", 1:ncol(xi_plot_data))
-xi_plot_data$Model <- c(rep("sOFMM", times=R), rep("wsOFMM", times=R), rep("wOFMM", times=R))
+xi_plot_data$Model <- c(rep("sOFMM", times=L), rep("wsOFMM", times=L), 
+                        rep("wOFMM", times=L))
 xi_plot_data <- xi_plot_data %>% gather("xi_component", "value", -Model)
 ggplot(xi_plot_data, aes(x=xi_component, y=value, fill=Model)) +
   theme_bw() +
   geom_boxplot() +
-  geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_xi[1], yend=true_params$true_xi[1]),color="forestgreen") +
-  geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_xi[2], yend=true_params$true_xi[2]),color="forestgreen") +
-  geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_xi[3], yend=true_params$true_xi[3]),color="forestgreen") +
-  geom_segment(mapping=aes(x=3.5, xend=4.5, y=true_params$true_xi[4], yend=true_params$true_xi[4]),color="forestgreen") +
-  geom_segment(mapping=aes(x=4.5, xend=5.5, y=true_params$true_xi[5], yend=true_params$true_xi[5]),color="forestgreen") +
-  geom_segment(mapping=aes(x=5.5, xend=6.5, y=true_params$true_xi[6], yend=true_params$true_xi[6]),color="forestgreen") +
-  ggtitle("Parameter estimation for xi under stratified sampling with unequal probabilities, \ndisplayed across 100 samples")
+  geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_xi[1], 
+                           yend=true_params$true_xi[1]),color="forestgreen") +
+  geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_xi[2], 
+                           yend=true_params$true_xi[2]),color="forestgreen") +
+  geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_xi[3], 
+                           yend=true_params$true_xi[3]),color="forestgreen") +
+  geom_segment(mapping=aes(x=3.5, xend=4.5, y=true_params$true_xi[4], 
+                           yend=true_params$true_xi[4]),color="forestgreen") +
+  geom_segment(mapping=aes(x=4.5, xend=5.5, y=true_params$true_xi[5], 
+                           yend=true_params$true_xi[5]),color="forestgreen") +
+  geom_segment(mapping=aes(x=5.5, xend=6.5, y=true_params$true_xi[6], 
+                           yend=true_params$true_xi[6]),color="forestgreen") +
+  ggtitle("Parameter estimation for xi under stratified\n sampling with unequal probabilities, \ndisplayed across 100 samples")
+
 
 ### Plot Phi over 100 iterations
 
-Phi_plot_data <- as.data.frame(rbind(pnorm(MSE_Sup_Strat_s$xi_all),  pnorm(MSE_Sup_Strat_ws$xi_all), 
-                                     pnorm(MSE_Sup_Strat_unsup$xi_all)))
-colnames(Phi_plot_data) <- c("(S=1,C=1)", "(S=1,C=2)", "(S=1,C=3)", "(S=2,C=1)", "(S=2,C=2)", "(S=2,C=3)")
-Phi_plot_data$Model <- c(rep("sOFMM", times=R), rep("wsOFMM", times=R), rep("wOFMM", times=R))
+Phi_plot_data <- as.data.frame(rbind(pnorm(t(apply(metrics_Strat_s$xi_all, 1, c))),  
+                                     pnorm(t(apply(metrics_Strat_ws$xi_all, 1, c))), 
+                                     pnorm(t(apply(metrics_Strat_unsup$xi_all, 1, c)))))
+colnames(Phi_plot_data) <- c("(S=1,C=1)", "(S=1,C=2)", "(S=1,C=3)", 
+                             "(S=2,C=1)", "(S=2,C=2)", "(S=2,C=3)")
+Phi_plot_data$Model <- c(rep("sOFMM", times=L), rep("wsOFMM", times=L), 
+                         rep("wOFMM", times=L))
 Phi_plot_data <- Phi_plot_data %>% gather("Phi_component", "value", -Model)
 true_Phi <- pnorm(true_params$true_xi)
 ggplot(Phi_plot_data, aes(x=Phi_component, y=value, fill=Model)) +
   theme_bw() +
   geom_boxplot() +
   ylab("P(Y=1|S,C)") +
-  geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_Phi[1], yend=true_Phi[1]),color="forestgreen") +
-  geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_Phi[2], yend=true_Phi[2]),color="forestgreen") +
-  geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_Phi[3], yend=true_Phi[3]),color="forestgreen") +
-  geom_segment(mapping=aes(x=3.5, xend=4.5, y=true_Phi[4], yend=true_Phi[4]),color="forestgreen") +
-  geom_segment(mapping=aes(x=4.5, xend=5.5, y=true_Phi[5], yend=true_Phi[5]),color="forestgreen") +
-  geom_segment(mapping=aes(x=5.5, xend=6.5, y=true_Phi[6], yend=true_Phi[6]),color="forestgreen") +
-  ggtitle("Parameter estimation for Phi under stratified sampling with unequal probabilities, \ndisplayed across 100 samples")
+  geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_Phi[1], 
+                           yend=true_Phi[1]),color="forestgreen") +
+  geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_Phi[2], 
+                           yend=true_Phi[2]),color="forestgreen") +
+  geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_Phi[3], 
+                           yend=true_Phi[3]),color="forestgreen") +
+  geom_segment(mapping=aes(x=3.5, xend=4.5, y=true_Phi[4], 
+                           yend=true_Phi[4]),color="forestgreen") +
+  geom_segment(mapping=aes(x=4.5, xend=5.5, y=true_Phi[5], 
+                           yend=true_Phi[5]),color="forestgreen") +
+  geom_segment(mapping=aes(x=5.5, xend=6.5, y=true_Phi[6], 
+                           yend=true_Phi[6]),color="forestgreen") +
+  ggtitle("Parameter estimation for Phi under stratified sampling with unequal 
+          probabilities, \ndisplayed across 100 samples")
 
 
 ### Plot theta over 100 iteraitons
@@ -658,19 +687,135 @@ theta_mode_plot <- function(theta_plot_data, x_label) {
     theme_classic() +
     xlab(x_label) +
     geom_tile(color="gray") + 
-    geom_text(aes(label = Level), col="white", cex=2) +
+    geom_text(aes(label = Level), col="white", cex=2.5) +
     scale_fill_gradient(trans = "reverse")
   return(patterns)
 }
 
 p_true <- theta_mode_plot(sim_pop$true_global_patterns, "True Classes")
-p_sOFMM <- theta_mode_plot(MSE_Sup_Strat_s$theta_mode, "sOFMM Classes")
-p_wsOFMM <- theta_mode_plot(MSE_Sup_Strat_ws$theta_mode, "wsOFMM Classes")
-p_wOFMM <- theta_mode_plot(MSE_Sup_Strat_unsup$theta_mode, "wOFMM Classes")
+p_sOFMM <- theta_mode_plot(metrics_Strat_s$theta_mode, "sOFMM Classes")
+p_wsOFMM <- theta_mode_plot(metrics_Strat_ws$theta_mode, "wsOFMM Classes")
+p_wOFMM <- theta_mode_plot(metrics_Strat_unsup$theta_mode, "wOFMM Classes")
 p_comb <- ggarrange(p_true, p_sOFMM + theme(axis.title.y = element_blank()), 
                     p_wsOFMM + theme(axis.title.y = element_blank()),
                     p_wOFMM + theme(axis.title.y = element_blank()), 
                     nrow = 1, common.legend = TRUE, legend = "right")
 annotate_figure(p_comb, 
-                top = text_grob("Pattern elicitation under stratified sampling with unequal probabilities, averaged across 100 samples"))
+                top = text_grob("Pattern elicitation under stratified sampling with unequal probabilities, \naveraged across 100 samples"))
 
+#================ TROUBLESHOOTING NUMBER OF CLUSTERS, K ========================
+
+wrong_K <- which(K_dist == 1)
+model <- "wsOFMM"
+for (i in 1:length(wrong_K)) {
+  samp_n <- wrong_K[i]
+  # wsOFMM model includes a variance adjustment
+  sim_res_path <- paste0(wd, res_dir, model, "_results_adjRcpp_scen", scen_samp, 
+                         "_samp", samp_n, ".RData")
+  load(sim_res_path)
+  analysis <- res$analysis_adj
+  names(analysis) <- str_replace_all(names(analysis), "_adj", "")
+  print(paste0("i: ", i, ", K: ", length(analysis$pi_med)))
+  
+  MCMC_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
+                     "_samp", samp_n, ".RData")  # Output file
+  load(MCMC_path)
+  K_med <- res_MCMC$post_MCMC_out$K_med
+  print(paste0("K_med: ", K_med))
+}
+
+samp_n <- 24
+model <- "sOFMM"
+MCMC_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
+                    "_samp", samp_n, ".RData")  # Output file
+load(MCMC_path)
+# sOFMM
+MCMC_out <- res$MCMC_out
+# Get median number of classes with >= 5% of individuals, over all iterations
+M <- dim(MCMC_out$pi_MCMC)[1]  # Number of stored MCMC iterations
+K_med <- round(median(rowSums(MCMC_out$pi_MCMC >= 0.05)))
+print(paste0("sOFMM K_fixed: ", dim(MCMC_out$pi_MCMC)[2]))
+print(paste0("sOFMM K_med: ", K_med))
+
+# Cluster individuals into reduced number of classes using agglomerative clustering
+# Calculate pairwise distance matrix using Hamming distance: proportion of 
+# iterations where two individuals have differing class assignments
+distMat_s <- hamming.distance(t(MCMC_out$c_all_MCMC))
+dendrogram <- hclust(as.dist(distMat_s), method = "complete") # Hierarchical clustering dendrogram
+dend_plot <- as.dendrogram(dendrogram)
+dend_plot %>% set("branches_k_color", k = 3) %>% plot()
+red_c_all <- cutree(dendrogram, k = K_med)                  # Group individuals into K_med classes
+table(red_c_all)
+
+# Reduce and reorder parameter estimates using new classes
+p <- 30
+q <- 2
+d <- 4
+pi <- matrix(NA, nrow = M, ncol = K_med)
+theta <- array(NA, dim = c(M, p, K_med, d))
+xi <- array(NA, dim = c(M, K_med, q))
+for (m in 1:M) {
+  iter_order <- relabel_red_classes[m, ]
+  pi_temp <- MCMC_out$pi_MCMC[m, iter_order]
+  pi[m, ] <- pi_temp / sum(pi_temp)
+  theta[m, , , ] <- MCMC_out$theta_MCMC[m, , iter_order, ]
+  xi[m, , ] <- MCMC_out$xi_MCMC[m, iter_order, ]
+}
+post_MCMC_out <- list(K_med = K_med, pi = pi, theta = theta, xi = xi)
+plot(pi[,1], type = "l", ylab = "Pi")
+plot(pi[,2], type = "l", ylab = "Pi")
+plot(pi[,3], type = "l", ylab = "Pi")
+plot(pi[,4], type = "l", ylab = "Pi")
+
+get_mode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+# For each iteration, relabel new classes using the most common old class assignment
+relabel_red_classes <- matrix(NA, nrow = M, ncol = K_med)   # Apply new classes to each iteration
+for (k in 1:K_med) {
+  relabel_red_classes[, k] <- apply(as.matrix(MCMC_out$c_all_MCMC[, red_c_all == k]), 
+                                    1, get_mode)
+}
+# Posterior median estimate for theta across iterations
+theta_med_temp <- apply(theta, c(2, 3, 4), median)
+# Posterior modal exposure categories for each exposure item and reduced class
+theta_modes <- apply(theta_med_temp, c(1, 2), which.max)
+# Identify unique classes
+unique_classes <- which(!duplicated(theta_modes, MARGIN = 2))
+print(theta_modes)
+
+
+# wsOFMM
+model <- "wsOFMM"
+# wsOFMM model includes a variance adjustment
+sim_res_path <- paste0(wd, res_dir, model, "_results_adjRcpp_scen", scen_samp, 
+                       "_samp", samp_n, ".RData")
+load(sim_res_path)
+MCMC_out <- res_MCMC$MCMC_out
+post_MCMC_out <- res_MCMC$post_MCMC_out
+print(paste0("wsOFMM K_fixed: ", dim(MCMC_out$pi_MCMC)[2]))
+print(paste0("wsOFMM K_med: ", post_MCMC_out$K_med))
+
+distMat_ws <- hamming.distance(t(MCMC_out$c_all_MCMC))
+dendrogram <- hclust(as.dist(distMat_ws), method = "complete") # Hierarchical clustering dendrogram
+dend_plot <- as.dendrogram(dendrogram)
+dend_plot %>% set("branches_k_color", k = 3) %>% plot()
+red_c_all <- cutree(dendrogram, k = K_med)                  # Group individuals into K_med classes
+table(red_c_all)
+
+plot(res_MCMC$post_MCMC_out$pi[,1], type = "l", ylab = "Pi")
+plot(res_MCMC$post_MCMC_out$pi[,2], type = "l", ylab = "Pi")
+plot(res_MCMC$post_MCMC_out$pi[,3], type = "l", ylab = "Pi")
+
+# Posterior median estimate for theta across iterations
+theta_med_temp <- apply(post_MCMC_out$theta, c(2, 3, 4), median)
+# Posterior modal exposure categories for each exposure item and reduced class
+theta_modes <- apply(theta_med_temp, c(1, 2), which.max)
+# Identify unique classes
+unique_classes <- which(!duplicated(theta_modes, MARGIN = 2))
+print(theta_modes)
+
+theta_iter <- MCMC_out$theta_MCMC[1000,,,]
+theta_iter_modes <- apply(theta_iter, c(1, 2), which.max)
+theta_iter_modes

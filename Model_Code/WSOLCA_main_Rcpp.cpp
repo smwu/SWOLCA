@@ -114,6 +114,35 @@ vec update_c(vec& c_all, const int& n, const int& K, const int& p,
   return c_all;
 }
 
+// Update c
+// [[Rcpp::export]]
+vec update_c_WOLCA(vec& c_all, const int& n, const int& K, const int& p, 
+                  const cube& theta, const mat& x_mat, const vec& pi) {
+  mat log_cond_c(n, K);        // Individual log-likelihood for each class
+  mat pred_class_probs(n, K);  // Posterior class membership probabilities
+  
+  // Calculate posterior class membership, p(c_i=k|-), for each class k and
+  // update class assignments
+  for (int i = 0; i < n; i++) {
+    for (int k = 0; k < K; k++) {
+      // Calculate theta component of individual log-likelihood for class k
+      double log_theta_comp_k = 0.0;
+      for (int j = 0; j < p; j++) {
+        // Subtract 1 from exposure value due to 0-based indexing
+        log_theta_comp_k += log(theta(j, k, x_mat(i, j) - 1));
+      }
+      // Individual log-likelihood for class k
+      log_cond_c(i, k) = log(pi(k)) + log_theta_comp_k;
+    }
+    // Calculate p(c_i=k|-) = p(x,y,c_i=k) / p(x,y)
+    pred_class_probs.row(i) = exp(log_cond_c.row(i) - logSumExp_cpp(log_cond_c.row(i)));
+    // Update class assignment using the posterior probabilities
+    // Be careful of 0-based indexing
+    c_all(i) = rcat_cpp(pred_class_probs.row(i)) + 1;
+  }
+  return c_all;
+}
+
 // Update theta
 // [[Rcpp::export]]
 cube update_theta(cube& theta, const int& p, const int& K, const int& d, 
@@ -213,6 +242,91 @@ vec update_loglik(vec& loglik, const int& n, const int& p, const vec& c_all,
   return loglik;
 }
 
+// // Run the Gibbs sampler MCMC algorithm to obtain posterior samples
+// // [[Rcpp::export]]
+// List run_MCMC_Rcpp(const int& n_runs, const int& burn, const int& thin, 
+//                    const int& K, const int& p, const int& d, const int& n, 
+//                    const int& q, const vec& pi_init, const cube& theta_init, 
+//                    const vec& c_all_init, const mat& xi_init, 
+//                    const vec& z_all_init, const vec& y_all,
+//                    const mat& x_mat, const vec& w_all, const mat& V,
+//                    const vec& alpha, const vec&eta, const List& mu0, 
+//                    const List& Sig0) {
+//   
+//   int n_storage = n_runs / thin;  // Number of MCMC iterations to store
+//   
+//   //Initialize variables
+//   mat pi_MCMC(n_storage, K);
+//   
+//   //cube theta_MCMC(n_storage, p, K, d);
+//   cube xi_MCMC(n_storage, K, q);
+//   mat c_all_MCMC(n_storage, n);
+//   mat z_all_MCMC(n_storage, n);
+//   mat loglik_MCMC(n_storage, n);
+//   
+//   //Initialized values
+//   vec pi = pi_init;
+//   cube theta = theta_init;
+//   vec c_all = c_all_init;
+//   mat xi = xi_init;
+//   vec z_all = z_all_init;
+//   
+//   vec alpha_post(K);           //Posterior parameters for pi
+//   mat log_cond_c(n, K);        //Individual log-likelihood for each class
+//   mat pred_class_probs(n, K);  //Posterior class membership probabilities
+//   vec eta_post(d);             //Posterior parameters for theta
+//   vec loglik(n);               //Individual log-likelihood
+//   vec lin_pred(n);             //Linear predictor, V*xi
+//             
+//   // Update parameters and variables
+//   for (int m = 0; m < n_runs; m++) {              
+//     update_pi(pi, w_all, c_all, K, alpha);
+//     update_c(c_all, n, K, p, theta, x_mat, pi, z_all, V, xi, y_all);
+//     update_theta(theta, p, K, d, eta, w_all, c_all, x_mat);
+//     update_xi(xi, n, K, w_all, c_all, z_all, V, y_all, mu0, Sig0);
+//     update_z(z_all, n, V, xi, c_all, y_all);
+//     update_loglik(loglik, n, p, c_all, theta, x_mat, pi, z_all, V, xi, y_all);
+//     //============== Store posterior values based on thinning  ==================
+//     if (m %% thin == 0) {
+//       int m_thin = m / thin;
+//       pi_MCMC[m_thin, ] = pi
+//       theta_MCMC[m_thin, , , ] = theta
+//       xi_MCMC[m_thin, , ] = xi
+//       c_all_MCMC[m_thin, ] = c_all
+//       z_all_MCMC[m_thin, ] = z_all
+//       loglik_MCMC[m_thin] = sum(loglik)
+//     }
+//               
+//     //============== Relabel classes every 10 iterations to encourage mixing ====
+//     if (m %% 10 == 0) {
+//       new_order = permute(1:K)      // New permuted labels
+//       new_c_all = numeric(K)        // Class assignments with new labels
+//       for (k in 1:K) {
+//         new_c_all[c_all == k] = new_order[k]
+//       }
+//       c_all = new_c_all             // Relabel class assignments
+//         pi = pi[new_order]            // Relabel class probabilities
+//         theta = theta[, new_order, ]  // Relabel item category probabilities
+//         xi = xi[new_order, ]          // Relabel probit coefficients
+//         print(paste0("Iteration ", m, " completed!"))
+//     }
+//   }
+//             
+//   // Discard burn-in
+//   warmup = ceiling(burn / thin)
+//   pi_MCMC = pi_MCMC[-(1:warmup), ]
+//   theta_MCMC = theta_MCMC[-(1:warmup), , , ]
+//   xi_MCMC = xi_MCMC[-(1:warmup), , ]
+//   c_all_MCMC = c_all_MCMC[-(1:warmup), ]
+//   z_all_MCMC = z_all_MCMC[-(1:warmup), ]
+//   loglik_MCMC = loglik_MCMC[-(1:warmup), ]
+//   
+//   MCMC_out = list(pi_MCMC = pi_MCMC, theta_MCMC = theta_MCMC, xi_MCMC = xi_MCMC,
+//                  c_all_MCMC = c_all_MCMC, z_all_MCMC = z_all_MCMC, 
+//                  loglik_MCMC = loglik_MCMC)
+//   return(MCMC_out)
+// }
+
 
 // You can include R code blocks in C++ files processed with sourceCpp
 // (useful for testing and development). The R code will be automatically 
@@ -224,45 +338,45 @@ vec update_loglik(vec& loglik, const int& n, const int& p, const vec& c_all,
 # library(stringr)
 # library(fastDummies)
 # set.seed(1)
-# wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
-# data_dir <- "Data/"
-# scen_samp <- 101
-# iter_pop <- 1
-# samp_n <- 1
-# data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
+# wd = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
+# data_dir = "Data/"
+# scen_samp = 101
+# iter_pop = 1
+# samp_n = 1
+# data_path = paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
 #                     "_samp", samp_n, ".mat")   # Input dataset
-# data_vars <- readMat(data_path)$sim.data
-# names(data_vars) <- str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
+# data_vars = readMat(data_path)$sim.data
+# names(data_vars) = str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
 # 
-# K <- 3
-# n <- 10
-# p <- 5
-# d <- 4
-# S <- 2
-# q <- 2
-# x_mat <- data_vars$X_data[1:n, 1:p]
-# y_all <- data_vars$Y_data[1:n]
-# z_all <- rnorm(n)
-# z_all <- ifelse(y_all == 1, abs(z_all), -abs(z_all))
-# s_all <- data_vars$true_Si[1:n]
-# V <- as.matrix(dummy_cols(data.frame(x = factor(s_all, levels = 1:S)), 
+# K = 3
+# n = 10
+# p = 5
+# d = 4
+# S = 2
+# q = 2
+# x_mat = data_vars$X_data[1:n, 1:p]
+# y_all = data_vars$Y_data[1:n]
+# z_all = rnorm(n)
+# z_all = ifelse(y_all == 1, abs(z_all), -abs(z_all))
+# s_all = data_vars$true_Si[1:n]
+# V = as.matrix(dummy_cols(data.frame(x = factor(s_all, levels = 1:S)), 
 #                           remove_selected_columns = TRUE))
-# kappa <- sum(data_vars$sample_wt[1:n]) / n
-# w_all <- c(data_vars$sample_wt[1:n] / kappa)
-# c_all <- data_vars$true_Ci[1:n]
+# kappa = sum(data_vars$sample_wt[1:n]) / n
+# w_all = c(data_vars$sample_wt[1:n] / kappa)
+# c_all = data_vars$true_Ci[1:n]
 # 
-# alpha <- rep(1, 3) / 3
-# eta <- rep(1, d)
-# mu0 <- Sig0 <- vector("list", K)
+# alpha = rep(1, 3) / 3
+# eta = rep(1, d)
+# mu0 = Sig0 = vector("list", K)
 # for (k in 1:K) {
-#   mu0[[k]] <- rnorm(n = q)
-#   Sig0[[k]] <- diag(rinvgamma(n = q, shape = 3.5, scale = 6.25), nrow = q, ncol = q)
+#   mu0[[k]] = rnorm(n = q)
+#   Sig0[[k]] = diag(rinvgamma(n = q, shape = 3.5, scale = 6.25), nrow = q, ncol = q)
 # }
 # 
-# pi <- rdirichlet(1, alpha)
-# theta <- data_vars$true_global_thetas[1:p, , ]
-# xi <- matrix(data_vars$true_xi, nrow = K, ncol = q, byrow = FALSE)
-# loglik <- numeric(n)
+# pi = rdirichlet(1, alpha)
+# theta = data_vars$true_global_thetas[1:p, , ]
+# xi = matrix(data_vars$true_xi, nrow = K, ncol = q, byrow = FALSE)
+# loglik = numeric(n)
 */
 
 /*** R
@@ -282,9 +396,9 @@ vec update_loglik(vec& loglik, const int& n, const int& p, const vec& c_all,
 # theta
 # update_xi(xi, n, K, w_all, c_all, z_all, V, y_all, mu0, Sig0)
 # xi
-# xi_test <- array(NA, dim=c(100, 3, 2))
+# xi_test = array(NA, dim=c(100, 3, 2))
 # for (i in 1:100) {
-#   xi_test[i,,] <- update_xi(n, K, w_all, c_all, z_all, V, xi, y_all, mu0, Sig0)
+#   xi_test[i,,] = update_xi(n, K, w_all, c_all, z_all, V, xi, y_all, mu0, Sig0)
 # }
 # par(mfrow=c(3,2))
 # plot(density(xi_test[,1,1]), xlab = "1,1")
