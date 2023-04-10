@@ -1,7 +1,26 @@
+#include <RcppCommon.h>
+// Flags for C++ compiler
+// [[Rcpp:depends(BH)]]
+#include <boost/multi_array.hpp>
+namespace Rcpp {
+  namespace traits{
+    // Template specialization for 'multi_array' class
+    // Support for wrap to convert from C++ to R
+    template <typename T, int D> SEXP wrap(const boost::multi_array<T, D>& obj) {
+      const int RTYPE = Rcpp::traits::r_sexptype_traits<T>::rtype;
+      return Rcpp
+    };
+    
+    //Support for as to convert from R to C++
+    template <typename T, int D> class Exporter<boost::multi_array<T, D> >;
+  }
+}
+#include <Rcpp.h>
 #include <RcppArmadillo.h>
 #include <RcppTN.h>
 using namespace Rcpp;
 using namespace arma;
+using boost::multi_array;
 // [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::depends(RcppTN)]]
 
@@ -61,6 +80,28 @@ vec update_c_OLCA(vec& c_all, const int& n, const int& K, const int& p,
   return c_all;
 }
 
+typedef boost::multi_array_ref<double, 4> array_type;
+// Boost 4-D array
+// [[Rcpp::export]]
+void update_array(array_type arr, int d1, int d2, int d3, int d4, double value) {
+  arr[d1-1][d2-1][d3-1][d4-1] = value;
+}
+
+// [[Rcpp::export]]
+void update_array_wrap(Rcpp::NumericVector arr, int dim1, int dim2, int dim3, 
+                       int dim4, int index1, int index2, int index3, int index4, 
+                       double new_value) {
+  array_type arr_ref(arr.begin(), boost::extents[dim1][dim2][dim3][dim4]);
+  update_array(arr_ref, index1, index2, index3, index4, new_value);
+}
+
+// [[Rcpp::export]]
+vec update_p(vec& p_all) {
+  p_all(1) = 4;
+  p_all(2) = 4;
+  return p_all;
+}
+
 
 // You can include R code blocks in C++ files processed with sourceCpp
 // (useful for testing and development). The R code will be automatically 
@@ -68,51 +109,54 @@ vec update_c_OLCA(vec& c_all, const int& n, const int& K, const int& p,
 //
 
 /*** R
-library(R.matlab)
-library(stringr)
-library(fastDummies)
-library(LaplacesDemon)
-library(gtools)
-set.seed(1)
-wd = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
-data_dir = "Data/"
-scen_samp = 101
-iter_pop = 1
-samp_n = 1
-data_path = paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
-                    "_samp", samp_n, ".mat")   # Input dataset
-data_vars = readMat(data_path)$sim.data
-names(data_vars) = str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
-
-K = 3
-n = 10
-p = 5
-d = 4
-S = 2
-q = 2
-x_mat = data_vars$X_data[1:n, 1:p]
-y_all = data_vars$Y_data[1:n]
-z_all = rnorm(n)
-z_all = ifelse(y_all == 1, abs(z_all), -abs(z_all))
-s_all = data_vars$true_Si[1:n]
-V = as.matrix(dummy_cols(data.frame(x = factor(s_all, levels = 1:S)),
-                          remove_selected_columns = TRUE))
-kappa = sum(data_vars$sample_wt[1:n]) / n
-w_all = c(data_vars$sample_wt[1:n] / kappa)
-c_all = data_vars$true_Ci[1:n]
-
-alpha = rep(1, 3) / 3
-eta = rep(1, d)
-mu0 = Sig0 = vector("list", K)
-for (k in 1:K) {
-  mu0[[k]] = rnorm(n = q)
-  Sig0[[k]] = diag(rinvgamma(n = q, shape = 3.5, scale = 6.25), nrow = q, ncol = q)
-}
-
-pi = rdirichlet(1, alpha)
-theta = data_vars$true_global_thetas[1:p, , ]
-xi = matrix(data_vars$true_xi, nrow = K, ncol = q, byrow = FALSE)
-loglik = numeric(n)
+# library(R.matlab)
+# library(stringr)
+# library(fastDummies)
+# library(LaplacesDemon)
+# library(gtools)
+# set.seed(1)
+# wd = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
+# data_dir = "Data/"
+# scen_samp = 101
+# iter_pop = 1
+# samp_n = 1
+# data_path = paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
+#                     "_samp", samp_n, ".mat")   # Input dataset
+# data_vars = readMat(data_path)$sim.data
+# names(data_vars) = str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
+# 
+# K = 3
+# n = 10
+# p = 5
+# d = 4
+# S = 2
+# q = 2
+# x_mat = data_vars$X_data[1:n, 1:p]
+# y_all = data_vars$Y_data[1:n]
+# z_all = rnorm(n)
+# z_all = ifelse(y_all == 1, abs(z_all), -abs(z_all))
+# s_all = data_vars$true_Si[1:n]
+# V = as.matrix(dummy_cols(data.frame(x = factor(s_all, levels = 1:S)),
+#                           remove_selected_columns = TRUE))
+# kappa = sum(data_vars$sample_wt[1:n]) / n
+# w_all = c(data_vars$sample_wt[1:n] / kappa)
+# c_all = data_vars$true_Ci[1:n]
+# 
+# alpha = rep(1, 3) / 3
+# eta = rep(1, d)
+# mu0 = Sig0 = vector("list", K)
+# for (k in 1:K) {
+#   mu0[[k]] = rnorm(n = q)
+#   Sig0[[k]] = diag(rinvgamma(n = q, shape = 3.5, scale = 6.25), nrow = q, ncol = q)
+# }
+# 
+# pi = rdirichlet(1, alpha)
+# theta = data_vars$true_global_thetas[1:p, , ]
+# xi = matrix(data_vars$true_xi, nrow = K, ncol = q, byrow = FALSE)
+# loglik = numeric(n)
+p_all <- as.double(1:5)
+temp <- update_p(p_all)
+p_all
 */
 
 /*** R
@@ -124,6 +168,11 @@ loglik = numeric(n)
 # print(V)
 # print(y_all)
 # print(xi)
-update_c_OLCA(c_all, n, K, p, theta, x_mat, pi)
-c_all
+# update_c_OLCA(c_all, n, K, p, theta, x_mat, pi)
+# c_all
+arr <- array(0, dim = c(2,2,2,2))
+print(arr[,,1,1])
+update_array(arr, dim(arr)[1], dim(arr)[2], dim(arr)[3], dim(arr)[4], 
+             1, 1, 1, 1, 10.0)
+print(arr[,,1,1])
 */
