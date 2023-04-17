@@ -38,7 +38,7 @@ library(RcppTN)
 #   n_runs: Number of MCMC iterations
 #   burn: Burn-in period
 #   thin: Thinning factor
-#   covs: String vector of covariates to include in probit model. NULL if none. 
+#   covs: String vector of covariates to include in probit model. Default = NULL 
 # Outputs: Saves and returns list `res` containing:
 #   analysis_adj: List of adjusted posterior model results
 #   runtime: Total runtime for model
@@ -46,7 +46,7 @@ library(RcppTN)
 # Also saved 'analysis' MCMC output prior to variance adjustment
 WSOLCA_main_Rcpp <- function(data_path, res_path, adj_path, stan_path, 
                              save_res = TRUE, n_runs, burn, thin, 
-                             covs = "true_Si") {
+                             covs = NULL) {
   start_time <- Sys.time()
   
   #================= Read in data ==============================================
@@ -252,7 +252,7 @@ if (already_done) {
   results_adj <- WSOLCA_main_Rcpp(data_path = data_path, res_path = res_path,
                                   adj_path = adj_path, stan_path = stan_path, 
                                   save_res = TRUE, n_runs = 20000, burn = 10000, 
-                                  thin = 5)
+                                  thin = 5, covs = "true_Si")
   print(paste0("Runtime: ", results_adj$runtime))
 }
 

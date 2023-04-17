@@ -15,8 +15,6 @@ library(plyr)
 library(dplyr)
 library(LaplacesDemon)
 library(truncnorm)
-library(stringr)
-library(R.matlab)
 library(fastDummies)
 library(matrixStats)
 library(Matrix)
@@ -45,14 +43,13 @@ library(RcppTN)
 #   MCMC_out: List of MCMC output
 # Also saved 'analysis' MCMC output prior to variance adjustment
 WOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs, 
-                            burn, thin) {
+                            burn, thin, covs = NULL) {
   start_time <- Sys.time()
   
   #================= Read in data ==============================================
   print("Read in data")
-  # CHANGE TO RDATA
-  data_vars <- readMat(data_path)$sim.data
-  names(data_vars) <- str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
+  load(data_path)
+  data_vars <- sim_data
   
   # Obtain dimensions
   n <- dim(data_vars$X_data)[1]        # Number of individuals
@@ -62,8 +59,18 @@ WOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs,
   # Obtain data
   x_mat <- data_vars$X_data            # Categorical exposure matrix, nxp
   y_all <- c(data_vars$Y_data)         # Binary outcome vector, nx1
-  s_all <- data_vars$true_Si           # Stratifying variable, nx1
-  S <- length(unique(s_all))           # Number of strata
+  if (!is.null(covs)) {  # Other covariates are included in the probit model  
+    s_all <- data_vars[[covs]]    # Stratifying variable, nx1
+    # Stratifying variable as dummy columns
+    s_mat <- dummy_cols(data.frame(s = factor(strata_all)),  
+                        remove_selected_columns = TRUE)
+    V <- as.matrix(s_mat)              # Regression design matrix without class assignment, nxq
+    q <- ncol(V)                       # Number of regression covariates excluding class assignment
+  } else {  # Only latent class is included in the probit model
+    s_all <- NULL  # No stratifying variable
+    V <- matrix(1, nrow = n) 
+    q <- 1
+  }
   
   # Obtain normalized weights
   kappa <- sum(data_vars$sample_wt) / n   # Weights norm. constant. If sum(weights)=N, this is 1/(sampl_frac)
@@ -82,7 +89,7 @@ WOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs,
   #================= Run adaptive sampler to obtain number of classes ==========
   # Obtain pi_MCMC, theta_MCMC, c_all_MCMC
   MCMC_out <- run_MCMC_Rcpp_WOLCA(OLCA_params = OLCA_params,  
-                                  n_runs = ceiling(n_runs/2), burn = ceiling(burn/2), 
+                                  n_runs = round(n_runs/2), burn = round(burn/2), 
                                   thin = thin, K = K_max, p = p, d = d, n = n, 
                                   w_all = w_all, x_mat = x_mat, alpha = alpha, eta = eta)
   
@@ -124,26 +131,35 @@ WOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs,
                                   n = n, p = p, x_mat = x_mat)
   
   #================= Fit probit model ==========================================
-  V_ref <- data.frame(s = factor(s_all), c = factor(analysis$c_all), y = y_all)
-  fit <- glm(y ~ s * c, data = V_ref, family = binomial(link = "probit"))
+  if (!is.null(s_all)) {  # Include stratifying variable 
+    V_ref <- data.frame(s = factor(s_all), c = factor(analysis$c_all), y = y_all)
+    fit <- glm(y ~ s * c, data = V_ref, family = binomial(link = "probit"))
+  } else {  # No stratifying variable 
+    V_ref <- data.frame(c = factor(analysis$c_all), y = y_all)
+    fit <- glm(y ~ c, data = V_ref, family = binomial(link = "probit"))
+  }
   coefs <- fit$coefficients
   ci <- confint(fit)
   
   # Convert format to match WSOLCA and SOLCA
-  xi_med <- xi_med_lb <- xi_med_ub <- matrix(NA, nrow = analysis$K_red, ncol = S)
-  for (k in 1:analysis$K_red) {
-    for (s in 1:S) {
-      xi_med[k, s] <- coefs[1] + (k != 1) * coefs[S + (k-1)] + (s != 1) * coefs[s] + 
-        (k != 1) * (s != 1) * coefs[S + (analysis$K_red-1) + (k-1)]
-      xi_med_lb[k, s] <- ci[1, 1] + (k != 1) * ci[S + (k-1), 1] + 
-        (s != 1) * ci[s, 1] + 
-        (k != 1) * (s != 1) * ci[S + (analysis$K_red-1) + (k-1), 1]
-      xi_med_ub[k, s] <- ci[1, 2] + (k != 1) * ci[S + (k-1), 2] + 
-        (s != 1) * ci[s, 2] + 
-        (k != 1) * (s != 1) * ci[S + (analysis$K_red-1) + (k-1), 2]
+  if (!is.null(s_all)) {  # Include stratifying variable 
+    xi_med <- xi_med_lb <- xi_med_ub <- matrix(NA, nrow = analysis$K_red, ncol = q)
+    for (k in 1:analysis$K_red) {
+      for (s in 1:q) {
+        xi_med[k, s] <- coefs[1] + (k != 1) * coefs[q + (k-1)] + (s != 1) * coefs[s] + 
+          (k != 1) * (s != 1) * coefs[q + (analysis$K_red-1) + (k-1)]
+        xi_med_lb[k, s] <- ci[1, 1] + (k != 1) * ci[q + (k-1), 1] + 
+          (s != 1) * ci[s, 1] + 
+          (k != 1) * (s != 1) * ci[q + (analysis$K_red-1) + (k-1), 1]
+        xi_med_ub[k, s] <- ci[1, 2] + (k != 1) * ci[q + (k-1), 2] + 
+          (s != 1) * ci[s, 2] + 
+          (k != 1) * (s != 1) * ci[q + (analysis$K_red-1) + (k-1), 2]
+      }
     }
+  } else {
+    
   }
-  
+    
   analysis$xi_med <- xi_med
   analysis$xi_med_lb <- xi_med_lb
   analysis$xi_med_ub <- xi_med_ub
@@ -172,14 +188,14 @@ model_dir <- "Model_Code/"
 model <- "wOFMM"
 
 # # Testing code
-# scen_samp <- 201
+# scen_samp <- 11111
 # iter_pop <- 1
 # samp_n <- 1
 
 # Define paths
 # REMOVE ITER_POP
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
-                    "_samp", samp_n, ".mat")   # Input dataset
+                    "_samp", samp_n, ".RData")   # Input dataset
 res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
 

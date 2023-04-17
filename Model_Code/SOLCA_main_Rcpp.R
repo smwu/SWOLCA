@@ -36,7 +36,7 @@ library(RcppTN)
 #   n_runs: Number of MCMC iterations
 #   burn: Burn-in period
 #   thin: Thinning factor
-#   covs: String vector of covariates to include in probit model. NULL if none. 
+#   covs: String vector of covariates to include in probit model. Default = NULL 
 # Outputs: Saves and returns list `res` containing:
 #   analysis: List of posterior model results
 #   runtime: Total runtime for model
@@ -44,7 +44,7 @@ library(RcppTN)
 #   MCMC_out: List of MCMC output
 # Also saved 'analysis' MCMC output prior to variance adjustment
 SOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs, 
-                            burn, thin, covs = "true_Si") {
+                            burn, thin, covs = NULL) {
   start_time <- Sys.time()
   
   #================= Read in data ==============================================
@@ -212,7 +212,7 @@ if (already_done) {
                iter_pop,' samp ', samp_n))
   results <- SOLCA_main_Rcpp(data_path = data_path, res_path = res_path,
                                   save_res = TRUE, n_runs = 20000, burn = 10000, 
-                                  thin = 5)
+                                  thin = 5, covs = "true_Si")
   print(paste0("Runtime: ", results$runtime))
 }
 
