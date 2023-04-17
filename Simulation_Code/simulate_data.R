@@ -297,8 +297,6 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
   cluster_id <- sim_pop$cluster_id[samp_ind]
   true_Si <- sim_pop$true_Si[samp_ind]
   true_Ci <- sim_pop$true_Ci[samp_ind]
-  print(prop.table(table(sample_wt)))
-  print(prop.table(table(true_Ci)))
   
   #================ Save and return output =====================================
   sim_data <- list(samp_ind = samp_ind, sample_wt = sample_wt, true_Si = true_Si, 
@@ -318,7 +316,7 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
 
 # Define directories
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
-wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
+# wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
 data_dir <- "Data/"
 
 #==================== Create population scenarios ==============================
