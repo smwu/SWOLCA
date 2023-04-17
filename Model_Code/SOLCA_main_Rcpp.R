@@ -15,8 +15,6 @@ library(plyr)
 library(dplyr)
 library(LaplacesDemon)
 library(truncnorm)
-library(stringr)
-library(R.matlab)
 library(fastDummies)
 library(matrixStats)
 library(Matrix)
@@ -38,6 +36,7 @@ library(RcppTN)
 #   n_runs: Number of MCMC iterations
 #   burn: Burn-in period
 #   thin: Thinning factor
+#   covs: String vector of covariates to include in probit model. NULL if none. 
 # Outputs: Saves and returns list `res` containing:
 #   analysis: List of posterior model results
 #   runtime: Total runtime for model
@@ -45,14 +44,13 @@ library(RcppTN)
 #   MCMC_out: List of MCMC output
 # Also saved 'analysis' MCMC output prior to variance adjustment
 SOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs, 
-                            burn, thin) {
+                            burn, thin, covs = "true_Si") {
   start_time <- Sys.time()
   
   #================= Read in data ==============================================
   print("Read in data")
-  # CHANGE TO RDATA
-  data_vars <- readMat(data_path)$sim.data
-  names(data_vars) <- str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
+  load(data_path)
+  data_vars <- sim_data
   
   # Obtain dimensions
   n <- dim(data_vars$X_data)[1]        # Number of individuals
@@ -62,12 +60,18 @@ SOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs,
   # Obtain data
   x_mat <- data_vars$X_data            # Categorical exposure matrix, nxp
   y_all <- c(data_vars$Y_data)         # Binary outcome vector, nx1
-  s_all <- data_vars$true_Si           # Stratifying variable, nx1
-  S <- length(unique(s_all))           # Number of strata
-  s_mat <- dummy_cols(data.frame(s = factor(s_all)),  # Stratifying variable as dummy columns
-                      remove_selected_columns = TRUE)
-  q <- S                               # Number of regression covariates excluding class assignment
-  V <- as.matrix(s_mat)                # Regression design matrix without class assignment, nxq
+  if (!is.null(covs)) {  # Other covariates are included in the probit model  
+    s_all <- data_vars[[covs]]    # Stratifying variable, nx1
+    # Stratifying variable as dummy columns
+    s_mat <- dummy_cols(data.frame(s = factor(strata_all)),  
+                        remove_selected_columns = TRUE)
+    V <- as.matrix(s_mat)              # Regression design matrix without class assignment, nxq
+    q <- ncol(V)                       # Number of regression covariates excluding class assignment
+  } else {  # Only latent class is included in the probit model
+    s_all <- NULL  # No stratifying variable
+    V <- matrix(1, nrow = n) 
+    q <- 1
+  }
   
   # Set normalized weights to 1
   w_all <- rep(1, n)
@@ -99,8 +103,8 @@ SOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs,
   #================= Run adaptive sampler to obtain number of classes ==========
   # Obtain pi_MCMC, theta_MCMC, xi_MCMC, c_all_MCMC, z_all_MCMC, loglik_MCMC
   MCMC_out <- run_MCMC_Rcpp(OLCA_params = OLCA_params, probit_params = probit_params, 
-                            n_runs = ceiling(n_runs/2), burn = ceiling(burn/2), 
-                            thin = 5, K = K_max, p = p, d = d, n = n, q = q, 
+                            n_runs = round(n_runs/2), burn = round(burn/2), 
+                            thin = thin, K = K_max, p = p, d = d, n = n, q = q, 
                             w_all = w_all, x_mat = x_mat, y_all = y_all, V = V, 
                             alpha = alpha, eta = eta, Sig0 = Sig0, mu0 = mu0)
   
@@ -180,14 +184,14 @@ model_dir <- "Model_Code/"
 model <- "sOFMM"
 
 # # Testing code
-# scen_samp <- 201
+# scen_samp <- 11111
 # iter_pop <- 1
 # samp_n <- 24
 
 # Define paths
 # REMOVE ITER_POP
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
-                    "_samp", samp_n, ".mat")   # Input dataset
+                    "_samp", samp_n, ".RData")   # Input dataset
 res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
 

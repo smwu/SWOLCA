@@ -38,6 +38,7 @@ library(RcppTN)
 #   n_runs: Number of MCMC iterations
 #   burn: Burn-in period
 #   thin: Thinning factor
+#   covs: String vector of covariates to include in probit model. NULL if none. 
 # Outputs: Saves and returns list `res` containing:
 #   analysis_adj: List of adjusted posterior model results
 #   runtime: Total runtime for model
