@@ -63,7 +63,7 @@ double logSumExp_cpp(const arma::rowvec& x) {
 
 // Update pi
 // [[Rcpp::export]]
-void update_pi(vec& pi, const vec& w_all, const vec& c_all, const int& K, 
+vec update_pi(vec& pi, const vec& w_all, const vec& c_all, const int& K, 
                const vec& alpha) {
   NumericVector w_all_copy = as<NumericVector>(wrap(w_all));
   // Posterior parameters for pi
@@ -79,12 +79,12 @@ void update_pi(vec& pi, const vec& w_all, const vec& c_all, const int& K,
   // Rcout <<"alpha_post: " << alpha_post;  // Print out posterior alpha
   // Draw pi from posterior
   pi = rdirichlet_cpp(alpha_post);
-  // return pi;
+  return pi;
 }
 
 // Update c
 // [[Rcpp::export]]
-void update_c(vec& c_all, const int& n, const int& K, const int& p,
+vec update_c(vec& c_all, const int& n, const int& K, const int& p,
               const cube& theta, const mat& x_mat, const vec& pi,
               const vec& z_all, const mat& V, const mat& xi, const vec& y_all) {
   mat log_cond_c(n, K);        // Individual log-likelihood for each class
@@ -106,12 +106,19 @@ void update_c(vec& c_all, const int& n, const int& K, const int& p,
         log((y_all(i) * (z_all(i) > 0)) + ((1 - y_all(i)) * (z_all(i) <= 0)));
     }
     // Calculate p(c_i=k|-) = p(x,y,c_i=k) / p(x,y)
-    pred_class_probs.row(i) = exp(log_cond_c.row(i) - logSumExp_cpp(log_cond_c.row(i)));
+    double denom = sum(log_cond_c.row(i));
+    pred_class_probs.row(i) = log_cond_c.row(i) / denom;
+    // pred_class_probs.row(i) = exp(log_cond_c.row(i) - logSumExp_cpp(log_cond_c.row(i)));
+
     // Update class assignment using the posterior probabilities
     // Be careful of 0-based indexing
     c_all(i) = rcat_cpp(pred_class_probs.row(i)) + 1;
   }
-  // return c_all;
+  // Rcout << "log_cond_c[1]" << log_cond_c.row(1);
+  // Rcout << "pred_class_probs[1]" << pred_class_probs.row(1);
+  return c_all;
+  // return log_cond_c;
+  // return pred_class_probs;
 }
 
 // Update c for WOLCA
@@ -145,7 +152,7 @@ vec update_c_WOLCA(vec& c_all, const int& n, const int& K, const int& p,
 
 // Update theta
 // [[Rcpp::export]]
-void update_theta(cube& theta, const int& p, const int& K, const int& d, 
+cube update_theta(cube& theta, const int& p, const int& K, const int& d, 
                   const vec& eta, const vec& w_all, const vec& c_all, mat x_mat) {
   NumericVector w_all_copy = as<NumericVector>(wrap(w_all));
   // Posterior parameters for theta
@@ -165,12 +172,12 @@ void update_theta(cube& theta, const int& p, const int& K, const int& d,
       theta.tube(j, k) = rdirichlet_cpp(eta_post);
     }
   }
-  // return theta;
+  return theta;
 }
 
 // Update xi
 // [[Rcpp::export]]
-void update_xi(mat& xi, const int& n, const int& K, const vec& w_all, 
+mat update_xi(mat& xi, const int& n, const int& K, const vec& w_all, 
                const vec& c_all, const vec& z_all, const mat& V, 
                const vec& y_all, const List& mu0, const List& Sig0) {
   // Sparse diagonal normalized weight matrix
@@ -196,12 +203,12 @@ void update_xi(mat& xi, const int& n, const int& K, const vec& w_all,
     // Update xi
     xi.row(k) = mvrnorm_cpp(1, mu_post, inv(Sig_post));
   }
-  // return xi;
+  return xi;
 }
 
 // Update z
 // [[Rcpp::export]]
-void update_z(vec& z_all, const int& n, const mat& V, const mat& xi, 
+vec update_z(vec& z_all, const int& n, const mat& V, const mat& xi, 
               const vec& c_all, const vec& y_all) {
   // Linear predictor using covariate values and class assignment for each individual
   vec lin_pred(n);
@@ -217,12 +224,12 @@ void update_z(vec& z_all, const int& n, const mat& V, const mat& xi,
       z_all(i) = RcppTN::rtn1(lin_pred(i), 1.0, R_NegInf, 0.0);
     }
   }
-  // return z_all;
+  return z_all;
 }
 
 // Update individual log-likelihood
 // [[Rcpp::export]]
-void update_loglik(vec& loglik, const int& n, const int& p, const vec& c_all, 
+vec update_loglik(vec& loglik, const int& n, const int& p, const vec& c_all, 
                    const cube& theta, const mat& x_mat, const vec& pi, 
                    const vec& z_all, const mat& V, const mat& xi, const vec& y_all) {
   for (int i = 0; i < n; i++) {
@@ -239,93 +246,8 @@ void update_loglik(vec& loglik, const int& n, const int& p, const vec& c_all,
       log(R::dnorm(z_all(i), (V.row(i) * xi.row(c_i - 1).t()).eval()(0,0), 1.0, false)) + 
       log((y_all(i) * (z_all(i) > 0)) + ((1 - y_all(i)) * (z_all(i) <= 0)));
   }
-  // return loglik;
+  return loglik;
 }
-
-// // Run the Gibbs sampler MCMC algorithm to obtain posterior samples
-// // [[Rcpp::export]]
-// List run_MCMC_Rcpp(const int& n_runs, const int& burn, const int& thin, 
-//                    const int& K, const int& p, const int& d, const int& n, 
-//                    const int& q, const vec& pi_init, const cube& theta_init, 
-//                    const vec& c_all_init, const mat& xi_init, 
-//                    const vec& z_all_init, const vec& y_all,
-//                    const mat& x_mat, const vec& w_all, const mat& V,
-//                    const vec& alpha, const vec&eta, const List& mu0, 
-//                    const List& Sig0) {
-//   
-//   int n_storage = n_runs / thin;  // Number of MCMC iterations to store
-//   
-//   //Initialize variables
-//   mat pi_MCMC(n_storage, K);
-//   
-//   //cube theta_MCMC(n_storage, p, K, d);
-//   cube xi_MCMC(n_storage, K, q);
-//   mat c_all_MCMC(n_storage, n);
-//   mat z_all_MCMC(n_storage, n);
-//   mat loglik_MCMC(n_storage, n);
-//   
-//   //Initialized values
-//   vec pi = pi_init;
-//   cube theta = theta_init;
-//   vec c_all = c_all_init;
-//   mat xi = xi_init;
-//   vec z_all = z_all_init;
-//   
-//   vec alpha_post(K);           //Posterior parameters for pi
-//   mat log_cond_c(n, K);        //Individual log-likelihood for each class
-//   mat pred_class_probs(n, K);  //Posterior class membership probabilities
-//   vec eta_post(d);             //Posterior parameters for theta
-//   vec loglik(n);               //Individual log-likelihood
-//   vec lin_pred(n);             //Linear predictor, V*xi
-//             
-//   // Update parameters and variables
-//   for (int m = 0; m < n_runs; m++) {              
-//     update_pi(pi, w_all, c_all, K, alpha);
-//     update_c(c_all, n, K, p, theta, x_mat, pi, z_all, V, xi, y_all);
-//     update_theta(theta, p, K, d, eta, w_all, c_all, x_mat);
-//     update_xi(xi, n, K, w_all, c_all, z_all, V, y_all, mu0, Sig0);
-//     update_z(z_all, n, V, xi, c_all, y_all);
-//     update_loglik(loglik, n, p, c_all, theta, x_mat, pi, z_all, V, xi, y_all);
-//     //============== Store posterior values based on thinning  ==================
-//     if (m %% thin == 0) {
-//       int m_thin = m / thin;
-//       pi_MCMC[m_thin, ] = pi
-//       theta_MCMC[m_thin, , , ] = theta
-//       xi_MCMC[m_thin, , ] = xi
-//       c_all_MCMC[m_thin, ] = c_all
-//       z_all_MCMC[m_thin, ] = z_all
-//       loglik_MCMC[m_thin] = sum(loglik)
-//     }
-//               
-//     //============== Relabel classes every 10 iterations to encourage mixing ====
-//     if (m %% 10 == 0) {
-//       new_order = permute(1:K)      // New permuted labels
-//       new_c_all = numeric(K)        // Class assignments with new labels
-//       for (k in 1:K) {
-//         new_c_all[c_all == k] = new_order[k]
-//       }
-//       c_all = new_c_all             // Relabel class assignments
-//         pi = pi[new_order]            // Relabel class probabilities
-//         theta = theta[, new_order, ]  // Relabel item category probabilities
-//         xi = xi[new_order, ]          // Relabel probit coefficients
-//         print(paste0("Iteration ", m, " completed!"))
-//     }
-//   }
-//             
-//   // Discard burn-in
-//   warmup = ceiling(burn / thin)
-//   pi_MCMC = pi_MCMC[-(1:warmup), ]
-//   theta_MCMC = theta_MCMC[-(1:warmup), , , ]
-//   xi_MCMC = xi_MCMC[-(1:warmup), , ]
-//   c_all_MCMC = c_all_MCMC[-(1:warmup), ]
-//   z_all_MCMC = z_all_MCMC[-(1:warmup), ]
-//   loglik_MCMC = loglik_MCMC[-(1:warmup), ]
-//   
-//   MCMC_out = list(pi_MCMC = pi_MCMC, theta_MCMC = theta_MCMC, xi_MCMC = xi_MCMC,
-//                  c_all_MCMC = c_all_MCMC, z_all_MCMC = z_all_MCMC, 
-//                  loglik_MCMC = loglik_MCMC)
-//   return(MCMC_out)
-// }
 
 
 // You can include R code blocks in C++ files processed with sourceCpp
@@ -413,4 +335,7 @@ void update_loglik(vec& loglik, const int& n, const int& p, const vec& c_all,
 # plot(density(z_all))
 # update_loglik(loglik, n, p, c_all, theta, x_mat, pi, z_all, V, xi, y_all)
 # loglik
+# test_LSE <- c(0.4, 0.35, 0.25)
+# print(exp(test_LSE - logSumExp_cpp(test_LSE)))
+# print(test_LSE / sum(test_LSE))
 */
