@@ -31,7 +31,6 @@ library(RcppTN)
 # 'SOLCA_main_Rcpp' runs the SOLCA model and saves and returns results
 # Inputs:
 #   data_path: String path for input dataset
-#   adapt_path: String path for adaptive sampler file
 #   res_path: String path for output file
 #   save_res: Boolean specifying if results should be saved. Default = TRUE
 #   n_runs: Number of MCMC iterations
@@ -44,8 +43,8 @@ library(RcppTN)
 #   data_vars: Input dataset
 #   MCMC_out: List of MCMC output
 # Also saved 'analysis' MCMC output prior to variance adjustment
-SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE, 
-                            n_runs, burn, thin, covs = NULL) {
+SOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs, 
+                            burn, thin, covs = NULL) {
   start_time <- Sys.time()
   
   #================= Read in data ==============================================
@@ -64,7 +63,7 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   if (!is.null(covs)) {  # Other covariates are included in the probit model  
     s_all <- data_vars[[covs]]    # Stratifying variable, nx1
     # Stratifying variable as dummy columns
-    s_mat <- dummy_cols(data.frame(s = factor(s_all)),  
+    s_mat <- dummy_cols(data.frame(s = factor(strata_all)),  
                         remove_selected_columns = TRUE)
     V <- as.matrix(s_mat)              # Regression design matrix without class assignment, nxq
     q <- ncol(V)                       # Number of regression covariates excluding class assignment
@@ -104,7 +103,7 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   #================= Run adaptive sampler to obtain number of classes ==========
   # Obtain pi_MCMC, theta_MCMC, xi_MCMC, c_all_MCMC, z_all_MCMC, loglik_MCMC
   MCMC_out <- run_MCMC_Rcpp(OLCA_params = OLCA_params, probit_params = probit_params, 
-                            n_runs = n_runs, burn = burn, 
+                            n_runs = round(n_runs/2), burn = round(burn/2), 
                             thin = thin, K = K_max, p = p, d = d, n = n, q = q, 
                             w_all = w_all, x_mat = x_mat, y_all = y_all, V = V, 
                             alpha = alpha, eta = eta, Sig0 = Sig0, mu0 = mu0)
@@ -116,11 +115,6 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   # Get number of unique classes for fixed sampler
   K_fixed <- K_med
   print(paste0("K_fixed: ", K_fixed))
-  # Save MCMC output
-  adapt_MCMC <- list(MCMC_out = MCMC_out, K_fixed = K_fixed)
-  if (save_res) {
-    save(adapt_MCMC, file = adapt_path)  
-  }
   # Reduce memory burden
   rm(OLCA_params, probit_params, MCMC_out)
   
@@ -169,9 +163,8 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   runtime <- Sys.time() - start_time
   
   #================= Save and return output ====================================
-  res <- list(analysis = analysis, runtime = runtime, data_vars = data_vars, 
-              MCMC_out = MCMC_out, post_MCMC_out = post_MCMC_out,
-              K_fixed = K_fixed)
+  res <- list(analysis = analysis, runtime = runtime, 
+              data_vars = data_vars, MCMC_out = MCMC_out)
   if (save_res) {
     save(res, file = res_path)
   }
@@ -196,10 +189,9 @@ model <- "sOFMM"
 # samp_n <- 24
 
 # Define paths
+# REMOVE ITER_POP
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
-adapt_path <- paste0(wd, res_dir, model, "_adapt_scen", scen_samp, 
-                     "_samp", samp_n, ".RData")  # Adaptive sampler file
 res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
 
@@ -214,14 +206,13 @@ if (already_done) {
   # Source Rcpp functions
   Rcpp::sourceCpp(paste0(wd, model_dir, "main_Rcpp_functions.cpp"))
   # Set seed
-  set.seed(samp_n + 100)
+  set.seed(samp_n)
   # Run model
   print(paste0("Running SOLCA_main for scenario ", scen_samp, ' iter ', 
                iter_pop,' samp ', samp_n))
-  results <- SOLCA_main_Rcpp(data_path = data_path, adapt_path = adapt_path, 
-                             res_path = res_path, save_res = TRUE, 
-                             n_runs = 20000, burn = 10000, thin = 5, 
-                             covs = "true_Si")
+  results <- SOLCA_main_Rcpp(data_path = data_path, res_path = res_path,
+                                  save_res = TRUE, n_runs = 20000, burn = 10000, 
+                                  thin = 5, covs = "true_Si")
   print(paste0("Runtime: ", results$runtime))
 }
 

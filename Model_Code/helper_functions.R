@@ -12,29 +12,22 @@
 #   K: Number of classes
 #   p: Number of exposure items
 #   d: Number of exposure categories
-#   n_chains: Number of sampling chains
 # Outputs: `OLCA_params` list with the following items:
 #   pi: Vector parameter pi for class membership probabilities. Kx1
 #   theta: Array parameter theta for item category probabilities. pxKxd
 #   c_all: Vector of random initial class assignments. nx1
-init_OLCA <- function(alpha, eta, n, K, p, d, n_chains) {
-  # Initialize variables
-  pi <- array(NA, dim = c(n_chains, K))
-  theta <- array(NA, dim = c(n_chains, p, K, d))
-  c_all <- array(NA, dim = c(n_chains, n))
+init_OLCA <- function(alpha, eta, n, K, p, d) {
+  # Prior for pi
+  pi <- c(rdirichlet(n = 1, alpha = alpha))
   
-  for (chain in 1:n_chains) {
-    # Prior for pi
-    pi[chain, ] <- c(rdirichlet(n = 1, alpha = alpha))
-    
-    # Initialize class assignment, c, for individuals
-    c_all[chain, ] <- rcat(n = n, p = pi[chain, ])
-    
-    # Prior for theta
-    for (j in 1:p) {
-      for (k in 1:K) {
-        theta[chain, j, k, ] <- c(rdirichlet(n = 1, alpha = eta))
-      }
+  # Initialize class assignment, c, for individuals
+  c_all <- rcat(n = n, p = pi)
+  
+  # Prior for theta
+  theta <- array(0, dim = c(p, K, d))
+  for (j in 1:p) {
+    for (k in 1:K) {
+      theta[j, k, ] <- c(rdirichlet(n = 1, alpha = eta))
     }
   }
   
@@ -53,38 +46,34 @@ init_OLCA <- function(alpha, eta, n, K, p, d, n_chains) {
 #   V: Regression design matrix without class assignment. nxq
 #   y_all: Vector of outcomes. nx1
 #   c_all: Vector of random initial class assignments. nx1
-#   n_chains: Number of sampling chains
 # Outputs: `probit_params` list with the following items:
 #   xi: Matrix parameter xi for probit regression coefficients. Kxq
 #   z_all: Vector of latent variables in the probit model. nx1
-init_probit <- function(mu0, Sig0, K, q, n, V, y_all, c_all, n_chains) {
+init_probit <- function(mu0, Sig0, K, q, n, V, y_all, c_all) {
   # Initialize variables
-  xi <- array(NA, dim = c(n_chains, K, q))
-  z_all <- lin_pred <- array(NA, dim = c(n_chains, n))
+  xi <- matrix(NA, nrow = K, ncol = q)
+  z_all <- lin_pred <- numeric(n)
   
-  for (chain in 1:n_chains) {
-    # Prior for xi. Same prior for each class
-    for (k in 1:K) {
-      xi[chain, k, ] <- rmvn(n = 1, mu = mu0[[k]], Sigma = Sig0[[k]])
-    }
-    
-    # Initialize probit model latent variable, z, following Albert and Chib (1993)
-    # Linear predictor using covariate values and class assignment for each individual
-    for (i in 1:n) {
-      lin_pred[chain, i] <- V[i, ] %*% xi[chain, c_all[chain, i], ]  # V[i]*xi[c_i]
-    }
-    
-    # For cases, z_i ~ TruncNormal(low=0, high=Inf, mean=V*xi[c_i], var=1)
-    z_all[chain, y_all == 1] <- rtruncnorm(n = 1, a = 0, b = Inf, 
-                                    mean = lin_pred[chain, y_all == 1], sd = 1)
-    # For controls, z_i ~ TruncNormal(low=-Inf, high=0, mean=V*xi[c_i], var=1)
-    z_all[chain, y_all == 0] <- rtruncnorm(n = 1, a = -Inf, b = 0, 
-                                    mean = lin_pred[chain, y_all == 0], sd = 1)
-    # Control extreme values
-    z_all[chain, z_all[chain, ] == Inf] <- qnorm(1 - (1e-10))
-    z_all[chain, z_all[chain, ] == -Inf] <- qnorm(1e-10)
+  # Prior for xi. Same prior for each class
+  for (k in 1:K) {
+    xi[k, ] <- rmvn(n = 1, mu = mu0[[k]], Sigma = Sig0[[k]])
   }
-
+  
+  # Initialize probit model latent variable, z, following Albert and Chib (1993)
+  # Linear predictor using covariate values and class assignment for each individual
+  for (i in 1:n) {
+    lin_pred[i] <- V[i, ] %*% xi[c_all[i], ]  # V[i]*xi[c_i]
+  }
+  # For cases, z_i ~ TruncNormal(low=0, high=Inf, mean=V*xi[c_i], var=1)
+  z_all[y_all == 1] <- rtruncnorm(n = 1, a = 0, b = Inf, 
+                                  mean = lin_pred[y_all == 1], sd = 1)
+  # For controls, z_i ~ TruncNormal(low=-Inf, high=0, mean=V*xi[c_i], var=1)
+  z_all[y_all == 0] <- rtruncnorm(n = 1, a = -Inf, b = 0, 
+                                  mean = lin_pred[y_all == 0], sd = 1)
+  # Control extreme values
+  z_all[z_all == Inf] <- qnorm(1 - (1e-10))
+  z_all[z_all == -Inf] <- qnorm(1e-10)
+  
   probit_params <- list(xi = xi, z_all = z_all)
   return(probit_params)
 }
@@ -96,7 +85,6 @@ init_probit <- function(mu0, Sig0, K, q, n, V, y_all, c_all, n_chains) {
 #   n_runs: Number of MCMC iterations
 #   burn: Burn-in period
 #   thin: Thinning factor
-#   n_chains: Number of sampling chains
 #   K: Number of classes
 #   p: Number of exposure items
 #   d: Number of exposure categories
@@ -111,103 +99,90 @@ init_probit <- function(mu0, Sig0, K, q, n, V, y_all, c_all, n_chains) {
 #   mu0: List of vectors of mean hyperparameters for xi. List of K qx1 vectors
 #   Sig0: List of matrices of variance hyperparameters for xi. List of K qxq matrices
 # Outputs: `MCMC_out` list containing the following items:
-#   pi_MCMC: Array of posterior samples for pi. (n_iter)x(n_chains)xK
-#   theta_MCMC: Array of posterior samples for theta. (n_iter)x(n_chains)xpxKxd
-#   xi_MCMC: Array of posterior samples for xi. (n_iter)x(n_chains)xKxq
-#   c_all_MCMC: Array of posterior samples for c_all. (n_iter)x(n_chains)xn
-#   z_all_MCMC: Array of posterior samples for z_all. (n_iter)x(n_chains)xn
-#   loglik_MCMC: Array of posterior samples for log-likelihood. (n_iter)x(n_chains)
-#   diagnostics: List of MCMC diagnostics for theta and xi, over a label-invariant product
-run_MCMC_Rcpp <- function(OLCA_params, probit_params, n_runs, burn, thin, 
-                          n_chains, K, p, d, n, q, 
-                          w_all, x_mat, y_all, V, alpha, eta, mu0, Sig0) {
+#   pi_MCMC: Matrix of posterior samples for pi. (n_iter)xK
+#   theta_MCMC: Array of posterior samples for theta. (n_iter)xpxKxd
+#   xi_MCMC: Array of posterior samples for xi. (n_iter)xKxq
+#   c_all_MCMC: Matrix of posterior samples for c_all. (n_iter)xn
+#   z_all_MCMC: Matrix of posterior samples for z_all. (n_iter)xn
+#   loglik_MCMC: Vector of posterior samples for log-likelihood. (n_iter)x1
+run_MCMC_Rcpp <- function(OLCA_params, probit_params, n_runs, burn, thin, K, p, d, n, 
+                          q, w_all, x_mat, y_all, V, alpha, eta, mu0, Sig0) {
   n_storage <- ceiling(n_runs / thin)  # Number of MCMC iterations to store
   
   # Initialize variables
-  pi_MCMC <- array(NA, dim = c(n_storage, n_chains, K))
-  theta_MCMC <- array(NA, dim = c(n_storage, n_chains, p, K, d))
-  xi_MCMC <- array(NA, dim = c(n_storage, n_chains, K, q))
-  c_all_MCMC <- z_all_MCMC <- array(NA, dim = c(n_storage, n_chains, n))
-  loglik_MCMC <- array(NA, dim = c(n_storage, n_chains))
+  pi_MCMC <- matrix(NA, nrow = n_storage, ncol = K)
+  theta_MCMC <- array(NA, dim = c(n_storage, p, K, d))
+  xi_MCMC <- array(NA, dim = c(n_storage, K, q))
+  c_all_MCMC <- z_all_MCMC <- matrix(NA, nrow = n_storage, ncol = n)
+  loglik_MCMC <- matrix(NA, nrow = n_storage, ncol = n)
   loglik <- numeric(n)  # Individual log-likelihood
   
-  for (chain in 1:n_chains) {
-    # Initialized values
-    pi <- OLCA_params$pi[chain, ]
-    theta <- OLCA_params$theta[chain, , , ]
-    c_all <- as.double(OLCA_params$c_all[chain, ])  # allows updating by reference in rcpparmadillo
-    xi <- as.matrix(probit_params$xi[chain, , ])
-    z_all <- probit_params$z_all[chain, ]
+  # Initialized values
+  pi <- OLCA_params$pi
+  theta <- OLCA_params$theta
+  c_all <- as.double(OLCA_params$c_all)  # allows updating by reference in rcpparmadillo
+  xi <- probit_params$xi
+  z_all <- probit_params$z_all
+  
+  # Update parameters and variables
+  for (m in 1:n_runs) {
+    update_pi(pi = pi, w_all = w_all, c_all = c_all, K = K, alpha = alpha)
+    # print(pi[1:3])
+    update_c(c_all = c_all, n = n, K = K, p = p, theta = theta, 
+             x_mat = x_mat, pi = pi, z_all = z_all, V = V, xi = xi, 
+             y_all = y_all)
+    # print(c_all[1:10])
+    update_theta(theta = theta, p = p, K = K, d = d, eta = eta, 
+                 w_all = w_all, c_all = c_all, x_mat = x_mat)
+    # print(theta[1:5,1:10,1])
+    update_xi(xi = xi, n = n, K = K, w_all = w_all, c_all = c_all, 
+              z_all = z_all, V = V, y_all = y_all, mu0 = mu0, Sig0 = Sig0)
+    # print(xi[1:3,])
+    update_z(z_all = z_all, n = n, V = V, xi = xi, c_all = c_all, 
+             y_all = y_all)
+    # print(z_all[1:10])
+    update_loglik(loglik = loglik, n = n, p = p, c_all = c_all, 
+                  theta = theta, x_mat = x_mat, pi = pi, 
+                  z_all = z_all, V = V, xi = xi, y_all = y_all)
+    # print(loglik[1:10])
+    #============== Store posterior values based on thinning  ==================
+    if (m %% thin == 0) {
+      m_thin <- m / thin
+      pi_MCMC[m_thin, ] <- pi
+      theta_MCMC[m_thin, , , ] <- theta
+      xi_MCMC[m_thin, , ] <- xi
+      c_all_MCMC[m_thin, ] <- c_all
+      z_all_MCMC[m_thin, ] <- z_all
+      loglik_MCMC[m_thin] <- sum(loglik)
+    }
     
-    # Update parameters and variables
-    for (m in 1:n_runs) {
-      pi <- update_pi(pi = pi, w_all = w_all, c_all = c_all, K = K, alpha = alpha)
-      c_all <- update_c(c_all = c_all, n = n, K = K, p = p, theta = theta, 
-               x_mat = x_mat, pi = pi, z_all = z_all, V = V, xi = xi, 
-               y_all = y_all)
-      theta <- update_theta(theta = theta, p = p, K = K, d = d, eta = eta, 
-                   w_all = w_all, c_all = c_all, x_mat = x_mat)
-      # print(theta[1:5,1:10,1])
-      xi <- update_xi(xi = xi, n = n, K = K, w_all = w_all, c_all = c_all, 
-                z_all = z_all, V = V, y_all = y_all, mu0 = mu0, Sig0 = Sig0)
-      # print(xi[1:3,])
-      z_all <- update_z(z_all = z_all, n = n, V = V, xi = xi, c_all = c_all, 
-               y_all = y_all)
-      # print(z_all[1:10])
-      loglik <- update_loglik(loglik = loglik, n = n, p = p, c_all = c_all, 
-                    theta = theta, x_mat = x_mat, pi = pi, 
-                    z_all = z_all, V = V, xi = xi, y_all = y_all)
-      # print(loglik[1:10])
-      #============== Store posterior values based on thinning  ==================
-      if (m %% thin == 0) {
-        m_thin <- m / thin
-        pi_MCMC[m_thin, chain, ] <- pi
-        theta_MCMC[m_thin, chain, , , ] <- theta
-        xi_MCMC[m_thin, chain, , ] <- xi
-        c_all_MCMC[m_thin, chain, ] <- c_all
-        z_all_MCMC[m_thin, chain, ] <- z_all
-        loglik_MCMC[m_thin, chain] <- sum(loglik)
+    #============== Relabel classes every 10 iterations to encourage mixing ====
+    if (m %% 10 == 0) {
+      new_order <- permute(1:K)      # New permuted labels
+      new_c_all <- numeric(K)        # Class assignments with new labels
+      for (k in 1:K) {
+        new_c_all[c_all == k] <- new_order[k]
       }
-      
-      #============== Relabel classes every 20 iterations to encourage mixing ====
-      if (m %% 20 == 0) {
-        new_order <- permute(1:K)      # New permuted labels
-        new_c_all <- numeric(K)        # Class assignments with new labels
-        for (k in 1:K) {
-          new_c_all[c_all == k] <- new_order[k]
-        }
-        c_all <- new_c_all                # Relabel class assignments
-        pi <- pi[new_order]               # Relabel class probabilities
-        theta <- theta[, new_order, ]     # Relabel item category probabilities
-        xi <- xi[new_order, , drop = FALSE]  # Relabel probit coefficients
-        print(paste0("Chain ", chain, " iteration ", m, " completed!"))
-      }
+      c_all <- new_c_all                # Relabel class assignments
+      pi <- pi[new_order]               # Relabel class probabilities
+      theta <- theta[, new_order, ]     # Relabel item category probabilities
+      xi <- xi[new_order, , drop = FALSE]  # Relabel probit coefficients
+      print(paste0("Iteration ", m, " completed!"))
     }
   }
-  # Discard burn-in
-  warmup <- round(burn / thin)
-  pi_MCMC <- pi_MCMC[-(1:warmup), , ]
-  theta_MCMC <- theta_MCMC[-(1:warmup), , , , ]
-  xi_MCMC <- xi_MCMC[-(1:warmup), , , , drop = FALSE]
-  c_all_MCMC <- c_all_MCMC[-(1:warmup), , ]
-  z_all_MCMC <- z_all_MCMC[-(1:warmup), , ]
-  loglik_MCMC <- loglik_MCMC[-(1:warmup), ]
   
-  # Diagnostics pre post-processing
-  theta_prod <- apply(theta_MCMC, c(1, 2, 3, 5), prod)
-  R_hat_theta_prod <- apply(theta_prod, -c(1, 2), Rhat)
-  n_eff_theta_prod <- apply(theta_prod, -c(1, 2), ess_bulk)
-  xi_prod <- apply(xi_MCMC, c(1, 2, 4), prod)
-  R_hat_xi_prod <- apply(xi_prod, -c(1, 2), Rhat)
-  n_eff_xi_prod <- apply(xi_prod, -c(1, 2), ess_bulk)
-  diagnostics <- list(R_hat_theta_prod = R_hat_theta_prod, 
-                      n_eff_theta_prod = n_eff_theta_prod,
-                      R_hat_xi_prod = R_hat_xi_prod, 
-                      n_eff_xi_prod = n_eff_xi_prod)
+  # Discard burn-in
+  warmup <- ceiling(burn / thin)
+  pi_MCMC <- pi_MCMC[-(1:warmup), ]
+  theta_MCMC <- theta_MCMC[-(1:warmup), , , ]
+  xi_MCMC <- xi_MCMC[-(1:warmup), , , drop = FALSE]
+  c_all_MCMC <- c_all_MCMC[-(1:warmup), ]
+  z_all_MCMC <- z_all_MCMC[-(1:warmup), ]
+  loglik_MCMC <- loglik_MCMC[-(1:warmup), ]
   
   MCMC_out <- list(pi_MCMC = pi_MCMC, theta_MCMC = theta_MCMC, xi_MCMC = xi_MCMC,
                    c_all_MCMC = c_all_MCMC, z_all_MCMC = z_all_MCMC, 
-                   loglik_MCMC = loglik_MCMC, diagnostics = diagnostics)
+                   loglik_MCMC = loglik_MCMC)
   return(MCMC_out)
 }
 
@@ -224,104 +199,46 @@ get_mode <- function(v) {
 # reduced number of classes and reorder posterior parameter samples according to
 # the reduced number of classes
 # Inputs:
-#   MCMC_out: Output from 'run_MCMC' containing 'pi_MCMC', 'theta_MCMC', 'xi_MCMC', 'c_all_MCMC', 'z_all_MCMC', 'loglik_MCMC', and 'diagnostics'
+#   MCMC_out: Output from 'run_MCMC' containing 'pi_MCMC', 'theta_MCMC', 'xi_MCMC', 'c_all_MCMC', 'z_all_MCMC', and 'loglik_MCMC'
 #   p: Number of exposure items
 #   d: Number of exposure categories
 #   q: Number of regression covariates excluding class assignment
 # Outputs: `post_MCMC_out` list containing the following items:
 #   K_med: Median, across iterations, of number of classes with >= 5% of individuals
-#   pi: Array of reduced and relabeled posterior samples for pi. (n_iter)x(n_chains)x(K_med)
-#   theta: Array of reduced and relabeled posterior samples for theta. (n_iter)x(n_chains)xpx(K_med)xd
-#   xi: Array of reduced and relabeled posterior samples for xi. (n_iter)x(n_chains)x(K_med)xq
-#   diagnostics: List of MCMC diagnostics for pi, theta, and xi
+#   pi: Matrix of reduced and relabeled posterior samples for pi. (n_iter)x(K_med)
+#   theta: Array of reduced and relabeled posterior samples for theta. (n_iter)xpx(K_med)xd
+#   xi: Array of reduced and relabeled posterior samples for xi. (n_iter)x(K_med)xq
 post_process <- function(MCMC_out, p, d, q) {
-  
+  # Get median number of classes with >= 5% of individuals, over all iterations
   M <- dim(MCMC_out$pi_MCMC)[1]  # Number of stored MCMC iterations
-  n_chains <- dim(MCMC_out$pi_MCMC)[2]  # Number of sampling chains
-
-  # Get median number of classes with >= 5% of individuals, over all iterations and chains
-  K_med <- round(median(apply(MCMC_out$pi_MCMC, c(1, 2), 
-                              function(x) sum(x >= 0.05))))
+  K_med <- round(median(rowSums(MCMC_out$pi_MCMC >= 0.05)))
   
-  # Initialize reordered variables
-  pi <- array(NA, dim = c(M, n_chains, K_med))
-  theta <- array(NA, dim = c(M, n_chains, p, K_med, d))
-  xi <- array(NA, dim = c(M, n_chains, K_med, q))
-  relabel_red_classes <- array(NA, dim = c(M * n_chains, K_med))
   # Cluster individuals into reduced number of classes using agglomerative clustering
   # Calculate pairwise distance matrix using Hamming distance: proportion of 
   # iterations where two individuals have differing class assignments
-  n <- dim(MCMC_out$c_all_MCMC)[3]
-  c_all_MCMC <- array(MCMC_out$c_all_MCMC, dim = c(M * n_chains, n))
-  distMat <- hamming.distance(t(c_all_MCMC))
-  red_c_all <- cutreeDynamic(dendrogram, minClusterSize = 0.05*n, method = "tree",
-                             cutHeight = 1)
-  K_med <- length(unique(red_c_all))
-  
-  # dendrogram <- hclust(as.dist(distMat), method = "complete") # Hierarchical clustering dendrogram
-  # red_c_all <- cutree(dendrogram, k = K_med)                  # Group individuals into K_med classes
+  distMat <- hamming.distance(t(MCMC_out$c_all_MCMC))
+  dendrogram <- hclust(as.dist(distMat), method = "complete") # Hierarchical clustering dendrogram
+  red_c_all <- cutree(dendrogram, k = K_med)                  # Group individuals into K_med classes
   # For each iteration, relabel new classes using the most common old class assignment
+  relabel_red_classes <- matrix(NA, nrow = M, ncol = K_med)   # Apply new classes to each iteration
   for (k in 1:K_med) {
-    relabel_red_classes[, k] <-   # Apply new classes to each iteration
-      apply(as.matrix(c_all_MCMC[, red_c_all == k]), 1, get_mode)
+    relabel_red_classes[, k] <- apply(as.matrix(MCMC_out$c_all_MCMC[, red_c_all == k]), 
+                                      1, get_mode)
   }
-  # Convert to separate chains
-  relabel_red_classes_chains <- array(relabel_red_classes, 
-                                      dim = c(M, n_chains, K_med))
   
   # Reduce and reorder parameter estimates using new classes
-  for (chain in 1:n_chains) {
-    for (m in 1:M) {
-      iter_order <- relabel_red_classes_chains[m, chain, ]
-      pi_temp <- MCMC_out$pi_MCMC[m, chain, iter_order]
-      pi[m, chain, ] <- pi_temp / sum(pi_temp)
-      theta[m, chain, , , ] <- MCMC_out$theta_MCMC[m, chain, , iter_order, ]
-      xi[m, chain, , ] <- MCMC_out$xi_MCMC[m, chain, iter_order, ]
-    }
+  pi <- matrix(NA, nrow = M, ncol = K_med)
+  theta <- array(NA, dim = c(M, p, K_med, d))
+  xi <- array(NA, dim = c(M, K_med, q))
+  for (m in 1:M) {
+    iter_order <- relabel_red_classes[m, ]
+    pi_temp <- MCMC_out$pi_MCMC[m, iter_order]
+    pi[m, ] <- pi_temp / sum(pi_temp)
+    theta[m, , , ] <- MCMC_out$theta_MCMC[m, , iter_order, ]
+    xi[m, , ] <- MCMC_out$xi_MCMC[m, iter_order, ]
   }
   
-  # Initialize reordered variables
-  pi <- array(NA, dim = c(M, n_chains, K_med))
-  theta <- array(NA, dim = c(M, n_chains, p, K_med, d))
-  xi <- array(NA, dim = c(M, n_chains, K_med, q))
-  relabel_red_classes <- array(NA, dim = c(M, n_chains, K_med)) 
-  for (chain in 1:n_chains) {
-    # Cluster individuals into reduced number of classes using agglomerative clustering
-    # Calculate pairwise distance matrix using Hamming distance: proportion of 
-    # iterations where two individuals have differing class assignments
-    distMat <- hamming.distance(t(MCMC_out$c_all_MCMC[, chain, ])) / M
-    dendrogram <- hclust(as.dist(distMat), method = "complete") # Hierarchical clustering dendrogram
-    red_c_all <- cutree(dendrogram, k = K_med)                  # Group individuals into K_med classes
-    # For each iteration, relabel new classes using the most common old class assignment
-    for (k in 1:K_med) {
-      relabel_red_classes[, chain, k] <-   # Apply new classes to each iteration
-        apply(as.matrix(MCMC_out$c_all_MCMC[, chain, red_c_all == k]), 1, get_mode)
-    }
-    
-    # Reduce and reorder parameter estimates using new classes
-    for (m in 1:M) {
-      iter_order <- relabel_red_classes[m, chain, ]
-      pi_temp <- MCMC_out$pi_MCMC[m, chain, iter_order]
-      pi[m, chain, ] <- pi_temp / sum(pi_temp)
-      theta[m, chain, , , ] <- MCMC_out$theta_MCMC[m, chain, , iter_order, ]
-      xi[m, chain, , ] <- MCMC_out$xi_MCMC[m, chain, iter_order, ]
-    }
-  }
-  
-  # Diagnostics
-  R_hat_pi <- apply(pi, -c(1, 2), Rhat)
-  n_eff_pi <- apply(pi, -c(1, 2), ess_bulk)
-  R_hat_theta <- apply(theta, -c(1, 2), Rhat)
-  n_eff_theta <- apply(theta, -c(1, 2), ess_bulk)
-  R_hat_xi <- apply(xi, -c(1, 2), Rhat)
-  n_eff_xi <- apply(xi, -c(1, 2), ess_bulk)
-
-  diagnostics <- list(R_hat_pi = R_hat_pi, n_eff_pi = n_eff_pi, 
-                      R_hat_theta = R_hat_theta, n_eff_theta = n_eff_theta,
-                      R_hat_xi = R_hat_xi, n_eff_xi = n_eff_xi)
-  
-  post_MCMC_out <- list(K_med = K_med, pi = pi, theta = theta, xi = xi,
-                        diagnostics = diagnostics)
+  post_MCMC_out <- list(K_med = K_med, pi = pi, theta = theta, xi = xi)
   
   return(post_MCMC_out)  
   # plot(dendrogram, labels = FALSE)
@@ -353,8 +270,8 @@ post_process <- function(MCMC_out, p, d, q) {
 analyze_results <- function(MCMC_out, post_MCMC_out, n, p, V, y_all, x_mat) {
   
   #============== Identify unique classes using modal exposure categories ======
-  # Posterior median estimate for theta across iterations and chains
-  theta_med_temp <- apply(post_MCMC_out$theta, c(3, 4, 5), median)
+  # Posterior median estimate for theta across iterations
+  theta_med_temp <- apply(post_MCMC_out$theta, c(2, 3, 4), median)
   # Posterior modal exposure categories for each exposure item and reduced class
   theta_modes <- apply(theta_med_temp, c(1, 2), which.max)
   # Identify unique classes
