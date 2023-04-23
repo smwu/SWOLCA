@@ -167,8 +167,8 @@ get_Phi_dist <- function(est_Phi, true_Phi) {
 # `get_metrics` obtains simulation metrics for posterior parameter estimates 
 # across the sample iterations
 # Inputs:
-#   scen_pop: Population data scenario
-#   scen_samp: Sample data scenario
+#   scen_pop: Three-digit population data scenario
+#   scen_samp: Five-digit sample data scenario
 #   iter_pop: Population data iteration
 #   samp_n_seq: Vector sequence of sample indices
 #   model: String indicating type of model, e.g., "wsOFMM", "sOFMM", "wOFMM"
@@ -196,9 +196,9 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
   
   #============== Load data and initialize variables ===========================
   # Load simulated population data
-  sim_pop <- readMat(paste0(data_dir, "simdata_scen", scen_pop,"_iter", 
-                            iter_pop, ".mat"))$sim.data
-  names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
+  pop_data_path <- paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter", 
+                          iter_pop, ".RData") 
+  load(pop_data_path)
   # Obtain true observed population parameters
   true_params <- get_true_params(sim_pop = sim_pop)
   true_K <- as.vector(sim_pop$true_K)
@@ -229,15 +229,15 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
     print(samp_n)
     
     # Read in sample data. If file does not exist, move on to next iteration
-    sim_samp_path <- paste0(wd, data_dir, "simdata_scen", scen_samp,"_iter", 
-                            iter_pop, "_samp", samp_n, ".mat")
-    if (!file.exists(sim_samp_path)) {
+    sim_data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", 
+                             iter_pop, "_samp", samp_n, ".RData") 
+    if (!file.exists(sim_data_path)) {
       print(paste0("File does not exist: simdata_scen", scen_samp,"_iter", 
                    iter_pop, "_samp", samp_n))
       next
     } 
-    sim_samp <- readMat(sim_samp_path)$sim.data
-    names(sim_samp) <- str_replace_all(dimnames(sim_samp)[[1]], "[.]", "_")
+    load(sim_data_path)
+    sim_samp <- sim_data
     
     # Read in results data
     if (model == "wsOFMM") {
@@ -474,8 +474,8 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 data_dir <- "Data/"
 res_dir <- "Results/"
-scen_pop <- 1
-scen_samp <- 101
+scen_pop <- 111
+scen_samp <- 11111
 iter_pop <- 1
 samp_n_seq <- 1:100
 L <- length(samp_n_seq)
@@ -496,10 +496,10 @@ metrics_SRS_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir,
                                  scen_pop=1, scen_samp=101, iter_pop=1, 
                                  samp_n_seq=samp_n_seq, model="wOFMM")
 metrics_Strat_ws <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                scen_pop=1, scen_samp=201, iter_pop=1, 
+                                scen_pop=111, scen_samp=11111, iter_pop=1, 
                                 samp_n_seq=samp_n_seq, model="wsOFMM")
 metrics_Strat_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                               scen_pop=1, scen_samp=201, iter_pop=1, 
+                               scen_pop=111, scen_samp=11111, iter_pop=1, 
                                samp_n_seq=samp_n_seq, model="sOFMM")
 metrics_Strat_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
                                    scen_pop=1, scen_samp=201, iter_pop=1, 

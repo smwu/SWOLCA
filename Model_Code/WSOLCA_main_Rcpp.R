@@ -31,7 +31,7 @@ library(RcppTN)
 # 'WSOLCA_main_Rcpp' runs the WSOLCA model and saves and returns results
 # Inputs:
 #   data_path: String path for input dataset
-#   res_path: String path for output file
+#   adapt_path: String path for adaptive sampler file
 #   adj_path: String path for adjusted output file
 #   stan_path: String path for Stan file
 #   save_res: Boolean specifying if results should be saved. Default = TRUE
@@ -44,7 +44,7 @@ library(RcppTN)
 #   runtime: Total runtime for model
 #   data_vars: Input dataset
 # Also saved 'analysis' MCMC output prior to variance adjustment
-WSOLCA_main_Rcpp <- function(data_path, res_path, adj_path, stan_path, 
+WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path, 
                              save_res = TRUE, n_runs, burn, thin, 
                              covs = NULL) {
   start_time <- Sys.time()
@@ -62,10 +62,11 @@ WSOLCA_main_Rcpp <- function(data_path, res_path, adj_path, stan_path,
   # Obtain data
   x_mat <- data_vars$X_data            # Categorical exposure matrix, nxp
   y_all <- c(data_vars$Y_data)         # Binary outcome vector, nx1
+  clus_id_all <- data_vars$cluster_id  # Cluster indicators, nx1
   if (!is.null(covs)) {  # Other covariates are included in the probit model  
     s_all <- data_vars[[covs]]    # Stratifying variable, nx1
     # Stratifying variable as dummy columns
-    s_mat <- dummy_cols(data.frame(s = factor(strata_all)),  
+    s_mat <- dummy_cols(data.frame(s = factor(s_all)),  
                         remove_selected_columns = TRUE)
     V <- as.matrix(s_mat)              # Regression design matrix without class assignment, nxq
     q <- ncol(V)                       # Number of regression covariates excluding class assignment
@@ -118,6 +119,11 @@ WSOLCA_main_Rcpp <- function(data_path, res_path, adj_path, stan_path,
   # Get number of unique classes for fixed sampler
   K_fixed <- K_med
   print(paste0("K_fixed: ", K_fixed))
+  # Save adaptive output
+  adapt_MCMC <- list(MCMC_out = MCMC_out, K_fixed = K_fixed)
+  if (save_res) {
+    save(adapt_MCMC, file = adapt_path)
+  }
   # Reduce memory burden
   rm(OLCA_params, probit_params, MCMC_out)
   
@@ -178,11 +184,6 @@ WSOLCA_main_Rcpp <- function(data_path, res_path, adj_path, stan_path,
   # c_all, pred_class_probs, loglik_med
   analysis <- analyze_results(MCMC_out = MCMC_out, post_MCMC_out = post_MCMC_out, 
                               n = n, p = p, V = V, y_all = y_all, x_mat = x_mat)
-  res_MCMC <- list(MCMC_out = MCMC_out, post_MCMC_out = post_MCMC_out,
-                   analysis = analysis)
-  if (save_res) {
-    save(res_MCMC, file = res_path)  # Save MCMC output
-  }
   
   #================= VARIANCE ADJUSTMENT =======================================
   print("Variance adjustment")
@@ -200,7 +201,8 @@ WSOLCA_main_Rcpp <- function(data_path, res_path, adj_path, stan_path,
   
   #================= Save and return output ====================================
   res <- list(analysis_adj = analysis_adj, runtime = runtime, 
-              data_vars = data_vars)
+              data_vars = data_vars, MCMC_out = MCMC_out, 
+              post_MCMC_out = post_MCMC_out)
   if (save_res) {
     save(res, file = adj_path)
   }
@@ -220,15 +222,20 @@ model_dir <- "Model_Code/"
 model <- "wsOFMM"
 
 # # Testing code
-# scen_samp <- 11111
+# scen_samp <- 111111
 # iter_pop <- 1
 # samp_n <- 1
+# n_runs <- 100
+# burn <- 50
+# thin <- 5
+# covs <- "true_Si"
+# save_res <- FALSE
 
 # Define paths
 # REMOVE ITER_POP
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
-res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
+adapt_path <- paste0(wd, res_dir, model, "_adapt_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
 adj_path <- paste0(wd, res_dir, model, "_results_adjRcpp_scen", scen_samp, 
                    "_samp", samp_n, ".RData")      # Adjusted output file
@@ -240,6 +247,12 @@ if (already_done) {
   print(paste0('Scenario ', scen_samp, ' iter ', iter_pop, ' samp ', samp_n,
                ' already exists.'))
 } else {
+  n_runs <- 20000
+  burn <- 10000
+  thin <- 5
+  save_res <- TRUE
+  covs <- "true_Si"
+  
   # Source R helper functions
   source(paste0(wd, model_dir, "helper_functions.R"))
   # Source Rcpp functions
@@ -249,10 +262,10 @@ if (already_done) {
   # Run model
   print(paste0("Running WSOLCA_main for scenario ", scen_samp, ' iter ', 
                iter_pop,' samp ', samp_n))
-  results_adj <- WSOLCA_main_Rcpp(data_path = data_path, res_path = res_path,
+  results_adj <- WSOLCA_main_Rcpp(data_path = data_path, adapt_path = adapt_path,
                                   adj_path = adj_path, stan_path = stan_path, 
-                                  save_res = TRUE, n_runs = 20000, burn = 10000, 
-                                  thin = 5, covs = "true_Si")
+                                  save_res = save_res, n_runs = n_runs, 
+                                  burn = burn, thin = thin, covs = covs)
   print(paste0("Runtime: ", results_adj$runtime))
 }
 

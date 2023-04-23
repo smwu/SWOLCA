@@ -31,6 +31,7 @@ library(RcppTN)
 # 'WOLCA_main_Rcpp' runs the WOLCA model and saves and returns results
 # Inputs:
 #   data_path: String path for input dataset
+#   adapt_path: String path for adaptive sampler file
 #   res_path: String path for output file
 #   save_res: Boolean specifying if results should be saved. Default = TRUE
 #   n_runs: Number of MCMC iterations
@@ -42,8 +43,8 @@ library(RcppTN)
 #   data_vars: Input dataset
 #   MCMC_out: List of MCMC output
 # Also saved 'analysis' MCMC output prior to variance adjustment
-WOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs, 
-                            burn, thin, covs = NULL) {
+WOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE, 
+                            n_runs, burn, thin, covs = NULL) {
   start_time <- Sys.time()
   
   #================= Read in data ==============================================
@@ -62,7 +63,7 @@ WOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs,
   if (!is.null(covs)) {  # Other covariates are included in the probit model  
     s_all <- data_vars[[covs]]    # Stratifying variable, nx1
     # Stratifying variable as dummy columns
-    s_mat <- dummy_cols(data.frame(s = factor(strata_all)),  
+    s_mat <- dummy_cols(data.frame(s = factor(s_all)),  
                         remove_selected_columns = TRUE)
     V <- as.matrix(s_mat)              # Regression design matrix without class assignment, nxq
     q <- ncol(V)                       # Number of regression covariates excluding class assignment
@@ -91,7 +92,8 @@ WOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs,
   MCMC_out <- run_MCMC_Rcpp_WOLCA(OLCA_params = OLCA_params,  
                                   n_runs = round(n_runs/2), burn = round(burn/2), 
                                   thin = thin, K = K_max, p = p, d = d, n = n, 
-                                  w_all = w_all, x_mat = x_mat, alpha = alpha, eta = eta)
+                                  w_all = w_all, x_mat = x_mat, alpha = alpha, 
+                                  eta = eta)
   
   #================= Post-processing for adaptive sampler ======================
   # Get median number of classes with >= 5% of individuals, over all iterations
@@ -100,6 +102,11 @@ WOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs,
   # Get number of unique classes for fixed sampler
   K_fixed <- K_med
   print(paste0("K_fixed: ", K_fixed))
+  # Save adaptive output
+  adapt_MCMC <- list(MCMC_out = MCMC_out, K_fixed = K_fixed)
+  if (save_res) {
+    save(adapt_MCMC, file = adapt_path)
+  }
   # Reduce memory burden
   rm(OLCA_params, MCMC_out)
   
@@ -157,7 +164,7 @@ WOLCA_main_Rcpp <- function(data_path, res_path, save_res = TRUE, n_runs,
       }
     }
   } else {
-    
+    #### NEED TO ADD FOR EFFECT MODIFIER
   }
     
   analysis$xi_med <- xi_med
@@ -188,14 +195,20 @@ model_dir <- "Model_Code/"
 model <- "wOFMM"
 
 # # Testing code
-# scen_samp <- 11111
+# scen_samp <- 111111
 # iter_pop <- 1
 # samp_n <- 1
+# n_runs <- 100
+# burn <- 50
+# thin <- 5
+# save_res <- FALSE
+# covs <- "true_Si"
 
 # Define paths
-# REMOVE ITER_POP
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
+adapt_path <- paste0(wd, res_dir, model, "_adapt_scen", scen_samp, 
+                     "_samp", samp_n, ".RData")  # Output file
 res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
 
@@ -205,6 +218,11 @@ if (already_done) {
   print(paste0('Scenario ', scen_samp, ' iter ', iter_pop, ' samp ', samp_n,
                ' already exists.'))
 } else {
+  n_runs <- 20000
+  burn <- 10000
+  thin <- 5
+  save_res <- TRUE
+
   # Source R helper functions
   source(paste0(wd, model_dir, "helper_functions.R"))
   # Source Rcpp functions
@@ -214,9 +232,10 @@ if (already_done) {
   # Run model
   print(paste0("Running WOLCA_main for scenario ", scen_samp, ' iter ', 
                iter_pop,' samp ', samp_n))
-  results <- WOLCA_main_Rcpp(data_path = data_path, res_path = res_path,
-                             save_res = TRUE, n_runs = 20000, burn = 10000, 
-                             thin = 5)
+  results <- WOLCA_main_Rcpp(data_path = data_path, adapt_path = adapt_path,
+                             res_path = res_path,
+                             save_res = save_res, n_runs = n_runs, 
+                             burn = burn, thin = thin, covs = covs)
   print(paste0("Runtime: ", results$runtime))
 }
 

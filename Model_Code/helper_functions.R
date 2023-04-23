@@ -114,7 +114,7 @@ run_MCMC_Rcpp <- function(OLCA_params, probit_params, n_runs, burn, thin, K, p, 
   theta_MCMC <- array(NA, dim = c(n_storage, p, K, d))
   xi_MCMC <- array(NA, dim = c(n_storage, K, q))
   c_all_MCMC <- z_all_MCMC <- matrix(NA, nrow = n_storage, ncol = n)
-  loglik_MCMC <- matrix(NA, nrow = n_storage, ncol = n)
+  loglik_MCMC <- numeric(n_storage)
   loglik <- numeric(n)  # Individual log-likelihood
   
   # Initialized values
@@ -127,11 +127,11 @@ run_MCMC_Rcpp <- function(OLCA_params, probit_params, n_runs, burn, thin, K, p, 
   # Update parameters and variables
   for (m in 1:n_runs) {
     update_pi(pi = pi, w_all = w_all, c_all = c_all, K = K, alpha = alpha)
-    # print(pi[1:3])
+    # print(round(pi, 3))
     update_c(c_all = c_all, n = n, K = K, p = p, theta = theta, 
              x_mat = x_mat, pi = pi, z_all = z_all, V = V, xi = xi, 
              y_all = y_all)
-    # print(c_all[1:10])
+    # print(prop.table(table(c_all)))
     update_theta(theta = theta, p = p, K = K, d = d, eta = eta, 
                  w_all = w_all, c_all = c_all, x_mat = x_mat)
     # print(theta[1:5,1:10,1])
@@ -165,7 +165,7 @@ run_MCMC_Rcpp <- function(OLCA_params, probit_params, n_runs, burn, thin, K, p, 
       }
       c_all <- new_c_all                # Relabel class assignments
       pi <- pi[new_order]               # Relabel class probabilities
-      theta <- theta[, new_order, ]     # Relabel item category probabilities
+      theta <- theta[, new_order, , drop = FALSE]     # Relabel item category probabilities
       xi <- xi[new_order, , drop = FALSE]  # Relabel probit coefficients
       print(paste0("Iteration ", m, " completed!"))
     }
@@ -178,7 +178,7 @@ run_MCMC_Rcpp <- function(OLCA_params, probit_params, n_runs, burn, thin, K, p, 
   xi_MCMC <- xi_MCMC[-(1:warmup), , , drop = FALSE]
   c_all_MCMC <- c_all_MCMC[-(1:warmup), ]
   z_all_MCMC <- z_all_MCMC[-(1:warmup), ]
-  loglik_MCMC <- loglik_MCMC[-(1:warmup), ]
+  loglik_MCMC <- loglik_MCMC[-(1:warmup)]
   
   MCMC_out <- list(pi_MCMC = pi_MCMC, theta_MCMC = theta_MCMC, xi_MCMC = xi_MCMC,
                    c_all_MCMC = c_all_MCMC, z_all_MCMC = z_all_MCMC, 
@@ -431,7 +431,7 @@ grad_par <- function(pwts, svydata, stan_mod, stan_data, par_stan, u_pars) {
 #   Phi_med: Vector of adjusted individual outcome probabilities. nx1
 #   c_all: Vector of final individual class assignments from `analyze_results`. nx1
 #   pred_class_probs: Matrix of individual posterior class probabilities from `analyze_results`. nx(K_red)
-#   loglik_med: Vector of final indiviudal log-likehoods from `analyze_results`. nx1
+#   loglik_med: Vector of final individual log-likelihoods from `analyze_results`. nx1
 var_adjust <- function(mod_stan, analysis, K, p, d, n, q, x_mat, y_all, V, w_all, 
                        s_all) {
   #=============== Run Stan model ==============================================
@@ -473,6 +473,7 @@ var_adjust <- function(mod_stan, analysis, K, p, d, n, q, x_mat, y_all, V, w_all
   H_hat <- -1*optimHess(unc_par_hat, gr = function(x){grad_log_prob(out_stan, x)})
   
   # Create survey design
+  ##### NEED TO CHANGE TO INCLUDE CLUSTER INDICATORS
   if (!is.null(s_all)) {  # Include stratifying variable
     svy_data <- data.frame(s = s_all, 
                            x = x_mat,
@@ -602,17 +603,14 @@ run_MCMC_Rcpp_WOLCA <- function(OLCA_params, n_runs, burn, thin, K, p, d, n,
   theta <- OLCA_params$theta
   c_all <- OLCA_params$c_all
   
-  alpha_post <- numeric(K)                            # Posterior parameters for pi
-  eta_post <- numeric(d)                              # Posterior parameters for theta
-  
   # Update parameters and variables
   for (m in 1:n_runs) {
-    pi <- update_pi(pi = pi, w_all = w_all, c_all = c_all, K = K, alpha = alpha)
+    update_pi(pi = pi, w_all = w_all, c_all = c_all, K = K, alpha = alpha)
     # print(pi[1:10])
-    c_all <- update_c_WOLCA(c_all = c_all, n = n, K = K, p = p, theta = theta, 
+    update_c_WOLCA(c_all = c_all, n = n, K = K, p = p, theta = theta, 
                             x_mat = x_mat, pi = pi)
     # print(c_all[1:10])
-    theta <-update_theta(theta = theta, p = p, K = K, d = d, eta = eta, 
+    update_theta(theta = theta, p = p, K = K, d = d, eta = eta, 
                          w_all = w_all, c_all = c_all, x_mat = x_mat)
     # print(theta[1:5,1:10,1])
     

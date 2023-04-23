@@ -30,9 +30,9 @@ convert_to_reference <- function(xi) {
 
 # `create_pop` creates and saves simulated population data
 # Inputs:
-#   scenario: Three-digit population scenario. First digit specifies strength of 
+#   scenario: Four-digit population scenario. First digit specifies strength of 
 # pattern, second digit specifies diet-outcome relationship, third digit 
-# specifies selection (stratum) variable type
+# specifies selection (stratum) variable type, fourth digit specifies clustering
 #   iter_pop: Population iteration. Default is 1.
 #   pop_data_path: Path for saving simulated population data
 # Outputs: 'sim_pop' list with the following elements:
@@ -145,43 +145,69 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
   }
   
   #================ Binary outcome and true outcome probabilities ==============
-  # Simulate correlated binary outcomes 'SimCorMultRes' package
-  cluster_size <- 80  # Cluster size. 1000 clusters of size 80
-  # Assume exchangeable correlation matrix
-  latent_correlation_matrix <- toeplitz(c(1, rep(0.5, cluster_size - 1)))
-  # Underlying true parameter values for probit model coefficients, xi
-  xi_under <- matrix(c(1, 0.3, -0.5, 0.5, -0.7, -1.3), nrow = 3, byrow = FALSE)
-  # Convert xi to cell reference coding beta coefficients
-  beta_coefs <- convert_to_reference(xi_under)
-  intercepts <- beta_coefs[1]
-  betas <- beta_coefs[-1]
-  # Create probit regression design matrix with interactions
-  C2 <- ifelse(true_Ci == 2, 1, 0)
-  C3 <- ifelse(true_Ci == 3, 1, 0)
-  S2 <- ifelse(true_Si == 2, 1, 0)
-  V_design <- data.frame(C2 = C2, C3 = C3, S2 = S2, C2S2 = C2*S2, C3S2 = C3*S2)
-  # Simulate correlated binary outcomes
-  sim_binary <- rbin(clsize = cluster_size, intercepts = intercepts,
-                     betas = betas, xformula = ~C2+C3+S2+C2S2+C3S2, 
-                     xdata = V_design,
-                     cor.matrix = latent_correlation_matrix, link = "probit")
-  # Cluster indicator for all individuals. Stratum 1 includes clusters 1-250.
-  # Stratum 2 includes clusters 251-1000
-  cluster_id <- sim_binary$simdata$id  
-  # Outcome data
-  Y_data <- sim_binary$simdata$y       
-  # Matrix of true outcome probabilities
-  true_Phi_mat <- matrix(NA, nrow=K, ncol=S)  
-  # True outcome probabilities for each individual
-  true_Phi <- numeric(N)               
-  for (s in 1:S) {
-    for (k in 1:K) {
-      # Individuals in stratum s class k
-      N_s_k <- pop_inds[true_Si == s & true_Ci == k]  
-      true_Phi_mat[k, s] <- sum(Y_data[N_s_k]) / length(N_s_k)
-      true_Phi[N_s_k] <- true_Phi_mat[k, s]
+  if (scenario_vec[4] == 1) {
+    # No clustering in the data
+    cluster_id <- pop_inds
+    cluster_size <- 1
+    xi_under <- matrix(c(1, 0.3, -0.5, 0.5, -0.7, -1.3), nrow = 3, byrow = FALSE)
+    # Matrix of true outcome probabilities
+    true_Phi_mat <- pnorm(xi_under) 
+    # True outcome probabilities for each individual
+    true_Phi <- numeric(N)   
+    # Outcome data
+    Y_data <- numeric(N) 
+    for (s in 1:S) {
+      for (k in 1:K) {
+        # Individuals in stratum s class k
+        N_s_k <- pop_inds[true_Si == s & true_Ci == k]
+        with_outcome <- sample(N_s_k, round(length(N_s_k) * true_Phi_mat[k, s]))
+        Y_data[with_outcome] <- 1
+        true_Phi[N_s_k] <- true_Phi_mat[k, s]
+      }
     }
+  } else if (scenario_vec[4] == 2) {
+    # Clustered data with 1000 clusters of size 80
+    # Simulate correlated binary outcomes 'SimCorMultRes' package
+    cluster_size <- 80  # Cluster size
+    # Assume exchangeable correlation matrix
+    latent_correlation_matrix <- toeplitz(c(1, rep(0.5, cluster_size - 1)))
+    # Underlying true parameter values for probit model coefficients, xi
+    xi_under <- matrix(c(1, 0.3, -0.5, 0.5, -0.7, -1.3), nrow = 3, byrow = FALSE)
+    # Convert xi to cell reference coding beta coefficients
+    beta_coefs <- convert_to_reference(xi_under)
+    intercepts <- beta_coefs[1]
+    betas <- beta_coefs[-1]
+    # Create probit regression design matrix with interactions
+    C2 <- ifelse(true_Ci == 2, 1, 0)
+    C3 <- ifelse(true_Ci == 3, 1, 0)
+    S2 <- ifelse(true_Si == 2, 1, 0)
+    V_design <- data.frame(C2 = C2, C3 = C3, S2 = S2, C2S2 = C2*S2, C3S2 = C3*S2)
+    # Simulate correlated binary outcomes
+    sim_binary <- rbin(clsize = cluster_size, intercepts = intercepts,
+                       betas = betas, xformula = ~C2+C3+S2+C2S2+C3S2, 
+                       xdata = V_design,
+                       cor.matrix = latent_correlation_matrix, link = "probit")
+    # Cluster indicator for all individuals. Stratum 1 includes clusters 1-250.
+    # Stratum 2 includes clusters 251-1000
+    cluster_id <- sim_binary$simdata$id  
+    # Outcome data
+    Y_data <- sim_binary$simdata$y       
+    # Matrix of true outcome probabilities
+    true_Phi_mat <- matrix(NA, nrow=K, ncol=S)  
+    # True outcome probabilities for each individual
+    true_Phi <- numeric(N)               
+    for (s in 1:S) {
+      for (k in 1:K) {
+        # Individuals in stratum s class k
+        N_s_k <- pop_inds[true_Si == s & true_Ci == k]  
+        true_Phi_mat[k, s] <- sum(Y_data[N_s_k]) / length(N_s_k)
+        true_Phi[N_s_k] <- true_Phi_mat[k, s]
+      }
+    }
+  } else {
+    stop("Error: Not a valid scenario.")
   }
+  
   #================ True parameter values for probit model coefficients, xi ====
   # True xi in the finite population
   true_xi <- qnorm(true_Phi_mat)   
@@ -201,10 +227,10 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
 # `create_samp` creates and saves simulated sample data
 # Inputs:
 #   sim_pop: Simulated population output from `create_pop` function
-#   scenario: Five-digit sample scenario. First digit specifies strength of 
+#   scenario: Six-digit sample scenario. First digit specifies strength of 
 # pattern, second digit specifies diet-outcome relationship, third digit 
-# specifies selection (stratum) variable type, fourth digit specifies sample
-# size, fifth digit specifies sampling design
+# specifies selection (stratum) variable type, fourth digit specifies clustering,
+# fifth digit specifies sample size, sixth digit specifies sampling design
 #   samp_n: Sample iteration
 #   samp_data_path: Path for saving simulated sample data
 # Outputs: 'sim_data' list with the following elements:
@@ -236,13 +262,13 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
   
   #================ Specify sample size ========================================
   
-  if (scenario_vec[4] == 1) {
+  if (scenario_vec[5] == 1) {
     # Sample size is 5%
     n <- ceiling(0.05 * sim_pop$N)
-  } else if (scenario_vec[4] == 2) {
+  } else if (scenario_vec[5] == 2) {
     # Sample size is 10%
     n <- ceiling(0.1 * sim_pop$N)
-  } else if (scenario_vec[4] == 3) {
+  } else if (scenario_vec[5] == 3) {
     # Sample size is 1%
     n <- ceiling(0.01 * sim_pop$N)
   } else {
@@ -254,7 +280,7 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
   samp_ind_temp <- numeric(sim_pop$N)   # Temp sample indicator for population
   pop_inds <- 1:sim_pop$N
   clus_inds <- 1:max(sim_pop$cluster_id)
-  if (scenario_vec[5] == 1) {
+  if (scenario_vec[6] == 1) {
     # Survey design is stratified sampling with unequal probabilities
     n_s <- c(n, n) / sim_pop$S  # Sample strata are equal sizes by design
     for (s in 1:sim_pop$S) {
@@ -265,13 +291,13 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
       samp_ind_temp[samp_ind_s] <- 1          
       sample_wt_temp[samp_ind_s] <- sim_pop$N_s[s] / n_s[s]
     }
-  } else if (scenario_vec[5] == 2) {
+  } else if (scenario_vec[6] == 2) {
     # Survey design is SRS
     # Sampled individuals
     samp_ind_SRS <- sample(pop_inds, n)  
     samp_ind_temp[samp_ind_SRS] <- 1
     sample_wt_temp[samp_ind_SRS] <- sim_pop$N / n
-  } else if (scenario_vec[5] == 3) {
+  } else if (scenario_vec[6] == 3) {
     # Survey design is stratified cluster sampling
     n_s <- c(n/2, n/2)  # Sample strata are equal sizes by design
     n_clus_s <- n_s / sim_pop$cluster_size  # Number of clusters to sample per stratum
@@ -320,9 +346,9 @@ wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 data_dir <- "Data/"
 
 #==================== Create population scenarios ==============================
-scenario <- 111
+scenarios <- 1111
 iter_pop <- 1
-scenarios <- c(111, 211, 121, 112)
+scenarios <- c(1111, 2111, 1211, 1121, 1112)
 for (scenario in scenarios) {
   pop_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
                           iter_pop, ".RData") 
@@ -336,13 +362,14 @@ prop.table(table(sim_pop$true_Ci[sim_pop$true_Si == 2]))
 sim_pop$true_Phi_mat
 
 #==================== Create sampling scenarios ================================
-scenario <- 11111
-samp_n <- 1
-scenarios <- c(11111, 21111, 12111, 11211, 11121, 11131, 11112, 11113)
+scenarios <- 111111
+samp_n_seq <- 1
+scenarios <- c(111111, 211111, 121111, 112111, 111211, 111121, 111131, 111112, 
+               111113)
 samp_n_seq <- 1:100
 for (scenario in scenarios) {
   # Get population scenario
-  scen_pop <- substring(scenario, 1, 3)
+  scen_pop <- substring(scenario, 1, 4)
   sim_pop_path <- paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter", 
                          iter_pop, ".RData")
   load(sim_pop_path)
