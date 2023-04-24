@@ -147,7 +147,7 @@ WOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
                            c = factor(analysis$c_all),
                            wts = w_all)
     svydes <- svydesign(ids = ~1, strata = s, weights = ~wts, data = svy_data)
-    fit <- svyglm(y ~ s * c)
+    fit <- svyglm(y ~ s * c, design = svydes, family = binomial(link = "probit"))
   } else {  # No stratifying variable 
     # V_ref <- data.frame(c = factor(analysis$c_all), y = y_all)
     # fit <- glm(y ~ c, data = V_ref, family = binomial(link = "probit"))
@@ -226,7 +226,7 @@ data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
 adapt_path <- paste0(wd, res_dir, model, "_adapt_scen", scen_samp, 
                      "_samp", samp_n, ".RData")  # Output file
-res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
+res_path <- paste0(wd, res_dir, model, "_results_wt_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
 
 # Check if results already exist

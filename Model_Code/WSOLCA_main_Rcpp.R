@@ -206,7 +206,7 @@ WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path,
   if (save_res) {
     save(res, file = adj_path)
   }
-  return(res)
+  return(list(res = res, adapt_MCMC = adapt_MCMC))
 }
 
 
@@ -266,7 +266,7 @@ if (already_done) {
                                   adj_path = adj_path, stan_path = stan_path, 
                                   save_res = save_res, n_runs = n_runs, 
                                   burn = burn, thin = thin, covs = covs)
-  print(paste0("Runtime: ", results_adj$runtime))
+  print(paste0("Runtime: ", results_adj$res$runtime))
 }
 
 

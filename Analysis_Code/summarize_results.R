@@ -161,6 +161,31 @@ get_Phi_dist <- function(est_Phi, true_Phi) {
   return(list("Phi_dist" = Phi_dist))
 }
 
+# `get_marg_eff` returns the true marginal effect of P(Y=1|C)
+# Inputs:
+#   true_xi: Matrix of true probit model coefficients including S and C as 
+# covariates. Applying 'pnorm' gives conditional effects P(Y=1|S,C). KxS
+#   true_pi_s: Matrix of stratum-specific class probabilities P(C=k|S=s). SxK
+#   true_pi: Vector of overall class membership probabilities P(C=k). Kx1
+#   N_s: Vector of stratum sizes. Sx1
+#   N: Population size
+# Output: `p_y_cond_k` vector of marginal effect P(Y=1|C=k). Kx1
+get_marg_eff <- function(true_xi, true_pi_s, true_pi, N_s, N) {
+  S <- ncol(true_xi)
+  K <- nrow(true_xi)
+  p_s <- N_s / N
+  p_y_cond_k <- numeric(K)
+  p_y_s_cond_k <- matrix(NA, nrow=K, ncol=S)
+  for (k in 1:K) {
+    for (s in 1:S) {
+      # P(Y=1|S=s, C=k)P(C=k|S=s)P(S=s)/P(C=k)
+      p_y_s_cond_k[k, s] <- pnorm(true_xi[k, s]) * true_pi_s[s, k] * p_s[s] / 
+        true_pi[k]
+    }
+    p_y_cond_k[k] <- sum(p_y_s_cond_k[k, ])
+  }
+  return(p_y_cond_k)
+}
 
 #============== Get performance metrics ========================================
 
@@ -272,6 +297,15 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
     d <- dim(analysis$theta_red)[4]        # Number of exposure levels
     K <- length(analysis$pi_med)           # Number of classes
     Q <- dim(analysis$xi_med)[2]           # Number of additional covariates
+    
+    # For the effect modifier scenario, change true_xi to the marginal effect
+    if (scen_pop == 1121) {
+      true_params$true_xi <- as.matrix(get_marg_eff(sim_pop$true_xi, 
+                                                    sim_pop$true_pi_s, 
+                                                    sim_pop$true_pi, 
+                                                    sim_pop$N_s, sim_pop$N), 
+                                       ncol = 1)
+    }
       
     # If number of classes is incorrect, fill remaining components with 0's
     if (K > true_K) {
@@ -383,7 +417,8 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
       xi_CI[2, , ] <- analysis$xi_med_ub[order, ]
     } else {
       # Obtain credible intervals for each component
-      xi_CI <- apply(analysis$xi_red[, order, ], c(2, 3), 
+      # Be careful not to drop size-1 dimension
+      xi_CI <- apply(analysis$xi_red[, order, , drop = FALSE], c(2, 3), 
                      function(x) quantile(x, c(0.025, 0.975)))
     }
     # Assign 1 if interval covers true value, 0 if not
@@ -474,8 +509,8 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 data_dir <- "Data/"
 res_dir <- "Results/"
-scen_pop <- 1111
-scen_samp <- 111131
+scen_pop <- 1121
+scen_samp <- 112111
 iter_pop <- 1
 samp_n_seq <- 1:100
 L <- length(samp_n_seq)
@@ -496,15 +531,15 @@ metrics_SRS_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir,
                                  scen_pop=1, scen_samp=101, iter_pop=1, 
                                  samp_n_seq=samp_n_seq, model="wOFMM")
 metrics_Strat_ws <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                scen_pop=1111, scen_samp=111131, iter_pop=1, 
+                                scen_pop=1121, scen_samp=112111, iter_pop=1, 
                                 samp_n_seq=samp_n_seq, model="wsOFMM")
 metrics_Strat_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                               scen_pop=1111, scen_samp=111131, iter_pop=1, 
+                               scen_pop=1121, scen_samp=112111, iter_pop=1, 
                                samp_n_seq=samp_n_seq, model="sOFMM")
 metrics_Strat_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                   scen_pop=1111, scen_samp=111131, iter_pop=1, 
+                                   scen_pop=1121, scen_samp=112111, iter_pop=1, 
                                    samp_n_seq=samp_n_seq, model="wOFMM")
-scen_pop <- 1111
+scen_pop <- 1121
 # Load simulated population data
 load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
 
@@ -901,32 +936,6 @@ lines(MCMC_out$pi_MCMC[,3], col = "blue")
 pop_data_path <- paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter", 
                         iter_pop, ".RData") 
 load(pop_data_path)
-
-# `get_marg_eff` returns the true marginal effect of P(Y=1|C)
-# Inputs:
-#   true_xi: Matrix of true probit model coefficients including S and C as 
-# covariates. Applying 'pnorm' gives conditional effects P(Y=1|S,C). KxS
-#   true_pi_s: Matrix of stratum-specific class probabilities P(C=k|S=s). SxK
-#   true_pi: Vector of overall class membership probabilities P(C=k). Kx1
-#   N_s: Vector of stratum sizes. Sx1
-#   N: Population size
-# Output: `p_y_cond_k` vector of marginal effect P(Y=1|C=k). Kx1
-get_marg_eff <- function(true_xi, true_pi_s, true_pi, N_s, N) {
-  S <- ncol(true_xi)
-  K <- nrow(true_xi)
-  p_s <- N_s / N
-  p_y_cond_k <- numeric(K)
-  p_y_s_cond_k <- matrix(NA, nrow=K, ncol=S)
-  for (k in 1:K) {
-    for (s in 1:S) {
-      # P(Y=1|S=s, C=k)P(C=k|S=s)P(S=s)/P(C=k)
-      p_y_s_cond_k[k, s] <- pnorm(true_xi[k, s]) * true_pi_s[s, k] * p_s[s] / 
-        true_pi[k]
-    }
-    p_y_cond_k[k] <- sum(p_y_s_cond_k[k, ])
-  }
-  return(p_y_cond_k)
-}
 
 as.matrix(get_marg_eff(sim_pop$true_xi, sim_pop$true_pi_s, sim_pop$true_pi, 
                        sim_pop$N_s, sim_pop$N), ncol = 1)
