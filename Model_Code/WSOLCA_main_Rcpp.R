@@ -225,6 +225,7 @@ model <- "wsOFMM"
 # scen_samp <- 111111
 # iter_pop <- 1
 # samp_n <- 1
+# 
 # n_runs <- 100
 # burn <- 50
 # thin <- 5
@@ -232,7 +233,6 @@ model <- "wsOFMM"
 # save_res <- FALSE
 
 # Define paths
-# REMOVE ITER_POP
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
 adapt_path <- paste0(wd, res_dir, model, "_adapt_scen", scen_samp, 
@@ -251,7 +251,7 @@ if (already_done) {
   burn <- 10000
   thin <- 5
   save_res <- TRUE
-  covs <- "true_Si"
+  covs <- NULL
   
   # Source R helper functions
   source(paste0(wd, model_dir, "helper_functions.R"))

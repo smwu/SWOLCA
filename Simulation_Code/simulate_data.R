@@ -347,6 +347,7 @@ data_dir <- "Data/"
 
 #==================== Create population scenarios ==============================
 scenarios <- 1111
+scenarios <- c(1111, 2111, 1121)
 iter_pop <- 1
 scenarios <- c(1111, 2111, 1211, 1121, 1112)
 for (scenario in scenarios) {
@@ -363,6 +364,8 @@ sim_pop$true_Phi_mat
 
 #==================== Create sampling scenarios ================================
 scenarios <- 111111
+scenarios <- c(211111, 112111, 111121, 111131)
+scenarios <- 112111
 samp_n_seq <- 1
 scenarios <- c(111111, 211111, 121111, 112111, 111211, 111121, 111131, 111112, 
                111113)

@@ -456,7 +456,7 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
                    xi_bias2 = xi_bias2, xi_var = xi_var, 
                    Phi_bias2 = Phi_bias2, pi_cover_avg = pi_cover_avg,
                    theta_cover_avg = theta_cover_avg, xi_cover_avg = xi_cover_avg,
-                   runtime_avg = runtime_avg)
+                   runtime_avg = runtime_avg, K_dist = K_dist)
   
   if (plot) {
     ret_list[["pi_all"]] <- pi_all
@@ -474,8 +474,8 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 data_dir <- "Data/"
 res_dir <- "Results/"
-scen_pop <- 111
-scen_samp <- 11111
+scen_pop <- 1111
+scen_samp <- 111131
 iter_pop <- 1
 samp_n_seq <- 1:100
 L <- length(samp_n_seq)
@@ -496,19 +496,18 @@ metrics_SRS_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir,
                                  scen_pop=1, scen_samp=101, iter_pop=1, 
                                  samp_n_seq=samp_n_seq, model="wOFMM")
 metrics_Strat_ws <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                scen_pop=111, scen_samp=11111, iter_pop=1, 
+                                scen_pop=1111, scen_samp=111131, iter_pop=1, 
                                 samp_n_seq=samp_n_seq, model="wsOFMM")
 metrics_Strat_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                               scen_pop=111, scen_samp=11111, iter_pop=1, 
+                               scen_pop=1111, scen_samp=111131, iter_pop=1, 
                                samp_n_seq=samp_n_seq, model="sOFMM")
 metrics_Strat_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                   scen_pop=1, scen_samp=201, iter_pop=1, 
+                                   scen_pop=1111, scen_samp=111131, iter_pop=1, 
                                    samp_n_seq=samp_n_seq, model="wOFMM")
-scen_pop <- 1
+scen_pop <- 1111
 # Load simulated population data
-sim_pop <- readMat(paste0(data_dir, "simdata_scen", scen_pop,"_iter", 
-                          iter_pop, ".mat"))$sim.data
-names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
+load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
+
 # Obtain true observed population parameters
 true_params <- get_true_params(sim_pop = sim_pop)    
 
@@ -544,28 +543,39 @@ true_params <- get_true_params(sim_pop = sim_pop)
 #================ TABLE METRICS SUMMARY ========================================
 
 ### Create table of metrics with bias and variance
-metrics_summ <- as.data.frame(matrix(NA, nrow=6, ncol=9))
+metrics_summ <- as.data.frame(matrix(NA, nrow=6, ncol=12))
 colnames(metrics_summ) <- c("Sampling Scheme", "Model", 
                         "K Bias^2", "$\\pi$ Bias^2", "$\\pi$ CI width", 
                         "$\\theta$ Bias^2", "$\\theta$ CI width", 
-                        "$\\xi$ Bias^2", "$\\xi$ CI width")
+                        "$\\xi$ Bias^2", "$\\xi$ CI width", 
+                        "$\\pi$ Coverage","$\\theta$ Coverage", "$\\xi$ Coverage")
 metrics_summ[, 1] <- c(rep("SRS", 3), rep("Stratified", 3))
 metrics_summ[, 2] <- rep(c("Unwtd(sOFMM)", "Wtd(wsOFMM)", "Unsup(wOFMM)"), 2)  ## latent versions
 output_inds <- 1:7
 metrics_summ[1, -c(1,2)] <- c(metrics_SRS_s[output_inds])
 metrics_summ[2, -c(1,2)] <- c(metrics_SRS_ws[output_inds])
 metrics_summ[3, -c(1,2)] <- c(metrics_SRS_unsup[output_inds])
-metrics_summ[4, -c(1,2)] <- c(metrics_Strat_s[output_inds])
-metrics_summ[5, -c(1,2)] <- c(metrics_Strat_ws[output_inds])
-metrics_summ[6, -c(1,2)] <- c(metrics_Strat_unsup[output_inds])
+metrics_summ[4, -c(1,2)] <- c(metrics_Strat_s[output_inds], 
+                              mean(metrics_Strat_s$pi_cover_avg), 
+                              mean(metrics_Strat_s$theta_cover_avg),
+                              mean(metrics_Strat_s$xi_cover_avg))
+metrics_summ[5, -c(1,2)] <- c(metrics_Strat_ws[output_inds], 
+                              mean(metrics_Strat_ws$pi_cover_avg), 
+                              mean(metrics_Strat_ws$theta_cover_avg),
+                              mean(metrics_Strat_ws$xi_cover_avg))
+metrics_summ[6, -c(1,2)] <- c(metrics_Strat_unsup[output_inds], 
+                              mean(metrics_Strat_unsup$pi_cover_avg), 
+                              mean(metrics_Strat_unsup$theta_cover_avg),
+                              mean(metrics_Strat_unsup$xi_cover_avg))
 metrics_summ %>% 
-  gt(caption = paste0(scenario, " scenario metrics of posterior parameter estimates, averaged over 100 samples")) %>%
+  gt(caption = paste0(scen_samp, " scenario metrics of posterior parameter estimates, averaged over 100 samples")) %>%
   cols_label("$\\pi$ Bias^2" = "π Bias^2", "$\\theta$ Bias^2" = "θ Bias^2", 
              "$\\xi$ Bias^2" = "ξ Bias^2",
              "$\\pi$ CI width" = "π CI width", "$\\theta$ CI width" = "θ CI width", 
-             "$\\xi$ CI width" = "ξ CI width") %>%
+             "$\\xi$ CI width" = "ξ CI width", "$\\pi$ Coverage" = "π Coverage",
+             "$\\theta$ Coverage" = "θ Coverage", "$\\xi$ Coverage" = "ξ Coverage") %>%
   fmt_number(
-    columns = 3:9,
+    columns = 3:12,
     decimals = 4)
   # fmt_scientific(
   #   columns = 3:9,
@@ -884,3 +894,40 @@ for (k in 1:3) {
 plot(MCMC_out$pi_MCMC[,1], type = "l", ylim=c(0.1, 0.7))
 lines(MCMC_out$pi_MCMC[,2], col = "red")
 lines(MCMC_out$pi_MCMC[,3], col = "blue")
+
+
+#================ Marginal effect of C on Y ====================================
+# Load simulated population data
+pop_data_path <- paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter", 
+                        iter_pop, ".RData") 
+load(pop_data_path)
+
+# `get_marg_eff` returns the true marginal effect of P(Y=1|C)
+# Inputs:
+#   true_xi: Matrix of true probit model coefficients including S and C as 
+# covariates. Applying 'pnorm' gives conditional effects P(Y=1|S,C). KxS
+#   true_pi_s: Matrix of stratum-specific class probabilities P(C=k|S=s). SxK
+#   true_pi: Vector of overall class membership probabilities P(C=k). Kx1
+#   N_s: Vector of stratum sizes. Sx1
+#   N: Population size
+# Output: `p_y_cond_k` vector of marginal effect P(Y=1|C=k). Kx1
+get_marg_eff <- function(true_xi, true_pi_s, true_pi, N_s, N) {
+  S <- ncol(true_xi)
+  K <- nrow(true_xi)
+  p_s <- N_s / N
+  p_y_cond_k <- numeric(K)
+  p_y_s_cond_k <- matrix(NA, nrow=K, ncol=S)
+  for (k in 1:K) {
+    for (s in 1:S) {
+      # P(Y=1|S=s, C=k)P(C=k|S=s)P(S=s)/P(C=k)
+      p_y_s_cond_k[k, s] <- pnorm(true_xi[k, s]) * true_pi_s[s, k] * p_s[s] / 
+        true_pi[k]
+    }
+    p_y_cond_k[k] <- sum(p_y_s_cond_k[k, ])
+  }
+  return(p_y_cond_k)
+}
+
+as.matrix(get_marg_eff(sim_pop$true_xi, sim_pop$true_pi_s, sim_pop$true_pi, 
+                       sim_pop$N_s, sim_pop$N), ncol = 1)
+

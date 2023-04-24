@@ -139,18 +139,31 @@ WOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   
   #================= Fit probit model ==========================================
   if (!is.null(s_all)) {  # Include stratifying variable 
-    V_ref <- data.frame(s = factor(s_all), c = factor(analysis$c_all), y = y_all)
-    fit <- glm(y ~ s * c, data = V_ref, family = binomial(link = "probit"))
+    # V_ref <- data.frame(s = factor(s_all), c = factor(analysis$c_all), y = y_all)
+    # fit <- glm(y ~ s * c, data = V_ref, family = binomial(link = "probit"))
+    svy_data <- data.frame(x = x_mat,
+                           y = y_all, 
+                           s = factor(s_all),
+                           c = factor(analysis$c_all),
+                           wts = w_all)
+    svydes <- svydesign(ids = ~1, strata = s, weights = ~wts, data = svy_data)
+    fit <- svyglm(y ~ s * c)
   } else {  # No stratifying variable 
-    V_ref <- data.frame(c = factor(analysis$c_all), y = y_all)
-    fit <- glm(y ~ c, data = V_ref, family = binomial(link = "probit"))
+    # V_ref <- data.frame(c = factor(analysis$c_all), y = y_all)
+    # fit <- glm(y ~ c, data = V_ref, family = binomial(link = "probit"))
+    svy_data <- data.frame(x = x_mat,
+                           y = y_all, 
+                           c = factor(analysis$c_all),
+                           wts = w_all)
+    svydes <- svydesign(ids = ~1, weights = ~wts, data = svy_data)
+    fit <- svyglm(y ~ c, design = svydes, family = binomial(link = "probit"))
   }
   coefs <- fit$coefficients
   ci <- confint(fit)
   
   # Convert format to match WSOLCA and SOLCA
+  xi_med <- xi_med_lb <- xi_med_ub <- matrix(NA, nrow = analysis$K_red, ncol = q)
   if (!is.null(s_all)) {  # Include stratifying variable 
-    xi_med <- xi_med_lb <- xi_med_ub <- matrix(NA, nrow = analysis$K_red, ncol = q)
     for (k in 1:analysis$K_red) {
       for (s in 1:q) {
         xi_med[k, s] <- coefs[1] + (k != 1) * coefs[q + (k-1)] + (s != 1) * coefs[s] + 
@@ -163,8 +176,12 @@ WOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
           (k != 1) * (s != 1) * ci[q + (analysis$K_red-1) + (k-1), 2]
       }
     }
-  } else {
-    #### NEED TO ADD FOR EFFECT MODIFIER
+  } else {  # Stratifying variable not included in probit model
+    for (k in 1:analysis$K_red) {
+      xi_med[k, 1] <- coefs[1] + (k != 1) * coefs[q + (k-1)] 
+      xi_med_lb[k, 1] <- ci[1, 1] + (k != 1) * ci[q + (k-1), 1] 
+      xi_med_ub[k, 1] <- ci[1, 2] + (k != 1) * ci[q + (k-1), 2]
+    }
   }
     
   analysis$xi_med <- xi_med
@@ -222,6 +239,7 @@ if (already_done) {
   burn <- 10000
   thin <- 5
   save_res <- TRUE
+  covs <- NULL
 
   # Source R helper functions
   source(paste0(wd, model_dir, "helper_functions.R"))
