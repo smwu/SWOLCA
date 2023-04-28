@@ -1,26 +1,7 @@
-#include <RcppCommon.h>
-// Flags for C++ compiler
-// [[Rcpp:depends(BH)]]
-#include <boost/multi_array.hpp>
-namespace Rcpp {
-  namespace traits{
-    // Template specialization for 'multi_array' class
-    // Support for wrap to convert from C++ to R
-    template <typename T, int D> SEXP wrap(const boost::multi_array<T, D>& obj) {
-      const int RTYPE = Rcpp::traits::r_sexptype_traits<T>::rtype;
-      return Rcpp
-    };
-    
-    //Support for as to convert from R to C++
-    template <typename T, int D> class Exporter<boost::multi_array<T, D> >;
-  }
-}
-#include <Rcpp.h>
 #include <RcppArmadillo.h>
 #include <RcppTN.h>
 using namespace Rcpp;
 using namespace arma;
-using boost::multi_array;
 // [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::depends(RcppTN)]]
 
@@ -80,26 +61,47 @@ vec update_c_OLCA(vec& c_all, const int& n, const int& K, const int& p,
   return c_all;
 }
 
-typedef boost::multi_array_ref<double, 4> array_type;
-// Boost 4-D array
-// [[Rcpp::export]]
-void update_array(array_type arr, int d1, int d2, int d3, int d4, double value) {
-  arr[d1-1][d2-1][d3-1][d4-1] = value;
-}
+// typedef boost::multi_array_ref<double, 4> array_type;
+// // Boost 4-D array
+// // [[Rcpp::export]]
+// void update_array(array_type arr, int d1, int d2, int d3, int d4, double value) {
+//   arr[d1-1][d2-1][d3-1][d4-1] = value;
+// }
 
-// [[Rcpp::export]]
-void update_array_wrap(Rcpp::NumericVector arr, int dim1, int dim2, int dim3, 
-                       int dim4, int index1, int index2, int index3, int index4, 
-                       double new_value) {
-  array_type arr_ref(arr.begin(), boost::extents[dim1][dim2][dim3][dim4]);
-  update_array(arr_ref, index1, index2, index3, index4, new_value);
-}
+// // [[Rcpp::export]]
+// void update_array_wrap(Rcpp::NumericVector arr, int dim1, int dim2, int dim3, 
+//                        int dim4, int index1, int index2, int index3, int index4, 
+//                        double new_value) {
+//   array_type arr_ref(arr.begin(), boost::extents[dim1][dim2][dim3][dim4]);
+//   update_array(arr_ref, index1, index2, index3, index4, new_value);
+// }
 
 // [[Rcpp::export]]
 vec update_p(vec& p_all) {
   p_all(1) = 4;
   p_all(2) = 4;
   return p_all;
+}
+
+// Single draw from Dirichlet
+// [[Rcpp::export]]
+vec rdirichlet_cpp(vec alpha) {
+  int distribution_size = alpha.size();
+  // Draw from a Dirichlet
+  vec distribution(distribution_size);
+  
+  double sum_term = 0;
+  // Loop through the distribution and draw Gamma variables
+  for (int i = 0; i < distribution_size; i++) {
+    double cur = R::rgamma(alpha[i],1.0);
+    distribution(i) = cur;
+    sum_term += cur;
+  }
+  // Now normalize
+  for (int i = 0; i < distribution_size; i++) {
+    distribution(i) = distribution(i)/sum_term;
+  }
+  return distribution;
 }
 
 
@@ -154,9 +156,9 @@ vec update_p(vec& p_all) {
 # theta = data_vars$true_global_thetas[1:p, , ]
 # xi = matrix(data_vars$true_xi, nrow = K, ncol = q, byrow = FALSE)
 # loglik = numeric(n)
-p_all <- as.double(1:5)
-temp <- update_p(p_all)
-p_all
+# p_all <- as.double(1:5)
+# temp <- update_p(p_all)
+# p_all
 */
 
 /*** R
@@ -170,9 +172,12 @@ p_all
 # print(xi)
 # update_c_OLCA(c_all, n, K, p, theta, x_mat, pi)
 # c_all
-arr <- array(0, dim = c(2,2,2,2))
-print(arr[,,1,1])
-update_array(arr, dim(arr)[1], dim(arr)[2], dim(arr)[3], dim(arr)[4], 
-             1, 1, 1, 1, 10.0)
-print(arr[,,1,1])
+# arr <- array(0, dim = c(2,2,2,2))
+# print(arr[,,1,1])
+# update_array(arr, dim(arr)[1], dim(arr)[2], dim(arr)[3], dim(arr)[4], 
+#              1, 1, 1, 1, 10.0)
+# print(arr[,,1,1])
+# set.seed(1)
+# probs <- c(0.3, 0.3, 0.4)
+# rcat_cpp(probs)
 */

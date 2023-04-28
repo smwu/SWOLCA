@@ -251,7 +251,7 @@ if (already_done) {
   burn <- 10000
   thin <- 5
   save_res <- TRUE
-  covs <- NULL
+  covs <- "true_Si"
   
   # Source R helper functions
   source(paste0(wd, model_dir, "helper_functions.R"))

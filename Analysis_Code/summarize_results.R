@@ -279,13 +279,23 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
       names(analysis) <- str_replace_all(names(analysis), "_adj", "")
       runtime_all[l] <- res$runtime
     } else {  # sOFMM and wOFMM models
-      sim_res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
-                             "_samp", samp_n, ".RData")
-      if (!file.exists(sim_res_path)) {
-        print(paste0("File does not exist: ", model, "_results_scen", 
-                     scen_samp, "_samp", samp_n, ".mat"))
-        next
-      } 
+      if(model == "sOFMM") {
+        sim_res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
+                               "_samp", samp_n, ".RData")
+        if (!file.exists(sim_res_path)) {
+          print(paste0("File does not exist: ", model, "_results_scen", 
+                       scen_samp, "_samp", samp_n, ".mat"))
+          next
+        } 
+      } else {  # wOFMM 
+        sim_res_path <- paste0(wd, res_dir, model, "_results_wt_scen", scen_samp, 
+                               "_samp", samp_n, ".RData")
+        if (!file.exists(sim_res_path)) {
+          print(paste0("File does not exist: ", model, "_results_wt_scen", 
+                       scen_samp, "_samp", samp_n, ".mat"))
+          next
+        } 
+      }
       load(sim_res_path)
       analysis <- res$analysis
       runtime_all[l] <- res$runtime
@@ -300,11 +310,11 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
     
     # For the effect modifier scenario, change true_xi to the marginal effect
     if (scen_pop == 1121) {
-      true_params$true_xi <- as.matrix(get_marg_eff(sim_pop$true_xi, 
+      true_params$true_xi <- qnorm(as.matrix(get_marg_eff(sim_pop$true_xi, 
                                                     sim_pop$true_pi_s, 
                                                     sim_pop$true_pi, 
                                                     sim_pop$N_s, sim_pop$N), 
-                                       ncol = 1)
+                                       ncol = 1))
     }
       
     # If number of classes is incorrect, fill remaining components with 0's
@@ -491,7 +501,8 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
                    xi_bias2 = xi_bias2, xi_var = xi_var, 
                    Phi_bias2 = Phi_bias2, pi_cover_avg = pi_cover_avg,
                    theta_cover_avg = theta_cover_avg, xi_cover_avg = xi_cover_avg,
-                   runtime_avg = runtime_avg, K_dist = K_dist)
+                   runtime_avg = runtime_avg, K_dist = K_dist, pi_dist = pi_dist,
+                   theta_dist = theta_dist, xi_dist = xi_dist)
   
   if (plot) {
     ret_list[["pi_all"]] <- pi_all
@@ -500,6 +511,7 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
     ret_list[["theta_mode"]] <- theta_mode
     ret_list[["mode_mis"]] <- mode_mis
     ret_list[["xi_all"]] <- xi_all
+    ret_list[["mode_mis_all"]] <- mode_mis_all
   }
   
   return(ret_list)
@@ -509,8 +521,8 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 data_dir <- "Data/"
 res_dir <- "Results/"
-scen_pop <- 1121
-scen_samp <- 112111
+scen_pop <- 1211
+scen_samp <- 121111
 iter_pop <- 1
 samp_n_seq <- 1:100
 L <- length(samp_n_seq)
@@ -531,15 +543,15 @@ metrics_SRS_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir,
                                  scen_pop=1, scen_samp=101, iter_pop=1, 
                                  samp_n_seq=samp_n_seq, model="wOFMM")
 metrics_Strat_ws <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                scen_pop=1121, scen_samp=112111, iter_pop=1, 
+                                scen_pop=1211, scen_samp=121111, iter_pop=1, 
                                 samp_n_seq=samp_n_seq, model="wsOFMM")
 metrics_Strat_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                               scen_pop=1121, scen_samp=112111, iter_pop=1, 
+                               scen_pop=1211, scen_samp=121111, iter_pop=1, 
                                samp_n_seq=samp_n_seq, model="sOFMM")
 metrics_Strat_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                   scen_pop=1121, scen_samp=112111, iter_pop=1, 
+                                   scen_pop=1211, scen_samp=121111, iter_pop=1, 
                                    samp_n_seq=samp_n_seq, model="wOFMM")
-scen_pop <- 1121
+scen_pop <- 1211
 # Load simulated population data
 load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
 
@@ -576,8 +588,40 @@ names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
 true_params <- get_true_params(sim_pop = sim_pop)   
 
 #================ TABLE METRICS SUMMARY ========================================
-
 ### Create table of metrics with bias and variance
+metrics_summ <- as.data.frame(matrix(NA, nrow=3, ncol=12))
+colnames(metrics_summ) <- c("Sampling Scheme", "Model", 
+                            "K Bias^2", "$\\pi$ Bias^2", "$\\pi$ CI width", 
+                            "$\\theta$ Bias^2", "$\\theta$ CI width", 
+                            "$\\xi$ Bias^2", "$\\xi$ CI width", 
+                            "$\\pi$ Coverage","$\\theta$ Coverage", "$\\xi$ Coverage")
+metrics_summ[, 1] <- rep("Stratified", 3)
+metrics_summ[, 2] <- rep(c("Unwtd(sOFMM)", "Wtd(wsOFMM)", "Unsup(wOFMM)"), 1)  ## latent versions
+output_inds <- 1:7
+metrics_summ[1, -c(1,2)] <- c(metrics_Strat_s[output_inds], 
+                              mean(metrics_Strat_s$pi_cover_avg), 
+                              mean(metrics_Strat_s$theta_cover_avg),
+                              mean(metrics_Strat_s$xi_cover_avg))
+metrics_summ[2, -c(1,2)] <- c(metrics_Strat_ws[output_inds], 
+                              mean(metrics_Strat_ws$pi_cover_avg), 
+                              mean(metrics_Strat_ws$theta_cover_avg),
+                              mean(metrics_Strat_ws$xi_cover_avg))
+metrics_summ[3, -c(1,2)] <- c(metrics_Strat_unsup[output_inds], 
+                              mean(metrics_Strat_unsup$pi_cover_avg), 
+                              mean(metrics_Strat_unsup$theta_cover_avg),
+                              mean(metrics_Strat_unsup$xi_cover_avg))
+metrics_summ %>% 
+  gt(caption = paste0(scen_samp, " scenario metrics of posterior parameter estimates, averaged over 100 samples")) %>%
+  cols_label("$\\pi$ Bias^2" = "π Bias^2", "$\\theta$ Bias^2" = "θ Bias^2", 
+             "$\\xi$ Bias^2" = "ξ Bias^2",
+             "$\\pi$ CI width" = "π CI width", "$\\theta$ CI width" = "θ CI width", 
+             "$\\xi$ CI width" = "ξ CI width", "$\\pi$ Coverage" = "π Coverage",
+             "$\\theta$ Coverage" = "θ Coverage", "$\\xi$ Coverage" = "ξ Coverage") %>%
+  fmt_number(
+    columns = 3:12,
+    decimals = 4)
+
+### Create table of metrics with bias and variance (OLD VERSION)
 metrics_summ <- as.data.frame(matrix(NA, nrow=6, ncol=12))
 colnames(metrics_summ) <- c("Sampling Scheme", "Model", 
                         "K Bias^2", "$\\pi$ Bias^2", "$\\pi$ CI width", 
@@ -789,7 +833,7 @@ p_comb <- ggarrange(p_true, p_sOFMM + theme(axis.title.y = element_blank()),
                     p_wOFMM + theme(axis.title.y = element_blank()), 
                     nrow = 1, common.legend = TRUE, legend = "right")
 annotate_figure(p_comb, 
-                top = text_grob(paste0(scenario, " scenario pattern elicitation under stratified sampling with unequal probabilities, \naveraged across 100 samples")))
+                top = text_grob(paste0(scen_samp, " scenario pattern elicitation under stratified sampling with unequal probabilities, \naveraged across 100 samples")))
 
 
 

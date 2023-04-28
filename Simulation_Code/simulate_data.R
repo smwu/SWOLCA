@@ -346,7 +346,7 @@ wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 data_dir <- "Data/"
 
 #==================== Create population scenarios ==============================
-scenarios <- 1111
+scenarios <- 1211
 scenarios <- c(1111, 2111, 1121)
 iter_pop <- 1
 scenarios <- c(1111, 2111, 1211, 1121, 1112)
@@ -363,7 +363,7 @@ prop.table(table(sim_pop$true_Ci[sim_pop$true_Si == 2]))
 sim_pop$true_Phi_mat
 
 #==================== Create sampling scenarios ================================
-scenarios <- 111111
+scenarios <- 121111
 scenarios <- c(211111, 112111, 111121, 111131)
 scenarios <- 112111
 samp_n_seq <- 1
