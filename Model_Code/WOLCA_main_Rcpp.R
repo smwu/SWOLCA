@@ -146,8 +146,8 @@ WOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
                            s = factor(s_all),
                            c = factor(analysis$c_all),
                            wts = w_all)
-    svydes <- svydesign(ids = ~1, strata = s, weights = ~wts, data = svy_data)
-    fit <- svyglm(y ~ s * c, design = svydes, family = binomial(link = "probit"))
+    svydes <- svydesign(ids = ~1, strata = ~s, weights = ~wts, data = svy_data)
+    fit <- svyglm(y ~ s * c, design = svydes, family = quasibinomial(link = "probit"))
   } else {  # No stratifying variable 
     # V_ref <- data.frame(c = factor(analysis$c_all), y = y_all)
     # fit <- glm(y ~ c, data = V_ref, family = binomial(link = "probit"))
@@ -156,7 +156,7 @@ WOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
                            c = factor(analysis$c_all),
                            wts = w_all)
     svydes <- svydesign(ids = ~1, weights = ~wts, data = svy_data)
-    fit <- svyglm(y ~ c, design = svydes, family = binomial(link = "probit"))
+    fit <- svyglm(y ~ c, design = svydes, family = quasibinomial(link = "probit"))
   }
   coefs <- fit$coefficients
   ci <- confint(fit)
