@@ -11,6 +11,8 @@ iter_pop <- args[[2]]   # Population iteration
 samp_n <- args[[3]]     # Sample number
 
 # Load libraries
+library(R.matlab)
+library(stringr)
 library(plyr)
 library(dplyr)
 library(LaplacesDemon)
@@ -50,8 +52,10 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   
   #================= Read in data ==============================================
   print("Read in data")
-  load(data_path)
-  data_vars <- sim_data
+  # load(data_path)
+  # data_vars <- sim_data
+  data_vars <- readMat(data_path)$sim.data
+  names(data_vars) <- str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
   
   # Obtain dimensions
   n <- dim(data_vars$X_data)[1]        # Number of individuals
@@ -61,6 +65,7 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   # Obtain data
   x_mat <- data_vars$X_data            # Categorical exposure matrix, nxp
   y_all <- c(data_vars$Y_data)         # Binary outcome vector, nx1
+  # clus_id_all <- data_vars$cluster_id  # Cluster indicators, nx1. CHANGE BACK!!!!!!!!!!!!!!!!!!!!!
   if (!is.null(covs)) {  # Other covariates are included in the probit model  
     s_all <- data_vars[[covs]]    # Stratifying variable, nx1
     # Stratifying variable as dummy columns
@@ -104,17 +109,25 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   #================= Run adaptive sampler to obtain number of classes ==========
   # Obtain pi_MCMC, theta_MCMC, xi_MCMC, c_all_MCMC, z_all_MCMC, loglik_MCMC
   MCMC_out <- run_MCMC_Rcpp(OLCA_params = OLCA_params, probit_params = probit_params, 
-                            n_runs = round(n_runs/2), burn = round(burn/2), 
+                            n_runs = n_runs, burn = burn, 
                             thin = thin, K = K_max, p = p, d = d, n = n, q = q, 
                             w_all = w_all, x_mat = x_mat, y_all = y_all, V = V, 
                             alpha = alpha, eta = eta, Sig0 = Sig0, mu0 = mu0)
   
   #================= Post-processing for adaptive sampler ======================
-  # Get median number of classes with >= 5% of individuals, over all iterations
-  M <- dim(MCMC_out$pi_MCMC)[1]  # Number of stored MCMC iterations
-  K_med <- round(median(rowSums(MCMC_out$pi_MCMC >= 0.05)))
+  # Post-processing to recalibrate labels and remove extraneous empty classes
+  # Obtain K_med, pi, theta, xi, loglik_MCMC
+  post_MCMC_out <- post_process(MCMC_out = MCMC_out, p = p, d = d, q = q)
+  # Identify unique classes using modal exposure categories
+  # Posterior median estimate for theta across iterations
+  theta_med_temp <- apply(post_MCMC_out$theta, c(2, 3, 4), median)
+  # Posterior modal exposure categories for each exposure item and reduced class
+  theta_modes <- apply(theta_med_temp, c(1, 2), which.max)
+  # Identify unique classes
+  unique_classes <- which(!duplicated(theta_modes, MARGIN = 2))
+  
   # Get number of unique classes for fixed sampler
-  K_fixed <- K_med
+  K_fixed <- length(unique_classes) 
   print(paste0("K_fixed: ", K_fixed))
   # Save adaptive output
   adapt_MCMC <- list(MCMC_out = MCMC_out, K_fixed = K_fixed)
@@ -200,11 +213,13 @@ model <- "sOFMM"
 # save_res <- FALSE
 
 # Define paths
+# data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
+#                     "_samp", samp_n, ".RData")   # Input dataset
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
-                    "_samp", samp_n, ".RData")   # Input dataset
-adapt_path <- paste0(wd, res_dir, model, "_adapt_scen", scen_samp, 
+                    "_samp", samp_n, ".mat")   # Input dataset
+adapt_path <- paste0(wd, res_dir, model, "_adapt_OLD25000_scen", scen_samp, 
                      "_samp", samp_n, ".RData")  # Output file
-res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
+res_path <- paste0(wd, res_dir, model, "_results_OLD25000_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
 
 # Check if results already exist
@@ -213,8 +228,8 @@ if (already_done) {
   print(paste0('Scenario ', scen_samp, ' iter ', iter_pop, ' samp ', samp_n,
                ' already exists.'))
 } else {
-  n_runs <- 20000
-  burn <- 10000
+  n_runs <- 25000
+  burn <- 15000
   thin <- 5
   save_res <- TRUE
   covs <- "true_Si"

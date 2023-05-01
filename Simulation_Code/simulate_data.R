@@ -292,12 +292,9 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
       sample_wt_temp[samp_ind_s] <- sim_pop$N_s[s] / n_s[s]
     }
   } else if (scenario_vec[6] == 2) {
-    # Survey design is SRS
-    # Sampled individuals
-    samp_ind_SRS <- sample(pop_inds, n)  
-    samp_ind_temp[samp_ind_SRS] <- 1
-    sample_wt_temp[samp_ind_SRS] <- sim_pop$N / n
-  } else if (scenario_vec[6] == 3) {
+    if (scenario_vec[4] != 2) {
+      stop("Error: Population data is not clustered.")
+    }
     # Survey design is stratified cluster sampling
     n_s <- c(n/2, n/2)  # Sample strata are equal sizes by design
     n_clus_s <- n_s / sim_pop$cluster_size  # Number of clusters to sample per stratum
@@ -311,7 +308,13 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
       samp_ind_temp[samp_ind_s] <- 1          
       sample_wt_temp[samp_ind_s] <- sim_pop$N_s[s] / n_s[s]
     }
-  } else {
+  } else if (scenario_vec[6] == 3) {
+    # Survey design is SRS
+    # Sampled individuals
+    samp_ind_SRS <- sample(pop_inds, n)  
+    samp_ind_temp[samp_ind_SRS] <- 1
+    sample_wt_temp[samp_ind_SRS] <- sim_pop$N / n
+  }  else {
     stop("Error: Not a valid scenario.")
   }
   
@@ -346,7 +349,7 @@ wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 data_dir <- "Data/"
 
 #==================== Create population scenarios ==============================
-scenarios <- 1211
+scenarios <- 1112
 scenarios <- c(1111, 2111, 1121)
 iter_pop <- 1
 scenarios <- c(1111, 2111, 1211, 1121, 1112)
@@ -361,11 +364,12 @@ for (scenario in scenarios) {
 prop.table(table(sim_pop$true_Ci[sim_pop$true_Si == 1]))
 prop.table(table(sim_pop$true_Ci[sim_pop$true_Si == 2]))
 sim_pop$true_Phi_mat
+sim_pop$true_global_patterns
 
 #==================== Create sampling scenarios ================================
-scenarios <- 121111
+scenarios <- 111211
 scenarios <- c(211111, 112111, 111121, 111131)
-scenarios <- 112111
+scenarios <- c(111211, 111212, 111213)
 samp_n_seq <- 1
 scenarios <- c(111111, 211111, 121111, 112111, 111211, 111121, 111131, 111112, 
                111113)
@@ -383,6 +387,23 @@ for (scenario in scenarios) {
                             samp_n = samp_n, samp_data_path = samp_data_path)
   }
 }
+
+prop.table(table(sim_data$true_Si))
+prop.table(table(sim_data$true_Ci))
+prop.table(table(sim_data$true_Ci[sim_data$true_Si == 1]))
+prop.table(table(sim_data$true_Ci[sim_data$true_Si == 2]))
+K <- 3
+S <- 2
+samp_Phi_mat <- matrix(NA, nrow=K, ncol=S)
+for (k in 1:K) {
+  for (s in 1:S) {
+    samp_Phi_mat[k, s] <- sum(sim_samp$Y_data==1 & sim_samp$true_Si==s & 
+                                sim_samp$true_Ci==k) / 
+      sum(sim_samp$true_Si==s & sim_samp$true_Ci==k)
+  }
+}
+samp_Phi_mat
+prop.table(table(sim_data$X_data[sim_data$true_Ci == 3,1] == 4))
 
 #==================== Sanity checks ============================================
 # table(true_Si)

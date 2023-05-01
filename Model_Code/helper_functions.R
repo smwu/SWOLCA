@@ -421,6 +421,7 @@ grad_par <- function(pwts, svydata, stan_mod, stan_data, par_stan, u_pars) {
 #   V: Regression design matrix without class assignment. nxq
 #   w_all: Weights normalized to sum to n. nx1
 #   s_all: Vector of stratifying variable for individuals. nx1
+#   clus_id_all: Vector of cluster indicators. nx1 
 # Outputs: `analysis_adj` list containing the following items:
 #   pi_red_adj: Matrix of adjusted posterior samples for pi. Mx(K_red)
 #   theta_red_adj: Array of adjusted posterior samples for theta. Mxpx(K_red)xd
@@ -433,7 +434,7 @@ grad_par <- function(pwts, svydata, stan_mod, stan_data, par_stan, u_pars) {
 #   pred_class_probs: Matrix of individual posterior class probabilities from `analyze_results`. nx(K_red)
 #   loglik_med: Vector of final individual log-likelihoods from `analyze_results`. nx1
 var_adjust <- function(mod_stan, analysis, K, p, d, n, q, x_mat, y_all, V, w_all, 
-                       s_all) {
+                       s_all, clus_id_all = clus_id_all) {
   #=============== Run Stan model ==============================================
   # Define data for Stan model
   alpha <- rep(1, K) / K            # Hyperparameter for prior for pi
@@ -473,18 +474,19 @@ var_adjust <- function(mod_stan, analysis, K, p, d, n, q, x_mat, y_all, V, w_all
   H_hat <- -1*optimHess(unc_par_hat, gr = function(x){grad_log_prob(out_stan, x)})
   
   # Create survey design
-  ##### NEED TO CHANGE TO INCLUDE CLUSTER INDICATORS
   if (!is.null(s_all)) {  # Include stratifying variable
     svy_data <- data.frame(s = s_all, 
                            x = x_mat,
                            y = y_all, 
-                           wts = w_all)
-    svydes <- svydesign(ids = ~1, strata = ~s, weights = ~wts, data = svy_data)
+                           wts = w_all,
+                           clus = clus_id_all)
+    svydes <- svydesign(ids = ~clus, strata = ~s, weights = ~wts, data = svy_data)
   } else {  # No stratifying variable
     svy_data <- data.frame(x = x_mat,
                            y = y_all, 
-                           wts = w_all)
-    svydes <- svydesign(ids = ~1, weights = ~wts, data = svy_data)
+                           wts = w_all,
+                           clus = clus_id_all)
+    svydes <- svydesign(ids = ~clus, weights = ~wts, data = svy_data)
   }
   
   # Create svrepdesign

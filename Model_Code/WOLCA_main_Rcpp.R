@@ -60,6 +60,7 @@ WOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   # Obtain data
   x_mat <- data_vars$X_data            # Categorical exposure matrix, nxp
   y_all <- c(data_vars$Y_data)         # Binary outcome vector, nx1
+  clus_id_all <- data_vars$cluster_id  # Cluster indicators, nx1
   if (!is.null(covs)) {  # Other covariates are included in the probit model  
     s_all <- data_vars[[covs]]    # Stratifying variable, nx1
     # Stratifying variable as dummy columns
@@ -141,21 +142,23 @@ WOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   if (!is.null(s_all)) {  # Include stratifying variable 
     # V_ref <- data.frame(s = factor(s_all), c = factor(analysis$c_all), y = y_all)
     # fit <- glm(y ~ s * c, data = V_ref, family = binomial(link = "probit"))
-    svy_data <- data.frame(x = x_mat,
+    svy_data <- data.frame(s = factor(s_all),
+                           x = x_mat,
                            y = y_all, 
-                           s = factor(s_all),
+                           wts = w_all,
                            c = factor(analysis$c_all),
-                           wts = w_all)
-    svydes <- svydesign(ids = ~1, strata = ~s, weights = ~wts, data = svy_data)
+                           clus = clus_id_all)
+    svydes <- svydesign(ids = ~clus, strata = ~s, weights = ~wts, data = svy_data)
     fit <- svyglm(y ~ s * c, design = svydes, family = quasibinomial(link = "probit"))
   } else {  # No stratifying variable 
     # V_ref <- data.frame(c = factor(analysis$c_all), y = y_all)
     # fit <- glm(y ~ c, data = V_ref, family = binomial(link = "probit"))
     svy_data <- data.frame(x = x_mat,
                            y = y_all, 
+                           wts = w_all,
                            c = factor(analysis$c_all),
-                           wts = w_all)
-    svydes <- svydesign(ids = ~1, weights = ~wts, data = svy_data)
+                           clus = clus_id_all)
+    svydes <- svydesign(ids = ~clus, weights = ~wts, data = svy_data)
     fit <- svyglm(y ~ c, design = svydes, family = quasibinomial(link = "probit"))
   }
   coefs <- fit$coefficients

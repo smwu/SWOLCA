@@ -678,8 +678,10 @@ WSOLCA_main <- function(data_path, res_path, adj_path, stan_path,
   #================= Read in data ==============================================
   print("Read in data")
   # CHANGE TO RDATA
-  data_vars <- readMat(data_path)$sim.data
-  names(data_vars) <- str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
+  # data_vars <- readMat(data_path)$sim.data
+  # names(data_vars) <- str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
+  load(data_path)
+  data_vars <- sim_data
   
   # Obtain dimensions
   n <- dim(data_vars$X_data)[1]        # Number of individuals
@@ -835,12 +837,13 @@ model <- "wsOFMM"
 # samp_n <- 1
 
 # Define paths
-# REMOVE ITER_POP
+# data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
+#                     "_samp", samp_n, ".mat")   # Input dataset
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
-                    "_samp", samp_n, ".mat")   # Input dataset
-res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
+                    "_samp", samp_n, ".RData")  # Input dataset
+res_path <- paste0(wd, res_dir, model, "_results_R20000_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
-adj_path <- paste0(wd, res_dir, model, "_results_adjR_scen", scen_samp, 
+adj_path <- paste0(wd, res_dir, model, "_results_R20000_adjR_scen", scen_samp, 
                    "_samp", samp_n, ".RData")      # Adjusted output file
 stan_path <- paste0(wd, model_dir, "WSOLCA_main.stan")  # Stan file
 
@@ -855,7 +858,7 @@ if (already_done) {
                iter_pop,' samp ', samp_n))
   results_adj <- WSOLCA_main(data_path = data_path, res_path = res_path,
                              adj_path = adj_path, stan_path = stan_path, 
-                             save_res = TRUE, n_runs = 25000, burn = 15000, 
+                             save_res = TRUE, n_runs = 20000, burn = 10000, 
                              thin = 5)
   print(paste0("Runtime: ", results_adj$runtime))
 }
