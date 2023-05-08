@@ -235,9 +235,9 @@ model <- "wsOFMM"
 # Define paths
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
-adapt_path <- paste0(wd, res_dir, model, "_adapt25000_scen", scen_samp, 
+adapt_path <- paste0(wd, res_dir, model, "_adapt_mod20000_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
-adj_path <- paste0(wd, res_dir, model, "_results25000_adjRcpp_scen", scen_samp, 
+adj_path <- paste0(wd, res_dir, model, "_results_mod20000_adjRcpp_scen", scen_samp, 
                    "_samp", samp_n, ".RData")      # Adjusted output file
 stan_path <- paste0(wd, model_dir, "WSOLCA_main.stan")  # Stan file
 
@@ -247,8 +247,8 @@ if (already_done) {
   print(paste0('Scenario ', scen_samp, ' iter ', iter_pop, ' samp ', samp_n,
                ' already exists.'))
 } else {
-  n_runs <- 25000
-  burn <- 15000
+  n_runs <- 20000
+  burn <- 10000
   thin <- 5
   save_res <- TRUE
   covs <- "true_Si"

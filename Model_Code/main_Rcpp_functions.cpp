@@ -44,6 +44,36 @@ mat mvrnorm_cpp(const int& n, const vec& mu, const mat& sigma) {
   return repmat(mu, 1, n).t() + Y * chol(sigma);
 }
 
+// Draw from multivariate Normal distribution
+// [[Rcpp::export]]
+mat mvrnorm_cpp2(const int& n, const vec& mu, const mat& sigma) {
+  int ncols = sigma.n_cols;
+  mat z = randn(n, ncols) * chol(sigma);
+  return mu.t() + z;
+}
+
+// Draw from multivariate Normal distribution
+// [[Rcpp::export]]
+mat mvrnorm_cpp3(const int& n, const rowvec& mu, const mat& sigma) {
+  Environment pkg = Environment::namespace_env("LaplacesDemon");
+  Function f("rmvn");
+  int ncols = sigma.n_cols;
+  // NumericMatrix temp = f(_["n"] = 1, _["mu"] = mu, _["Sigma"] = sigma);
+  mat temp = as<arma::mat>(f(1, _["mu"] = mu, _["Sigma"] = sigma));
+  return temp;
+}
+
+// Draw from truncated Normal distribution
+// [[Rcpp::export]]
+double rtruncnorm_cpp(const int& n, const double& a, const double& b,
+                      const double& mean, const double& sd) {
+  Environment pkg = Environment::namespace_env("truncnorm");
+  Function f("rtruncnorm");
+  double rtn = as<double>(f(_["n"] = n, _["a"] = a, _["b"] = b, _["mean"] = mean, 
+                            _["sd"] = sd));
+  return rtn;
+}
+
 // log-sum-exp trick from https://github.com/helske/seqHMM/blob/main/src/logSumExp.cpp
 // [[Rcpp::export]]
 double logSumExp_cpp(const arma::rowvec& x) {
@@ -197,7 +227,9 @@ void update_xi(mat& xi, const int& n, const int& K, const vec& w_all,
     // Rcout <<"mu_post: " << mu_post << "\n";
     
     // Update xi
-    xi.row(k) = mvrnorm_cpp(1, mu_post, inv(Sig_post));
+    // xi.row(k) = mvrnorm_cpp(1, mu_post, inv(Sig_post));
+    // Change to R function rmvn
+    xi.row(k) = mvrnorm_cpp3(1, mu_post.t(), inv(Sig_post));
   }
   // return xi;
 }
@@ -214,12 +246,21 @@ void update_z(vec& z_all, const int& n, const mat& V, const mat& xi,
     if (y_all(i) == 1) {
       // Probit model latent variable z, following Albert and Chib (1993)
       // For cases, z_i ~ TruncNormal(low=0, high=Inf, mean=V*xi[c_i], var=1)
-      z_all(i) = RcppTN::rtn1(lin_pred(i), 1.0, 0.0, R_PosInf);
+      // z_all(i) = RcppTN::rtn1(lin_pred(i), 1.0, 0.0, R_PosInf);
+      z_all(i) = rtruncnorm_cpp(1, 0.0, R_PosInf, lin_pred(i), 1.0);
     } else {
       // For controls, z_i ~ TruncNormal(low=-Inf, high=0, mean=V*xi[c_i], var=1)
-      z_all(i) = RcppTN::rtn1(lin_pred(i), 1.0, R_NegInf, 0.0);
+      // z_all(i) = RcppTN::rtn1(lin_pred(i), 1.0, R_NegInf, 0.0);
+      z_all(i) = rtruncnorm_cpp(1, R_NegInf, 0.0, lin_pred(i), 1.0);
+    }
+    if (z_all(i) == R_PosInf) {
+      z_all(i) = R::qnorm(1.0 - 1e-10, 0.0, 1.0, true, false);
+    } else if (z_all(i) == R_NegInf) {
+      z_all(i) = R::qnorm(1e-10, 0.0, 1.0, true, false);
     }
   }
+  // Rcout << "lin_pred: " << lin_pred << "\n";
+  
   // return z_all;
 }
 
@@ -292,13 +333,15 @@ void update_c_test(vec& c_all, const int& n, const int& K, const int& p,
 # set.seed(1)
 # wd = "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 # data_dir = "Data/"
-# scen_samp = 101
+# scen_samp = 111211
 # iter_pop = 1
-# samp_n = 1
+# samp_n = 3
 # data_path = paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
-#                     "_samp", samp_n, ".mat")   # Input dataset
-# data_vars = readMat(data_path)$sim.data
-# names(data_vars) = str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
+#                     "_samp", samp_n, ".RData")   # Input dataset
+# load(data_path)
+# data_vars <- sim_data
+# # data_vars = readMat(data_path)$sim.data
+# # names(data_vars) = str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
 # 
 # K = 3
 # n = 10
