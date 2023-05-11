@@ -52,10 +52,10 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   
   #================= Read in data ==============================================
   print("Read in data")
-  # load(data_path)
-  # data_vars <- sim_data
-  data_vars <- readMat(data_path)$sim.data
-  names(data_vars) <- str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
+  load(data_path)
+  data_vars <- sim_data
+  # data_vars <- readMat(data_path)$sim.data
+  # names(data_vars) <- str_replace_all(dimnames(data_vars)[[1]], "[.]", "_")
   
   # Obtain dimensions
   n <- dim(data_vars$X_data)[1]        # Number of individuals
@@ -115,19 +115,24 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
                             alpha = alpha, eta = eta, Sig0 = Sig0, mu0 = mu0)
   
   #================= Post-processing for adaptive sampler ======================
-  # Post-processing to recalibrate labels and remove extraneous empty classes
-  # Obtain K_med, pi, theta, xi, loglik_MCMC
-  post_MCMC_out <- post_process(MCMC_out = MCMC_out, p = p, d = d, q = q)
-  # Identify unique classes using modal exposure categories
-  # Posterior median estimate for theta across iterations
-  theta_med_temp <- apply(post_MCMC_out$theta, c(2, 3, 4), median)
-  # Posterior modal exposure categories for each exposure item and reduced class
-  theta_modes <- apply(theta_med_temp, c(1, 2), which.max)
-  # Identify unique classes
-  unique_classes <- which(!duplicated(theta_modes, MARGIN = 2))
+  # # Post-processing to recalibrate labels and remove extraneous empty classes
+  # # Obtain K_med, pi, theta, xi, loglik_MCMC
+  # post_MCMC_out <- post_process(MCMC_out = MCMC_out, p = p, d = d, q = q)
+  # # Identify unique classes using modal exposure categories
+  # # Posterior median estimate for theta across iterations
+  # theta_med_temp <- apply(post_MCMC_out$theta, c(2, 3, 4), median)
+  # # Posterior modal exposure categories for each exposure item and reduced class
+  # theta_modes <- apply(theta_med_temp, c(1, 2), which.max)
+  # # Identify unique classes
+  # unique_classes <- which(!duplicated(theta_modes, MARGIN = 2))
+  # # Get number of unique classes for fixed sampler
+  # K_fixed <- length(unique_classes) 
   
+  # Get median number of classes with >= 5% of individuals, over all iterations
+  M <- dim(MCMC_out$pi_MCMC)[1]  # Number of stored MCMC iterations
+  K_med <- round(median(rowSums(MCMC_out$pi_MCMC >= 0.05)))
   # Get number of unique classes for fixed sampler
-  K_fixed <- length(unique_classes) 
+  K_fixed <- K_med
   print(paste0("K_fixed: ", K_fixed))
   # Save adaptive output
   adapt_MCMC <- list(MCMC_out = MCMC_out, K_fixed = K_fixed)
@@ -142,7 +147,8 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   print("Fixed sampler")
   #================= Run fixed sampler to obtain posteriors ====================
   # Initialize OLCA model using fixed number of classes
-  alpha <- rep(2, K_fixed) # Hyperparameter for prior for pi
+  # alpha <- rep(2, K_fixed) # Hyperparameter for prior for pi
+  alpha <- rep(1, K_fixed) / K_fixed  # Hyperparameter for prior for pi
   # Obtain pi, theta, c_all
   OLCA_params <- init_OLCA(alpha = alpha, eta = eta, n = n, K = K_fixed, p = p, 
                            d = d)
@@ -183,11 +189,12 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   
   #================= Save and return output ====================================
   res <- list(analysis = analysis, runtime = runtime, 
-              data_vars = data_vars, MCMC_out = MCMC_out)
+              data_vars = data_vars, MCMC_out = MCMC_out, 
+              post_MCMC_out = post_MCMC_out)
   if (save_res) {
     save(res, file = res_path)
   }
-  return(res)
+  return(list(res = res, adapt_MCMC = adapt_MCMC))
 }
 
 
@@ -213,13 +220,13 @@ model <- "sOFMM"
 # save_res <- FALSE
 
 # Define paths
-# data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
-#                     "_samp", samp_n, ".RData")   # Input dataset
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
-                    "_samp", samp_n, ".mat")   # Input dataset
-adapt_path <- paste0(wd, res_dir, model, "_adapt_OLD25000_scen", scen_samp, 
+                    "_samp", samp_n, ".RData")   # Input dataset
+# data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
+#                     "_samp", samp_n, ".mat")   # Input dataset
+adapt_path <- paste0(wd, res_dir, model, "_adapt_2mod20000_scen", scen_samp, 
                      "_samp", samp_n, ".RData")  # Output file
-res_path <- paste0(wd, res_dir, model, "_results_OLD25000_scen", scen_samp, 
+res_path <- paste0(wd, res_dir, model, "_results_2mod20000_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
 
 # Check if results already exist
@@ -228,8 +235,8 @@ if (already_done) {
   print(paste0('Scenario ', scen_samp, ' iter ', iter_pop, ' samp ', samp_n,
                ' already exists.'))
 } else {
-  n_runs <- 25000
-  burn <- 15000
+  n_runs <- 20000
+  burn <- 10000
   thin <- 5
   save_res <- TRUE
   covs <- "true_Si"
@@ -247,6 +254,6 @@ if (already_done) {
                              res_path = res_path,
                              save_res = save_res, n_runs = n_runs, 
                              burn = burn, thin = thin, covs = covs)
-  print(paste0("Runtime: ", results$runtime))
+  print(paste0("Runtime: ", results$res$runtime))
 }
 

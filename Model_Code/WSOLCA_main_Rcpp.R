@@ -148,7 +148,8 @@ WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path,
   print("Fixed sampler")
   #================= Run fixed sampler to obtain posteriors ====================
   # Initialize OLCA model using fixed number of classes
-  alpha <- rep(2, K_fixed) # Hyperparameter for prior for pi
+  # alpha <- rep(2, K_fixed) # Hyperparameter for prior for pi
+  alpha <- rep(1, K_fixed) / K_fixed  # Hyperparameter for prior for pi
   # Obtain pi, theta, c_all
   OLCA_params <- init_OLCA(alpha = alpha, eta = eta, n = n, K = K_fixed, p = p, 
                            d = d)
@@ -235,9 +236,9 @@ model <- "wsOFMM"
 # Define paths
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
-adapt_path <- paste0(wd, res_dir, model, "_adapt_mod20000_scen", scen_samp, 
+adapt_path <- paste0(wd, res_dir, model, "_adapt_2mod20000_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
-adj_path <- paste0(wd, res_dir, model, "_results_mod20000_adjRcpp_scen", scen_samp, 
+adj_path <- paste0(wd, res_dir, model, "_results_2mod20000_adjRcpp_scen", scen_samp, 
                    "_samp", samp_n, ".RData")      # Adjusted output file
 stan_path <- paste0(wd, model_dir, "WSOLCA_main.stan")  # Stan file
 

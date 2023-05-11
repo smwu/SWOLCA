@@ -221,13 +221,13 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
   
   #============== Load data and initialize variables ===========================
   # Load simulated population data
+  pop_data_path <- paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter",
+                          iter_pop, ".RData")
+  load(pop_data_path)
   # pop_data_path <- paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter", 
-  #                         iter_pop, ".RData") 
-  # load(pop_data_path)
-  pop_data_path <- paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter", 
-                          iter_pop, ".mat") 
-  sim_pop <- readMat(pop_data_path)$sim.data
-  names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
+  #                         iter_pop, ".mat") 
+  # sim_pop <- readMat(pop_data_path)$sim.data
+  # names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
   
   
   # Obtain true observed population parameters
@@ -260,29 +260,29 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
     print(samp_n)
     
     # Read in sample data. If file does not exist, move on to next iteration
-    # sim_data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", 
-    #                          iter_pop, "_samp", samp_n, ".RData") 
-    # if (!file.exists(sim_data_path)) {
-    #   print(paste0("File does not exist: simdata_scen", scen_samp,"_iter", 
-    #                iter_pop, "_samp", samp_n))
-    #   next
-    # } 
-    # load(sim_data_path)
-    # sim_samp <- sim_data
+    sim_data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter",
+                             iter_pop, "_samp", samp_n, ".RData")
+    if (!file.exists(sim_data_path)) {
+      print(paste0("File does not exist: simdata_scen", scen_samp,"_iter",
+                   iter_pop, "_samp", samp_n))
+      next
+    }
+    load(sim_data_path)
+    sim_samp <- sim_data
     
-    sim_data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", 
-                            iter_pop, "_samp", samp_n, ".mat") 
-    sim_samp <- readMat(sim_data_path)$sim.data
-    names(sim_samp) <- str_replace_all(dimnames(sim_samp)[[1]], "[.]", "_")
+    # sim_data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", 
+    #                         iter_pop, "_samp", samp_n, ".mat") 
+    # sim_samp <- readMat(sim_data_path)$sim.data
+    # names(sim_samp) <- str_replace_all(dimnames(sim_samp)[[1]], "[.]", "_")
     
     
     # Read in results data
     if (model == "wsOFMM") {
       # wsOFMM model includes a variance adjustment
-      sim_res_path <- paste0(wd, res_dir, model, "_results_R20000_scen", scen_samp, 
+      sim_res_path <- paste0(wd, res_dir, model, "_results_2mod20000_adjRcpp_scen", scen_samp, 
                              "_samp", samp_n, ".RData")
       if (!file.exists(sim_res_path)) {
-        print(paste0("File does not exist: ", model, "_results_adjRcpp_scen", 
+        print(paste0("File does not exist: ", model, "_results_2mod20000_adjRcpp_scen", 
                      scen_samp, "_samp", samp_n, ".RData"))
         next
       } 
@@ -292,18 +292,18 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
       runtime_all[l] <- res$runtime
     } else {  # sOFMM and wOFMM models
       if(model == "sOFMM") {
-        sim_res_path <- paste0(wd, res_dir, model, "_results_OLD25000_scen", scen_samp, 
+        sim_res_path <- paste0(wd, res_dir, model, "_results_2mod20000_scen", scen_samp, 
                                "_samp", samp_n, ".RData")
         if (!file.exists(sim_res_path)) {
-          print(paste0("File does not exist: ", model, "_results_scen", 
+          print(paste0("File does not exist: ", model, "_results_2mod20000_scen", 
                        scen_samp, "_samp", samp_n, ".mat"))
           next
         } 
       } else {  # wOFMM 
-        sim_res_path <- paste0(wd, res_dir, model, "_results_wt_scen", scen_samp, 
+        sim_res_path <- paste0(wd, res_dir, model, "_results_wt_2mod20000_scen", scen_samp, 
                                "_samp", samp_n, ".RData")
         if (!file.exists(sim_res_path)) {
-          print(paste0("File does not exist: ", model, "_results_wt_scen", 
+          print(paste0("File does not exist: ", model, "_results_wt_2mod20000_scen", 
                        scen_samp, "_samp", samp_n, ".mat"))
           next
         } 

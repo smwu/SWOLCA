@@ -350,9 +350,9 @@ data_dir <- "Data/"
 
 #==================== Create population scenarios ==============================
 scenarios <- 1112
-scenarios <- c(1111, 2111, 1121)
 iter_pop <- 1
 scenarios <- c(1111, 2111, 1211, 1121, 1112)
+scenarios <- c(1112, 2112, 1212, 1122)
 for (scenario in scenarios) {
   pop_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
                           iter_pop, ".RData") 
@@ -368,11 +368,10 @@ sim_pop$true_global_patterns
 
 #==================== Create sampling scenarios ================================
 scenarios <- 111211
-scenarios <- c(211111, 112111, 111121, 111131)
-scenarios <- c(111211, 111212, 111213)
 samp_n_seq <- 1
 scenarios <- c(111111, 211111, 121111, 112111, 111211, 111121, 111131, 111112, 
                111113)
+scenarios <- c(111211, 111212, 111213, 111221, 111231, 211211, 121211, 112211)
 samp_n_seq <- 1:100
 for (scenario in scenarios) {
   # Get population scenario
@@ -397,9 +396,9 @@ S <- 2
 samp_Phi_mat <- matrix(NA, nrow=K, ncol=S)
 for (k in 1:K) {
   for (s in 1:S) {
-    samp_Phi_mat[k, s] <- sum(sim_samp$Y_data==1 & sim_samp$true_Si==s & 
-                                sim_samp$true_Ci==k) / 
-      sum(sim_samp$true_Si==s & sim_samp$true_Ci==k)
+    samp_Phi_mat[k, s] <- sum(sim_data$Y_data==1 & sim_data$true_Si==s & 
+                                sim_data$true_Ci==k) / 
+      sum(sim_data$true_Si==s & sim_data$true_Ci==k)
   }
 }
 samp_Phi_mat

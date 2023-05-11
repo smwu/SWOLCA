@@ -116,7 +116,8 @@ WOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   print("Fixed sampler")
   #================= Run fixed sampler to obtain posteriors ====================
   # Initialize OLCA model using fixed number of classes
-  alpha <- rep(2, K_fixed) # Hyperparameter for prior for pi
+  # alpha <- rep(2, K_fixed) # Hyperparameter for prior for pi
+  alpha <- rep(1, K_fixed) / K_fixed  # Hyperparameter for prior for pi
   # Obtain pi, theta, c_all
   OLCA_params <- init_OLCA(alpha = alpha, eta = eta, n = n, K = K_fixed, p = p, 
                            d = d)
@@ -227,9 +228,9 @@ model <- "wOFMM"
 # Define paths
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
-adapt_path <- paste0(wd, res_dir, model, "_adapt_scen", scen_samp, 
+adapt_path <- paste0(wd, res_dir, model, "_adapt_2mod20000_scen", scen_samp, 
                      "_samp", samp_n, ".RData")  # Output file
-res_path <- paste0(wd, res_dir, model, "_results_wt_scen", scen_samp, 
+res_path <- paste0(wd, res_dir, model, "_results_wt_2mod20000_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
 
 # Check if results already exist

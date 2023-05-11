@@ -78,6 +78,43 @@ init_probit <- function(mu0, Sig0, K, q, n, V, y_all, c_all) {
   return(probit_params)
 }
 
+update_xi_R <- function(n, w_all, V, K, c_all, Sig0, mu0, z_all, xi) {
+  W_tilde <- sparseMatrix(i = 1:n, j = 1:n, x = w_all)  # Sparse diagonal normalized weight matrix
+  V_sparse <- as(V, "sparseMatrix")                     # Sparse design matrix without class assignments
+  for (k in 1:K) {
+    # Sparse diagonal matrix subsetting to obs in class k
+    C_k <- sparseMatrix(i = 1:n, j = 1:n, x = (c_all == k))
+    
+    # Draw xi from conditional posterior distribution
+    Sig_post <- solve(Sig0[[k]]) + as.matrix(t(V) %*% C_k %*% W_tilde %*% V)
+    mu_right <- (solve(Sig0[[k]]) %*% mu0[[k]]) +
+      (as.matrix(t(V) %*% C_k %*% W_tilde %*% z_all))
+    mu_post <- c(solve(Sig_post) %*% mu_right)
+    xi[k, ] <- rmvn(n = 1, mu = mu_post, Sigma = solve(Sig_post))
+  }
+  return(xi)
+}
+
+update_z_R <- function(lin_pred, n, V, xi, c_all, z_all, y_all) {
+  # Linear predictor using covariate values and class assignment for each individual
+  for (i in 1:n) {
+    lin_pred[i] <- V[i, ] %*% xi[c_all[i], ]  # V[i]*xi[c_i]
+  }
+  # Probit model latent variable z, following Albert and Chib (1993)
+  # For cases, z_i ~ TruncNormal(low=0, high=Inf, mean=V*xi[c_i], var=1)
+  z_all[y_all == 1] <- rtruncnorm(n = 1, a = 0, b = Inf,
+                                  mean = lin_pred[y_all == 1], sd = 1)
+  # For controls, z_i ~ TruncNormal(low=-Inf, high=0, mean=V*xi[c_i], var=1)
+  z_all[y_all == 0] <- rtruncnorm(n = 1, a = -Inf, b = 0,
+                                  mean = lin_pred[y_all == 0], sd = 1)
+  # Control extreme values
+  z_all[z_all == Inf] <- qnorm(1 - (1e-10))
+  z_all[z_all == -Inf] <- qnorm(1e-10)
+  return(z_all)
+}
+
+
+
 # `run_MCMC_Rcpp` runs the Gibbs sampler MCMC algorithm to obtain posterior samples
 # Inputs:
 #   OLCA_params: output from 'init_OLCA' containing 'pi', 'c_all', 'theta'
@@ -116,6 +153,8 @@ run_MCMC_Rcpp <- function(OLCA_params, probit_params, n_runs, burn, thin, K, p, 
   c_all_MCMC <- z_all_MCMC <- matrix(NA, nrow = n_storage, ncol = n)
   loglik_MCMC <- numeric(n_storage)
   loglik <- numeric(n)  # Individual log-likelihood
+  lin_pred <- numeric(n)                              # Linear predictor, V*xi
+  
   
   # Initialized values
   pi <- OLCA_params$pi
@@ -135,11 +174,15 @@ run_MCMC_Rcpp <- function(OLCA_params, probit_params, n_runs, burn, thin, K, p, 
     update_theta(theta = theta, p = p, K = K, d = d, eta = eta, 
                  w_all = w_all, c_all = c_all, x_mat = x_mat)
     # print(theta[1:5,1:10,1])
-    update_xi(xi = xi, n = n, K = K, w_all = w_all, c_all = c_all, 
-              z_all = z_all, V = V, y_all = y_all, mu0 = mu0, Sig0 = Sig0)
+    # xi <- update_xi_R(n = n, w_all = w_all, V = V, K = K, c_all = c_all,
+    #                   Sig0 = Sig0, mu0 = mu0, z_all = z_all, xi = xi)
+    # z_all <- update_z_R(lin_pred = lin_pred, n = n, V = V, xi = xi,
+    #                     c_all = c_all, z_all = z_all, y_all = y_all)
+    xi <- update_xi(xi = xi, n = n, K = K, w_all = w_all, c_all = c_all,
+                  z_all = z_all, V = V, mu0 = mu0, Sig0 = Sig0)
     # print(xi[1:3,])
-    update_z(z_all = z_all, n = n, V = V, xi = xi, c_all = c_all, 
-             y_all = y_all)
+    z_all <- update_z(z_all = z_all, n = n, V = V, xi = xi, c_all = c_all,
+                    y_all = y_all)
     # print(z_all[1:10])
     update_loglik(loglik = loglik, n = n, p = p, c_all = c_all, 
                   theta = theta, x_mat = x_mat, pi = pi, 

@@ -203,9 +203,9 @@ void update_theta(cube& theta, const int& p, const int& K, const int& d,
 
 // Update xi
 // [[Rcpp::export]]
-void update_xi(mat& xi, const int& n, const int& K, const vec& w_all, 
+mat update_xi(mat& xi, const int& n, const int& K, const vec& w_all, 
                const vec& c_all, const vec& z_all, const mat& V, 
-               const vec& y_all, const List& mu0, const List& Sig0) {
+               const List& mu0, const List& Sig0) {
   // Sparse diagonal normalized weight matrix
   sp_mat W_tilde(n, n);
   W_tilde.diag() = w_all;
@@ -227,16 +227,16 @@ void update_xi(mat& xi, const int& n, const int& K, const vec& w_all,
     // Rcout <<"mu_post: " << mu_post << "\n";
     
     // Update xi
-    // xi.row(k) = mvrnorm_cpp(1, mu_post, inv(Sig_post));
-    // Change to R function rmvn
-    xi.row(k) = mvrnorm_cpp3(1, mu_post.t(), inv(Sig_post));
+    xi.row(k) = mvrnorm_cpp(1, mu_post, inv(Sig_post));
+    // // Change to R function rmvn
+    // xi.row(k) = mvrnorm_cpp3(1, mu_post.t(), inv(Sig_post));
   }
-  // return xi;
+  return xi;
 }
 
 // Update z
 // [[Rcpp::export]]
-void update_z(vec& z_all, const int& n, const mat& V, const mat& xi, 
+vec update_z(vec& z_all, const int& n, const mat& V, const mat& xi, 
               const vec& c_all, const vec& y_all) {
   // Linear predictor using covariate values and class assignment for each individual
   vec lin_pred(n);
@@ -246,12 +246,12 @@ void update_z(vec& z_all, const int& n, const mat& V, const mat& xi,
     if (y_all(i) == 1) {
       // Probit model latent variable z, following Albert and Chib (1993)
       // For cases, z_i ~ TruncNormal(low=0, high=Inf, mean=V*xi[c_i], var=1)
-      // z_all(i) = RcppTN::rtn1(lin_pred(i), 1.0, 0.0, R_PosInf);
-      z_all(i) = rtruncnorm_cpp(1, 0.0, R_PosInf, lin_pred(i), 1.0);
+      z_all(i) = RcppTN::rtn1(lin_pred(i), 1.0, 0.0, R_PosInf);
+      // z_all(i) = rtruncnorm_cpp(1, 0.0, R_PosInf, lin_pred(i), 1.0);
     } else {
       // For controls, z_i ~ TruncNormal(low=-Inf, high=0, mean=V*xi[c_i], var=1)
-      // z_all(i) = RcppTN::rtn1(lin_pred(i), 1.0, R_NegInf, 0.0);
-      z_all(i) = rtruncnorm_cpp(1, R_NegInf, 0.0, lin_pred(i), 1.0);
+      z_all(i) = RcppTN::rtn1(lin_pred(i), 1.0, R_NegInf, 0.0);
+      // z_all(i) = rtruncnorm_cpp(1, R_NegInf, 0.0, lin_pred(i), 1.0);
     }
     if (z_all(i) == R_PosInf) {
       z_all(i) = R::qnorm(1.0 - 1e-10, 0.0, 1.0, true, false);
@@ -261,7 +261,7 @@ void update_z(vec& z_all, const int& n, const mat& V, const mat& xi,
   }
   // Rcout << "lin_pred: " << lin_pred << "\n";
   
-  // return z_all;
+  return z_all;
 }
 
 // Update individual log-likelihood
