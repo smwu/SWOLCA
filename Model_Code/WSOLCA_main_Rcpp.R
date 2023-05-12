@@ -236,9 +236,9 @@ model <- "wsOFMM"
 # Define paths
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
-adapt_path <- paste0(wd, res_dir, model, "_adapt_2mod20000_scen", scen_samp, 
+adapt_path <- paste0(wd, res_dir, model, "_adapt_effmod_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
-adj_path <- paste0(wd, res_dir, model, "_results_2mod20000_adjRcpp_scen", scen_samp, 
+adj_path <- paste0(wd, res_dir, model, "_results_effmod_adjRcpp_scen", scen_samp, 
                    "_samp", samp_n, ".RData")      # Adjusted output file
 stan_path <- paste0(wd, model_dir, "WSOLCA_main.stan")  # Stan file
 
@@ -252,7 +252,7 @@ if (already_done) {
   burn <- 10000
   thin <- 5
   save_res <- TRUE
-  covs <- "true_Si"
+  covs <- NULL
   
   # Source R helper functions
   source(paste0(wd, model_dir, "helper_functions.R"))

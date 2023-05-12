@@ -533,13 +533,78 @@ get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1,
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 data_dir <- "Data/"
 res_dir <- "Results/"
-scen_pop <- 1211
-scen_samp <- 121111
+analysis_dir <- "Analysis_Code/"
+scen_pop <- 1122
+scen_samp <- 112211
 iter_pop <- 1
 samp_n_seq <- 1:100
 L <- length(samp_n_seq)
 model <- "wsOFMM"
 plot <- TRUE
+
+
+metrics_ws <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
+                                scen_pop=scen_pop, scen_samp=scen_samp, iter_pop=1, 
+                                samp_n_seq=samp_n_seq, model="wsOFMM")
+metrics_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
+                               scen_pop=scen_pop, scen_samp=scen_samp, iter_pop=1, 
+                               samp_n_seq=samp_n_seq, model="sOFMM")
+metrics_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
+                                   scen_pop=scen_pop, scen_samp=scen_samp, iter_pop=1, 
+                                   samp_n_seq=samp_n_seq, model="wOFMM")
+metrics_all <- list(metrics_ws = metrics_ws, metrics_s = metrics_s, 
+                    metrics_unsup = metrics_unsup)
+# save summary metrics
+save(metrics_all, 
+     file = paste0(wd, analysis_dir, "metrics_scen", scen_samp, ".RData"))
+# load(paste0(wd, analysis_dir, "metrics_scen", scen_samp, ".RData"))
+
+# Load simulated population data
+load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
+
+# Obtain true observed population parameters
+true_params <- get_true_params(sim_pop = sim_pop)  
+
+#================ TABLE METRICS SUMMARY ========================================
+create_table(metrics_s = metrics_all$metrics_s, 
+             metrics_ws = metrics_all$metrics_ws, 
+             metrics_unsup = metrics_all$metrics_unsup,
+             scen_samp = scen_samp)
+
+### Create table of metrics with bias and variance
+create_table <- function(metrics_s, metrics_ws, metrics_unsup, scen_samp) {
+  metrics_summ <- as.data.frame(matrix(NA, nrow=3, ncol=12))
+  colnames(metrics_summ) <- c("Sampling Scheme", "Model", 
+                              "K Bias^2", "$\\pi$ Bias^2", "$\\pi$ CI width", 
+                              "$\\theta$ Bias^2", "$\\theta$ CI width", 
+                              "$\\xi$ Bias^2", "$\\xi$ CI width", 
+                              "$\\pi$ Coverage","$\\theta$ Coverage", "$\\xi$ Coverage")
+  metrics_summ[, 1] <- rep("Stratified", 3)
+  metrics_summ[, 2] <- rep(c("Unwtd(sOFMM)", "Wtd(wsOFMM)", "Unsup(wOFMM)"), 1)  ## latent versions
+  output_inds <- 1:7
+  metrics_summ[1, -c(1,2)] <- c(metrics_s[output_inds], 
+                                mean(metrics_s$pi_cover_avg), 
+                                mean(metrics_s$theta_cover_avg),
+                                mean(metrics_s$xi_cover_avg))
+  metrics_summ[2, -c(1,2)] <- c(metrics_ws[output_inds], 
+                                mean(metrics_ws$pi_cover_avg), 
+                                mean(metrics_ws$theta_cover_avg),
+                                mean(metrics_ws$xi_cover_avg))
+  metrics_summ[3, -c(1,2)] <- c(metrics_unsup[output_inds], 
+                                mean(metrics_unsup$pi_cover_avg), 
+                                mean(metrics_unsup$theta_cover_avg),
+                                mean(metrics_unsup$xi_cover_avg))
+  metrics_summ %>% 
+    gt(caption = paste0(scen_samp, " scenario metrics of posterior parameter estimates, averaged over 100 samples")) %>%
+    cols_label("$\\pi$ Bias^2" = "π Bias^2", "$\\theta$ Bias^2" = "θ Bias^2", 
+               "$\\xi$ Bias^2" = "ξ Bias^2",
+               "$\\pi$ CI width" = "π CI width", "$\\theta$ CI width" = "θ CI width", 
+               "$\\xi$ CI width" = "ξ CI width", "$\\pi$ Coverage" = "π Coverage",
+               "$\\theta$ Coverage" = "θ Coverage", "$\\xi$ Coverage" = "ξ Coverage") %>%
+    fmt_number(
+      columns = 3:12,
+      decimals = 4)
+}
 
 
 #================ Baseline scenario ============================================
@@ -563,6 +628,7 @@ metrics_Strat_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir,
 metrics_Strat_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
                                    scen_pop=scen_pop, scen_samp=scen_samp, iter_pop=1, 
                                    samp_n_seq=samp_n_seq, model="wOFMM")
+
 # Load simulated population data
 load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
 

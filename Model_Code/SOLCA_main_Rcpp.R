@@ -224,9 +224,9 @@ data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
 # data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
 #                     "_samp", samp_n, ".mat")   # Input dataset
-adapt_path <- paste0(wd, res_dir, model, "_adapt_2mod20000_scen", scen_samp, 
+adapt_path <- paste0(wd, res_dir, model, "_adapt_effmod_scen", scen_samp, 
                      "_samp", samp_n, ".RData")  # Output file
-res_path <- paste0(wd, res_dir, model, "_results_2mod20000_scen", scen_samp, 
+res_path <- paste0(wd, res_dir, model, "_results_effmod_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
 
 # Check if results already exist
@@ -239,7 +239,7 @@ if (already_done) {
   burn <- 10000
   thin <- 5
   save_res <- TRUE
-  covs <- "true_Si"
+  covs <- NULL
   
   # Source R helper functions
   source(paste0(wd, model_dir, "helper_functions.R"))

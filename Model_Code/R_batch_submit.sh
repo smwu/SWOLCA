@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH -J Rcpp_WOLCA_2mod20000_scen112211_        # Job name for the array
-#SBATCH -o Rcpp_WOLCA_2mod20000_scen112211_%A.out  # Shared standard output with job ID
-#SBATCH -e Rcpp_WOLCA_2mod20000_scen112211_%A.err  # Shared standard error with job ID
+#SBATCH -J Rcpp_WOLCA_effmod_scen112211_        # Job name for the array
+#SBATCH -o Rcpp_WOLCA_effmod_scen112211_%A.out  # Shared standard output with job ID
+#SBATCH -e Rcpp_WOLCA_effmod_scen112211_%A.err  # Shared standard error with job ID
 #SBATCH -p shared      # Partition to submit to
 #SBATCH -n 1	       # Number of cores
-#SBATCH -t 0-6:00:00  # Runtime (D-HH:MM:SS)
+#SBATCH -t 0-7:00:00  # Runtime (D-HH:MM:SS)
 #SBATCH --mem=5000     # Memory request
 #SBATCH --mail-type=BEGIN,END,FAIL  # Mail notifications
 #SBATCH --mail-user=stephaniewu@fas.harvard.edu  # Account to email
