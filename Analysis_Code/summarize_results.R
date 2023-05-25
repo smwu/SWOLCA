@@ -1,8 +1,8 @@
-#=============================
-## Plotting Simulation Results
+#==================================
+## Summarize and Plot Model Results
 ## Programmer: SM Wu   
-## Last Updated: 2023/04/02
-#=============================
+## Last Updated: 2023/05/20
+#==================================
 
 setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
 library(R.matlab)
@@ -20,544 +20,64 @@ library(knitr)
 library(kableExtra)
 library(gt)
 
-#============== Helper functions ===============================================
-# get_true_params returns the observed simulated population values for the 
-# parameters of interest
-# Input: sim_pop: Simulated population
-# Outputs: A list with the following elements:
-#   true_pi: Kx1 vector of true pi values
-#   true_theta: pxKxd array of true theta values
-#   true_xi: (S+K)x1 vector of true xi values
-#   true_Phi_mat: SxK matrix of true outcome proportions P(Y=1|S=s,C=k)
-get_true_params <- function(sim_pop) {
-  # Get true pi using population data
-  true_pi <- tabulate(sim_pop$true_Ci) / length(sim_pop$true_Ci)
-  # Get true theta
-  theta_dim <- dim(sim_pop$true_global_thetas)
-  true_theta <- array(NA, dim=theta_dim)
-  for (j in 1:theta_dim[1]) {
-    for (k in 1:theta_dim[2]) {
-      for (r in 1:theta_dim[3]) {
-        true_theta[j,k,r] <- sum((sim_pop$X_data[,j]==r) & 
-                                 (sim_pop$true_Ci==k)) / sum(sim_pop$true_Ci==k) 
-      }
-    }
-  }
-  # Get true xi
-  true_xi <- matrix(sim_pop$true_xi, nrow = theta_dim[2], byrow = FALSE)
-  S <- length(unique(sim_pop$true_Si))
-  K <- length(unique(sim_pop$true_Ci))
-  # Get true Phi
-  true_Phi_mat <- matrix(NA, nrow=K, ncol=S)
-  for (k in 1:K) {
-    for (s in 1:S) {
-      true_Phi_mat[k, s] <- sum(sim_pop$Y_data==1 & sim_pop$true_Si==s & 
-                                 sim_pop$true_Ci==k) / 
-        sum(sim_pop$true_Si==s & sim_pop$true_Ci==k)
-    }
-  }
-  # Get true xi
-  true_xi <- qnorm(true_Phi_mat)
-  
-  return(list(true_pi = true_pi, true_theta = true_theta, true_xi = true_xi, 
-              true_Phi_mat = true_Phi_mat))
-}
+source("Analysis_Code/summarize_results_functions.R")
 
+#================ Summarize and save results ===================================
 
-# `get_theta_dist` returns squared Euclidean norm between estimated and true theta
-# Inputs:
-#   est_theta: Estimated theta 3D array. pxKxd
-#   true_theta: True theta 3D array. pxKxd
-#   order: Vector of optimal ordering of estimated theta elements. Kx1. Default is 
-# NULL, in which case the best ordering is chosen over all possible permutations 
-# Outputs: a list with the following elements:
-#   theta_dist: Squared Euclidean norm between estimated and true thetas using optimal order
-#   order: Optimal ordering to match estimated and true thetas. Kx1
-#   est_theta_perm: Re-ordered estimated theta to match order of true theta. pxKxd
-get_theta_dist <- function(est_theta, true_theta, order = NULL) {
-  if (is.null(order)) {  # If no optimal ordering exists
-    # Find all subsets of est_pi with size equal to true_pi
-    all_perms <- gtools::permutations(n=dim(est_theta)[2], r=dim(true_theta)[2])
-    # Obtain vector of dist (Frobenius norm) between est and true pi, calculated for each permutation
-    dist_all_perms <- numeric(nrow(all_perms))
-    for (i in 1:nrow(all_perms)) {
-      est_theta_perm <- est_theta[,all_perms[i, ],]
-      dist_all_perms[i] <- sum((est_theta_perm - true_theta)^2)
-    }
-    # Lowest dist out of all permutations
-    theta_dist <- min(dist_all_perms)
-    # Obtain optimal ordering of classes
-    order <- all_perms[which.min(dist_all_perms), ]
-    est_theta_perm <- est_theta[ , order, ]
-  } else {  # Use optimal ordering if it exists
-    est_theta_perm <- est_theta[ , order, ]
-    theta_dist <- sum((est_theta_perm - true_theta)^2)
-  }
-  # Return dist, ordering, and reordered estimate
-  return(list("theta_dist" = theta_dist, "order" = order, "est_theta_perm" = est_theta_perm))
-}
+scen_pop <- 1112
+scen_samp <- 111211
+WSOLCA_name <- "_results_2mod20000_adjRcpp_scen"
+SOLCA_name <- "_results_2mod20000_scen"
+WOLCA_name <- "_results_wt_2mod20000_scen"
 
-# `get_pi_dist` returns squared Euclidean norm between estimated and true pi
-# Inputs:
-#   est_pi: Estimated pi vector. Kx1
-#   true_pi: True pi vector. Kx1
-#   order: Vector of optimal ordering of estimated pi elements. Kx1. Default is 
-# NULL, in which case the best ordering is chosen over all possible permutations 
-# Outputs: a list with the following elements:
-#   pi_dist: Squared Euclidean norm between estimated and true pis using optimal order
-#   order: Optimal ordering to match estimated and true pis. Kx1
-#   est_pi_perm: Re-ordered estimated pi to match order of true pi. Kx1
-get_pi_dist <- function(est_pi, true_pi, order=NULL) {
-  if (is.null(order)) {  # If no optimal ordering exists
-    # Find all subsets of est_pi with size equal to true_pi
-    all_perms <- gtools::permutations(n=length(est_pi), r=length(true_pi))
-    # Obtain vector of dist between est and true pi, calculated for each permutation
-    dist_all_perms <- numeric(nrow(all_perms))
-    for (i in 1:nrow(all_perms)) {
-      est_pi_perm <- est_pi[all_perms[i, ]]
-      dist_all_perms[i] <- sum((est_pi_perm - true_pi)^2)
-    }
-    # Lowest dist out of all permutations
-    pi_dist <- min(dist_all_perms)
-    # Obtain optimal ordering of classes
-    order <- all_perms[which.min(dist_all_perms), ]
-    est_pi_perm <- est_pi[order]
-  } else {  # Use optimal ordering if it exists
-    est_pi_perm <- est_pi[order]
-    pi_dist <- sum((est_pi_perm - true_pi)^2)
-  }
-  # Return dist, ordering, and reordered estimate
-  return(list("pi_dist" = pi_dist, "order" = order, "est_pi_perm" = est_pi_perm))
-}
-
-# `get_xi_dist` returns squared Euclidean norm between estimated and true xi
-# Inputs:
-#   est_xi: Estimated xi matrix. Kxq
-#   true_xi: True xi matrix. Kxq
-#   order: Vector of optimal ordering of estimated xi elements, determined in 
-# get_theta_dist() or get_pi_dist()
-#   Q: Number of covariates in probit model, excluding class assignment
-# Outputs: a list with the following elements:
-#   xi_dist: Squared Euclidean norm between estimated and true xis using optimal order
-#   order: Optimal ordering to match estimated and true xis. Kx1
-#   est_xi_perm: Re-ordered estimated xi to match order of true xi. Kxq
-get_xi_dist <- function(est_xi, true_xi, order, Q) {
-  est_xi_perm <- est_xi[order, ]
-  xi_dist <- sum((est_xi_perm - true_xi)^2)
-  # Return dist, ordering, and reordered estimate
-  return(list("xi_dist" = xi_dist, "order" = order, "est_xi_perm" = est_xi_perm))
-}
-
-# `get_Phi_dist` returns squared Euclidean norm between estimated and true Phi,
-# Inputs:
-#   est_Phi: Estimated Phi vector; nx1
-#   true_Phi: True Phi vector; nx1
-# Outputs: a list with the following elements:
-#   Phi_dist: Squared Euclidean norm between estimated and true Phis, calculated
-# as a mean across all individual
-get_Phi_dist <- function(est_Phi, true_Phi) {
-  Phi_dist <- mean((est_Phi - true_Phi)^2)
-  # Return dist
-  return(list("Phi_dist" = Phi_dist))
-}
-
-# `get_marg_eff` returns the true marginal effect of P(Y=1|C)
-# Inputs:
-#   true_xi: Matrix of true probit model coefficients including S and C as 
-# covariates. Applying 'pnorm' gives conditional effects P(Y=1|S,C). KxS
-#   true_pi_s: Matrix of stratum-specific class probabilities P(C=k|S=s). SxK
-#   true_pi: Vector of overall class membership probabilities P(C=k). Kx1
-#   N_s: Vector of stratum sizes. Sx1
-#   N: Population size
-# Output: `p_y_cond_k` vector of marginal effect P(Y=1|C=k). Kx1
-get_marg_eff <- function(true_xi, true_pi_s, true_pi, N_s, N) {
-  S <- ncol(true_xi)
-  K <- nrow(true_xi)
-  p_s <- N_s / N
-  p_y_cond_k <- numeric(K)
-  p_y_s_cond_k <- matrix(NA, nrow=K, ncol=S)
-  for (k in 1:K) {
-    for (s in 1:S) {
-      # P(Y=1|S=s, C=k)P(C=k|S=s)P(S=s)/P(C=k)
-      p_y_s_cond_k[k, s] <- pnorm(true_xi[k, s]) * true_pi_s[s, k] * p_s[s] / 
-        true_pi[k]
-    }
-    p_y_cond_k[k] <- sum(p_y_s_cond_k[k, ])
-  }
-  return(p_y_cond_k)
-}
-
-#============== Get performance metrics ========================================
-
-# `get_metrics` obtains simulation metrics for posterior parameter estimates 
-# across the sample iterations
-# Inputs:
-#   scen_pop: Three-digit population data scenario
-#   scen_samp: Five-digit sample data scenario
-#   iter_pop: Population data iteration
-#   samp_n_seq: Vector sequence of sample indices
-#   model: String indicating type of model, e.g., "wsOFMM", "sOFMM", "wOFMM"
-#   coverage: Boolean indicating if coverage intervals should be calculated
-#   posthoc: Boolean indicating if a posthoc pi is included in the results
-#   plot_pi: Boolean indicating if output for pi plots is needed
-#   plot_theta: Boolean indicating if output for theta plots is needed
-#   plot_xi: Boolean indicating if output for xi plots is needed
-# Outputs: list with the following components:
-#   K_bias2: bias2 for number of clusters K
-#   pi_bias2: bias2 for cluster probabilities pi
-#   theta_bias2: bias2 for item response probabilities theta
-#   xi_bias2: bias2 for probit coefficients xi
-#   posthoc_pi_bias2: if posthoc = TRUE, bias2 for pi applying weights posthoc
-#   pi_all: if plot_pi = TRUE, estimated pi values across samples
-#   theta_mode: if plot_theta = TRUE, estimate modal theta values across samples
-#   mode_mis: if plot_theta = TRUE, number of modal mismatches compared to true theta
-#   xi_all: if plot_xi = TRUE, estimated xi values across samples
-#   pi_cover_avg: if coverage = TRUE, coverage of pi estimate
-#   theta_cover_avg: if coverage = TRUE, coverage of theta estimate
-#   xi_cover_avg: if coverage = TRUE, coverage of xi estimate
-#   runtime_avg: Average runtime across iterations
-get_metrics <- function(wd, data_dir, res_dir, scen_pop, scen_samp, iter_pop=1, 
-                        samp_n_seq, model, plot = TRUE) {
-  
-  #============== Load data and initialize variables ===========================
-  # Load simulated population data
-  pop_data_path <- paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter",
-                          iter_pop, ".RData")
-  load(pop_data_path)
-  # pop_data_path <- paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter", 
-  #                         iter_pop, ".mat") 
-  # sim_pop <- readMat(pop_data_path)$sim.data
-  # names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
-  
-  
-  # Obtain true observed population parameters
-  true_params <- get_true_params(sim_pop = sim_pop)
-  true_K <- as.vector(sim_pop$true_K)
-  
-  # Initialize variables
-  L <- length(samp_n_seq)  # Number of samples
-  runtime_all <- numeric(L)
-  # Bias squared using posterior median
-  K_dist <- pi_dist <- theta_dist <- xi_dist <- Phi_dist <- rep(NA, L) 
-  # Posterior variance
-  pi_var_all <- theta_var_all <- xi_var_all <- Phi_var_all <- rep(NA, L) 
-  # Coverage variables
-  pi_cover <- matrix(NA, nrow=L, ncol=length(true_params$true_pi))
-  theta_cover <- array(NA, c(L, dim(true_params$true_theta)[c(1,2)]))
-  xi_cover <- array(NA, c(L, dim(true_params$true_xi)))
-  
-  # Initialize plotting structures
-  if (plot) {
-    pi_all <- matrix(NA, nrow=L, ncol=true_K)
-    theta_mode_all <- array(NA, dim=c(L, dim(sim_pop$true_global_patterns)))
-    mode_mis_all <- rep(NA, L)
-    xi_all <- array(NA, c(L, dim(true_params$true_xi)))
-  }
-  
-  #============== Get performance metrics for each iteration ===================
-  for (l in 1:L) { # For each sample iteration
-    samp_n = samp_n_seq[l]
-    print(samp_n)
-    
-    # Read in sample data. If file does not exist, move on to next iteration
-    sim_data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter",
-                             iter_pop, "_samp", samp_n, ".RData")
-    if (!file.exists(sim_data_path)) {
-      print(paste0("File does not exist: simdata_scen", scen_samp,"_iter",
-                   iter_pop, "_samp", samp_n))
-      next
-    }
-    load(sim_data_path)
-    sim_samp <- sim_data
-    
-    # sim_data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", 
-    #                         iter_pop, "_samp", samp_n, ".mat") 
-    # sim_samp <- readMat(sim_data_path)$sim.data
-    # names(sim_samp) <- str_replace_all(dimnames(sim_samp)[[1]], "[.]", "_")
-    
-    
-    # Read in results data
-    if (model == "wsOFMM") {
-      # wsOFMM model includes a variance adjustment
-      sim_res_path <- paste0(wd, res_dir, model, "_results_2mod20000_adjRcpp_scen", scen_samp, 
-                             "_samp", samp_n, ".RData")
-      if (!file.exists(sim_res_path)) {
-        print(paste0("File does not exist: ", model, "_results_2mod20000_adjRcpp_scen", 
-                     scen_samp, "_samp", samp_n, ".RData"))
-        next
-      } 
-      load(sim_res_path)
-      analysis <- res$analysis_adj
-      names(analysis) <- str_replace_all(names(analysis), "_adj", "")
-      runtime_all[l] <- res$runtime
-    } else {  # sOFMM and wOFMM models
-      if(model == "sOFMM") {
-        sim_res_path <- paste0(wd, res_dir, model, "_results_2mod20000_scen", scen_samp, 
-                               "_samp", samp_n, ".RData")
-        if (!file.exists(sim_res_path)) {
-          print(paste0("File does not exist: ", model, "_results_2mod20000_scen", 
-                       scen_samp, "_samp", samp_n, ".mat"))
-          next
-        } 
-      } else {  # wOFMM 
-        sim_res_path <- paste0(wd, res_dir, model, "_results_wt_2mod20000_scen", scen_samp, 
-                               "_samp", samp_n, ".RData")
-        if (!file.exists(sim_res_path)) {
-          print(paste0("File does not exist: ", model, "_results_wt_2mod20000_scen", 
-                       scen_samp, "_samp", samp_n, ".mat"))
-          next
-        } 
-      }
-      load(sim_res_path)
-      analysis <- res$analysis
-      runtime_all[l] <- res$runtime
-    }
-      
-    S <- length(unique(sim_samp$true_Si))  # Number of strata
-    M <- dim(analysis$theta_red)[1]        # Number of MCMC iterations
-    p <- dim(analysis$theta_red)[2]        # Number of exposure items
-    d <- dim(analysis$theta_red)[4]        # Number of exposure levels
-    K <- length(analysis$pi_med)           # Number of classes
-    Q <- dim(analysis$xi_med)[2]           # Number of additional covariates
-    
-    # For the effect modifier scenario, change true_xi to the marginal effect
-    if (scen_pop == 1121) {
-      true_params$true_xi <- qnorm(as.matrix(get_marg_eff(sim_pop$true_xi, 
-                                                    sim_pop$true_pi_s, 
-                                                    sim_pop$true_pi, 
-                                                    sim_pop$N_s, sim_pop$N), 
-                                       ncol = 1))
-    }
-      
-    # If number of classes is incorrect, fill remaining components with 0's
-    if (K > true_K) {
-      # If there are extra estimated classes, add 0s to true parameters
-      extra <- K - true_K
-      true_params$true_pi <- c(true_params$true_pi, rep(0, extra))
-      true_params$true_xi <- rbind(true_params$true_xi, 
-                                   matrix(0, nrow = extra, ncol = Q))
-      filler <- array(0, dim=c(dim(analysis$theta_med)[1], extra, 
-                               dim(analysis$theta_med)[3]))
-      true_params$true_theta <- abind(true_params$true_theta, filler, along = 2)
-    } else if (K < true_K) {
-      # If there are missing estimated classes, add 0s to estimated parameters
-      missing <- true_K - K
-      analysis$pi_med <- c(analysis$pi_med, rep(0, missing))
-      analysis$xi_med <- rbind(analysis$xi_med, 
-                               matrix(0, nrow = missing, ncol = Q))
-      filler <- array(0, dim=c(dim(analysis$theta_med)[1], missing, 
-                               dim(analysis$theta_med)[3]))
-      analysis$theta_med <- abind(analysis$theta_med, filler, along = 2)  
-      
-      # Add 0's to full MCMC outputs for the missing classes
-      analysis$pi_red <- abind(analysis$pi_red, array(0, dim=c(M, missing)), 
-                               along=2)
-      analysis$theta_red <- abind(analysis$theta_red, 
-                                  array(0, dim=c(M, p, missing, d)), along = 3)
-      # Special treatment of xi for two-step unsupervised model
-      if (model == "wOFMM") {
-        analysis$xi_med_lb <- rbind(matrix(analysis$xi_med_lb, nrow = K, ncol = Q), 
-                                    matrix(0, nrow = missing, ncol = Q))
-        analysis$xi_med_ub <- rbind(matrix(analysis$xi_med_ub, nrow = K, ncol = Q), 
-                                    matrix(0, nrow = missing, ncol = Q))
-      } else {
-        analysis$xi_red <- abind(analysis$xi_red, 
-                                 array(0, dim=c(M, missing, Q)), along = 2)
-      }
-    }
-    
-    #============== Calculated squared Euclidean norm (bias^2) =================
-    ##### Number of classes, K
-    K_dist[l] <- (K - true_K)^2
-    
-    ##### theta: get dist (Eucl norm) and optimal ordering
-    theta_perm <- get_theta_dist(est_theta = analysis$theta_med, 
-                                 true_theta = true_params$true_theta, 
-                                 order=NULL)
-    theta_dist[l] <- theta_perm$theta_dist
-    order <- theta_perm$order
-    # Theta mode consumption levels for each item and class (pxK)
-    est_modes <- apply(analysis$theta_med[, order, ], c(1,2), which.max)
-    true_modes <- apply(true_params$true_theta[,,], c(1,2), which.max)
-    # True modal probabilities for each item and class (pxK)
-    true_theta_modal <- apply(true_params$true_theta[,,], c(1,2), max)  
-    
-    ##### pi 
-    pi_perm <- get_pi_dist(est_pi = analysis$pi_med, 
-                           true_pi = true_params$true_pi, order = order)
-    pi_dist[l] <- pi_perm$pi_dist
-    
-    ##### xi
-    xi_perm <- get_xi_dist(est_xi = analysis$xi_med, 
-                           true_xi = true_params$true_xi, order = order, Q = Q)
-    xi_dist[l] <- xi_perm$xi_dist
-    
-    ##### Phi
-    Phi_dist[l] <- get_Phi_dist(est_Phi = analysis$Phi_med,
-                                     true_Phi = c(sim_samp$true_Phi))$Phi_dist
-    
-    #============== Calculate coverage and CI widths ===========================
-    ##### pi
-    # Obtain credible intervals for each of the K true clusters
-    pi_CI <- apply(analysis$pi_red[, order], 2, 
-                   function(x) quantile(x, c(0.025, 0.975)))
-    # Assign 1 if interval covers true value, 0 if not
-    pi_cover[l, ] <- ifelse((true_params$true_pi >= pi_CI[1,]) & 
-                                   (true_params$true_pi <= pi_CI[2,]), 1, 0)
-    # CI width averaged over the components
-    pi_var_all[l] <- mean(apply(pi_CI, 2, diff))
-    
-    ##### theta
-    theta_var_temp <- numeric(K)
-    for (k in 1:K) {
-      # Subset theta for cluster k
-      est_theta_k <- analysis$theta_red[,,order[k],]
-      # Each row provides the indices for one row of modal probabilities
-      modal_idx <- cbind(rep(1:M, each=p), rep(1:p, times=M), 
-                         rep(est_modes[, k], times=M))
-      # estimated probabilities for the mode for cluster k (Mxp)
-      est_theta_k_modal <- matrix(est_theta_k[modal_idx], ncol=p, byrow=TRUE)
-      # Obtain credible intervals for each item 
-      # Margins of apply are the dimensions that should be preserved
-      theta_CI <- apply(est_theta_k_modal, 2, 
-                        function(x) quantile(x, c(0.025, 0.975)))
-      theta_cover[l, , k] <- ifelse((true_theta_modal[,k] >= theta_CI[1,]) &
-                                  (true_theta_modal[,k] <= theta_CI[2,]), 1, 0)
-      # CI width measures variation in estimating the modes for each k,
-      # averaged over the items
-      theta_var_temp[k] <- mean(apply(theta_CI, 2, diff))
-    }
-    # CI width averaged over the classes
-    theta_var_all[l] <- mean(theta_var_temp)
-    
-    ##### xi
-    if (model == "wOFMM") {
-      # For two-step model, 'coefCI(fitglm)' is used in the Matlab code to 
-      # extract CI from the regression model
-      xi_CI <- array(NA, dim = c(2, dim(analysis$xi_med)))
-      xi_CI[1, , ] <- analysis$xi_med_lb[order, ]
-      xi_CI[2, , ] <- analysis$xi_med_ub[order, ]
-    } else {
-      # Obtain credible intervals for each component
-      # Be careful not to drop size-1 dimension
-      xi_CI <- apply(analysis$xi_red[, order, , drop = FALSE], c(2, 3), 
-                     function(x) quantile(x, c(0.025, 0.975)))
-    }
-    # Assign 1 if interval covers true value, 0 if not
-    xi_cover[l, , ] <- ifelse((true_params$true_xi >= xi_CI[1,,]) & 
-                                   (true_params$true_xi <= xi_CI[2,,]), 1, 0)
-    # CI width averaged over the components
-    xi_var_all[l] <- mean(apply(xi_CI, c(2,3), diff))
-    
-    #============== Parameter estimate plot outputs ============================
-    ##### theta
-    if (plot) {
-      if (K != true_K) { # mismatch of number of classes
-        # Expand estimated array size if necessary
-        if (dim(theta_mode_all)[3] < K) {
-          filler <- array(NA, dim=c(L, dim(analysis$theta_med)[1], extra))
-          theta_mode_all <- abind(theta_mode_all, filler, along = 3)
-        }
-      } 
-      theta_mode_all[l,,1:true_K] <- est_modes
-      # Mode mismatches
-      mode_mis_all[l] <- sum(abs(est_modes - sim_pop$true_global_patterns))
-    
-      ##### pi
-      if (K != true_K) { # mismatch of number of classes
-        # Expand estimated matrix size if necessary
-        if (dim(pi_all)[2] < K) {
-          filler <- array(NA, dim=c(L, extra))
-          pi_all <- abind(pi_all, filler, along = 2)
-        }
-      }
-      pi_all[l,1:true_K] <- analysis$pi_med[order]
-    
-      ##### xi
-      if (K != true_K) { # mismatch of number of classes
-        # Expand estimated array size if necessary
-        if (dim(xi_all)[2] < K) {
-          filler <- array(NA, dim=c(L, extra, Q))
-          xi_all <- abind(xi_all, filler, along = 2)
-        }
-      }
-      xi_all[l, , ] <- analysis$xi_med[order, ] 
-    }
-  }
-
-  #============== Calculate bias^2 averaged over sample iterations =============
-  K_bias2 <- mean(K_dist, na.rm = TRUE)
-  pi_bias2 <- mean(pi_dist, na.rm = TRUE)
-  theta_bias2 <- mean(theta_dist, na.rm = TRUE)
-  xi_bias2 <- mean(xi_dist, na.rm = TRUE)
-  Phi_bias2 <- mean(Phi_dist, na.rm = TRUE)
-  
-  # Calculated CI width, averaged across iterations
-  pi_var <- mean(pi_var_all, na.rm = TRUE)
-  theta_var <- mean(theta_var_all, na.rm = TRUE)
-  xi_var <- mean(xi_var_all, na.rm = TRUE)
-
-  # Calculate class-specific coverage, averaged across iterations
-  # Coverage for pi
-  pi_cover_avg <- colMeans(pi_cover, na.rm = TRUE)
-  # Coverage for theta: average over food items
-  theta_cover_avg <- colMeans(colMeans(theta_cover, na.rm = TRUE), na.rm = TRUE)
-  # Coverage for xi: average over additional Q covariates
-  xi_cover_avg <- rowMeans(colMeans(xi_cover, na.rm = TRUE), na.rm = TRUE)
-  
-  runtime_avg <- mean(runtime_all, na.rm = TRUE)
-  
-  #============== Return results ===============================================
-  ret_list <- list(K_bias2 = K_bias2, pi_bias2 = pi_bias2, pi_var = pi_var, 
-                   theta_bias2 = theta_bias2, theta_var = theta_var, 
-                   xi_bias2 = xi_bias2, xi_var = xi_var, 
-                   Phi_bias2 = Phi_bias2, pi_cover_avg = pi_cover_avg,
-                   theta_cover_avg = theta_cover_avg, xi_cover_avg = xi_cover_avg,
-                   runtime_avg = runtime_avg, K_dist = K_dist, pi_dist = pi_dist,
-                   theta_dist = theta_dist, xi_dist = xi_dist)
-  
-  if (plot) {
-    ret_list[["pi_all"]] <- pi_all
-    theta_mode <- apply(theta_mode_all, c(2,3), function(x) mean(x, na.rm = TRUE))
-    mode_mis <- mean(mode_mis_all, na.rm = TRUE)
-    ret_list[["theta_mode"]] <- theta_mode
-    ret_list[["mode_mis"]] <- mode_mis
-    ret_list[["xi_all"]] <- xi_all
-    ret_list[["mode_mis_all"]] <- mode_mis_all
-  }
-  
-  return(ret_list)
-}
-
-#================ SUMMARIES AND PLOTS ==========================================
-wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
-data_dir <- "Data/"
-res_dir <- "Results/"
-analysis_dir <- "Analysis_Code/"
-scen_pop <- 1122
-scen_samp <- 112211
-iter_pop <- 1
-samp_n_seq <- 1:100
-L <- length(samp_n_seq)
-model <- "wsOFMM"
-plot <- TRUE
-
-
-metrics_ws <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                scen_pop=scen_pop, scen_samp=scen_samp, iter_pop=1, 
-                                samp_n_seq=samp_n_seq, model="wsOFMM")
-metrics_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                               scen_pop=scen_pop, scen_samp=scen_samp, iter_pop=1, 
-                               samp_n_seq=samp_n_seq, model="sOFMM")
-metrics_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                   scen_pop=scen_pop, scen_samp=scen_samp, iter_pop=1, 
-                                   samp_n_seq=samp_n_seq, model="wOFMM")
-metrics_all <- list(metrics_ws = metrics_ws, metrics_s = metrics_s, 
-                    metrics_unsup = metrics_unsup)
-# save summary metrics
-save(metrics_all, 
-     file = paste0(wd, analysis_dir, "metrics_scen", scen_samp, ".RData"))
-# load(paste0(wd, analysis_dir, "metrics_scen", scen_samp, ".RData"))
+# Baseline: stratified, 5% sample size, 85/5/5/5, non-supervised, confounder
+save_scen_metrics(scen_pop = 1112, scen_samp = 111211, WSOLCA = TRUE, 
+                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
+                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
+                  save_name = "metrics_scen")
+# Sampling schemes: stratified cluster
+save_scen_metrics(scen_pop = 1112, scen_samp = 111212, WSOLCA = TRUE, 
+                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
+                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
+                  save_name = "metrics_scen")
+# Sampling schemes: SRS
+save_scen_metrics(scen_pop = 1112, scen_samp = 111213, WSOLCA = TRUE, 
+                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
+                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
+                  save_name = "metrics_scen")
+# Sample size: 10%
+save_scen_metrics(scen_pop = 1112, scen_samp = 111221, WSOLCA = TRUE, 
+                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
+                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
+                  save_name = "metrics_scen")
+# Sample size: 1%
+save_scen_metrics(scen_pop = 1112, scen_samp = 111231, WSOLCA = TRUE, 
+                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
+                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
+                  save_name = "metrics_scen")
+# Weak patterns
+save_scen_metrics(scen_pop = 2112, scen_samp = 211211, WSOLCA = TRUE, 
+                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
+                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
+                  save_name = "metrics_scen")
+# Supervised
+save_scen_metrics(scen_pop = 1212, scen_samp = 121211, WSOLCA = TRUE, 
+                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
+                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
+                  save_name = "metrics_scen")
+# Effect modifier
+save_scen_metrics(scen_pop = 1122, scen_samp = 112211, WSOLCA = TRUE, 
+                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
+                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
+                  save_name = "metrics_scen")
+# Effect modifier marginal
+save_scen_metrics(scen_pop = 1122, scen_samp = 112211, WSOLCA = TRUE, 
+                  SOLCA = TRUE, WOLCA = TRUE, 
+                  WSOLCA_name = "_results_effmod_adjRcpp_scen", 
+                  SOLCA_name = "_results_effmod_scen", 
+                  WOLCA_name = "_results_wt_effmod_scen",
+                  marg = TRUE, 
+                  save_name = "metrics_marg_scen")
 
 # Load simulated population data
 load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
@@ -566,12 +86,230 @@ load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
 true_params <- get_true_params(sim_pop = sim_pop)  
 
 #================ TABLE METRICS SUMMARY ========================================
+
+wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/" # Working directory
+data_dir <- "Data/"               # Simulated data directory
+res_dir <- "Results/"             # Model results directory
+analysis_dir <- "Analysis_Code/"  # Analysis directory where metrics are saved
+
+create_table1(wd = wd, analysis_dir = analysis_dir)
+
+
+#================ PLOT MSE SUMMARY =========================================
+
+# Sampling scenarios
+scenarios <- c(111213, 111211, 111212)
+scen_names <- c("SRS", "Stratified", "Stratified Cluster")
+save_names <- rep("metrics_scen", 3)
+samp_pi <- plot_rmse_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                          save_names = save_names, scenarios = scenarios,
+                          scen_names = scen_names, overall_name = "Sampling", 
+                          param = "pi", upper_lim = 0.75, xlab = "Sampling Scheme", 
+                          ylab = expression("RMSE for "~pi))
+samp_theta <- plot_rmse_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                             save_names = save_names, scenarios = scenarios,
+                             scen_names = scen_names, overall_name = "Sampling", 
+                             param = "theta", upper_lim = 0.75, xlab = "Sampling Scheme", 
+                             ylab = expression("RMSE for "~theta))
+samp_xi <- plot_rmse_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                          save_names = save_names, scenarios = scenarios,
+                          scen_names = scen_names, overall_name = "Sampling", 
+                          param = "xi", upper_lim = 0.75, xlab = "Sampling Scheme", 
+                          ylab = expression("RMSE for "~xi))
+ggarrange(samp_pi, samp_theta, samp_xi, nrow = 3, ncol = 1, common.legend = TRUE)
+ggarrange(samp_pi, samp_theta, samp_xi, nrow = 1, ncol = 3, common.legend = TRUE)
+
+# Pattern strength and separation
+scenarios <- c(111211, 211211, 121211)
+scen_names <- c("Mode 85%", "Mode 55%", "Overlapping")
+pattern_pi <- plot_mse_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                            save_names = save_names, scenarios = scenarios,
+                            scen_names = scen_names, overall_name = "Pattern", 
+                            param = "pi", upper_lim = 0.1, 
+                            xlab = "Pattern Strength and Separation", 
+                            ylab = expression("MSE for "~pi))
+pattern_theta <- plot_mse_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                                  save_names = save_names, scenarios = scenarios,
+                               scen_names = scen_names, overall_name = "Pattern", 
+                               param = "theta", upper_lim = 0.1, 
+                               xlab = "Pattern Strength and Separation", 
+                               ylab = expression("MSE for "~theta))
+pattern_xi <- plot_mse_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                               save_names = save_names, scenarios = scenarios,
+                            scen_names = scen_names, overall_name = "Pattern", 
+                            param = "xi", upper_lim = 0.15, 
+                            xlab = "Pattern Strength and Separation", 
+                            ylab = expression("MSE for "~xi))
+ggarrange(pattern_pi, pattern_theta, pattern_xi, nrow = 1, ncol = 3, common.legend = TRUE)
+
+# Sample size
+scenarios <- c(111221, 111211, 111231)
+scen_names <- c("10%", "5%", "1%")
+ss_pi <- plot_mse_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                          save_names = save_names, scenarios = scenarios,
+                               scen_names = scen_names, overall_name = "SS", 
+                               param = "pi", upper_lim = 0.1, 
+                               xlab = "Sample Size", 
+                               ylab = expression("MSE for "~pi))
+ss_theta <- plot_mse_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                             save_names = save_names, scenarios = scenarios,
+                                  scen_names = scen_names, overall_name = "SS", 
+                                  param = "theta", upper_lim = 0.1, 
+                                  xlab = "Sample Size", 
+                                  ylab = expression("MSE for "~theta))
+ss_xi <- plot_mse_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                          save_names = save_names, scenarios = scenarios,
+                               scen_names = scen_names, overall_name = "SS", 
+                               param = "xi", upper_lim = 0.8, 
+                               xlab = "Sample Size", 
+                               ylab = expression("MSE for "~xi))
+ggarrange(ss_pi, ss_theta, ss_xi, nrow = 1, ncol = 3, common.legend = TRUE)
+
+
+# Selection bias
+scenarios <- c(111211, 112211, 112211)
+scen_names <- c("Confounder", "Precision \nMeasured", "Precision \nUnmeasured")
+save_names <- c("metrics_scen", "metrics_scen", "metrics_marg_scen")
+selection_pi <- plot_mse_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                          save_names = save_names, scenarios = scenarios,
+                          scen_names = scen_names, overall_name = "selection", 
+                          param = "pi", upper_lim = 0.025, 
+                          xlab = "Selection Bias", 
+                          ylab = expression("MSE for "~pi))
+selection_theta <- plot_mse_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                             save_names = save_names, scenarios = scenarios,
+                             scen_names = scen_names, overall_name = "selection", 
+                             param = "theta", upper_lim = 0.05, 
+                             xlab = "Selection Bias", 
+                             ylab = expression("MSE for "~theta))
+selection_xi <- plot_mse_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                          save_names = save_names, scenarios = scenarios,
+                          scen_names = scen_names, overall_name = "selection", 
+                          param = "xi", upper_lim = 0.2, 
+                          xlab = "Selection Bias", 
+                          ylab = expression("MSE for "~xi))
+ggarrange(selection_pi, selection_theta, selection_xi, nrow = 1, ncol = 3, 
+          common.legend = TRUE)
+
+#================ PLOT BIAS SUMMARY =========================================
+
+scenarios <- c(111213, 111211, 111212)
+scen_names <- c("SRS", "Stratified", "Stratified Cluster")
+p_pi <- plot_bias_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                  save_names = save_names, scenarios = scenarios,
+                  scen_names = scen_names, overall_name = "Sampling", 
+                  param = "pi", upper_lim = 0.15, xlab = "Sampling Scheme", 
+                  ylab = expression("Mean Absolute Bias for "~pi))
+p_theta <- plot_bias_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                  save_names = save_names, scenarios = scenarios,
+                  scen_names = scen_names, overall_name = "Sampling", 
+                  param = "theta", upper_lim = 0.1, xlab = "Sampling Scheme", 
+                  ylab = expression("Mean Absolute Bias for "~theta))
+p_xi <- plot_bias_boxplot(wd = wd, analysis_dir = analysis_dir, 
+                  save_names = save_names, scenarios = scenarios,
+                  scen_names = scen_names, overall_name = "Sampling", 
+                  param = "xi", upper_lim = 0.4, xlab = "Sampling Scheme", 
+                  ylab = expression("Mean Absolute Bias for "~xi))
+ggarrange(p_pi, p_theta, p_xi, nrow = 3, ncol = 1, common.legend = TRUE)
+ggarrange(p_pi, p_theta, p_xi, nrow = 1, ncol = 3, common.legend = TRUE)
+
+### Plot bias as grouped boxplot 
+plot_bias_boxplot <- function(wd, analysis_dir, save_names, scenarios, 
+                              scen_names, overall_name, param,
+                              lower_lim = 0, upper_lim = 1, xlab, ylab) {
+  if (param == "pi") {
+    param_dist <- "pi_dist"
+  } else if (param == "theta") {
+    param_dist <- "theta_dist"
+  } else if (param == "xi") {
+    param_dist <- "xi_dist"
+  } else {
+    stop("Error: 'param' must be 'pi', 'theta', or 'xi' ")
+  }
+  
+  # Combine data from various scenarios into one dataframe
+  L <- 100
+  num_scen <- length(scenarios)
+  plot_df <- as.data.frame(matrix(NA, nrow = 3*L, ncol = num_scen))
+  for (i in 1:num_scen) {
+    scen_samp <- scenarios[i]
+    save_name <- save_names[i]
+    load(paste0(wd, analysis_dir, save_name, scen_samp, ".RData"))
+    plot_df[, i] <- c(metrics_all$metrics_s[[param_dist]], 
+                      metrics_all$metrics_ws[[param_dist]],
+                      metrics_all$metrics_unsup[[param_dist]])
+  }
+  colnames(plot_df) <- scen_names
+  # Add column indicating model
+  plot_df$Model <- factor(c(rep("SOLCA", times=L), rep("WSOLCA", times=L), 
+                            rep("WOLCA", times=L)), 
+                          levels = c("SOLCA", "WSOLCA", "WOLCA"))
+  
+  # Create a single Sampling column by gathering sampling columns together
+  # Dimensions (9*L)x3 with columns Model, Sampling Scheme, Mean Absolute Bias
+  plot_df <- plot_df %>% 
+    gather({{overall_name}}, "Bias", -Model)
+  
+  # Create grouped boxplot of pi values for the sampling schemes
+  p <- plot_df %>% 
+    ggplot(aes_string(x = overall_name, y = "Bias", fill = "Model")) + 
+    theme_bw() + 
+    geom_boxplot() + 
+    ylim(lower_lim, upper_lim) + 
+    xlab({{xlab}}) + ylab({{ylab}})
+  
+  return(p)
+}
+
+
+#============== Create Appendix Tables =========================================
+wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/" # Working directory
+analysis_dir <- "Analysis_Code/"  # Analysis directory where metrics are saved
+
+# Sampling scenarios
+scenarios <- c(111213, 111211, 111212)
+scen_names <- c("SRS", "Stratified", "Stratified Cluster")
+save_names <- rep("metrics_scen", 3)
+create_app_tables(wd, analysis_dir, save_names, scenarios, scen_names, 
+                  overall_name = "Sampling Scheme", format = "html")
+
+# Pattern strength and separation
+scenarios <- c(111211, 211211, 121211)
+scen_names <- c("Mode 85%", "Mode 55%", "Overlapping")
+save_names <- rep("metrics_scen", 3)
+create_app_tables(wd, analysis_dir, save_names, scenarios, scen_names, 
+                  overall_name = "Pattern", format = "html")
+  
+# Sample size
+scenarios <- c(111221, 111211, 111231)
+scen_names <- c("10%", "5%", "1%")
+save_names <- rep("metrics_scen", 3)
+create_app_tables(wd, analysis_dir, save_names, scenarios, scen_names, 
+                  overall_name = "Sample Size", format = "html")
+
+# Selection bias
+scenarios <- c(111211, 112211, 112211)
+scen_names <- c("Confounder", "Precision \nMeasured", "Precision \nUnmeasured")
+save_names <- c("metrics_scen", "metrics_scen", "metrics_marg_scen")
+create_app_tables(wd, analysis_dir, save_names, scenarios, scen_names, 
+                  overall_name = "Selection Bias", format = "html")
+
+#================== OLD CODE ===================================================
+load(paste0(wd, analysis_dir, "metrics_scen", 111211, ".RData"))
+
+
 create_table(metrics_s = metrics_all$metrics_s, 
              metrics_ws = metrics_all$metrics_ws, 
              metrics_unsup = metrics_all$metrics_unsup,
              scen_samp = scen_samp)
 
 ### Create table of metrics with bias and variance
+# Inputs:
+#   metrics_s: Summary metrics for SOLCA
+#   metrics_ws: Summary metrics for WSOLCA
+#   metrics_unsup: Summary metrics for WOLCA
+#   scen_samp: Sampling scenario
+# Output: Formatted table with absolute bias, CI width, and coverage
 create_table <- function(metrics_s, metrics_ws, metrics_unsup, scen_samp) {
   metrics_summ <- as.data.frame(matrix(NA, nrow=3, ncol=12))
   colnames(metrics_summ) <- c("Sampling Scheme", "Model", 
@@ -607,136 +345,6 @@ create_table <- function(metrics_s, metrics_ws, metrics_unsup, scen_samp) {
 }
 
 
-#================ Baseline scenario ============================================
-scenario <- "Baseline"
-# Get all metrics and outputs
-metrics_SRS_ws <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                              scen_pop=1, scen_samp=101, iter_pop=1, 
-                              samp_n_seq=samp_n_seq, model="wsOFMM")
-metrics_SRS_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                             scen_pop=1, scen_samp=101, iter_pop=1, 
-                             samp_n_seq=samp_n_seq,  model="sOFMM")
-metrics_SRS_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                 scen_pop=1, scen_samp=101, iter_pop=1, 
-                                 samp_n_seq=samp_n_seq, model="wOFMM")
-metrics_Strat_ws <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                scen_pop=scen_pop, scen_samp=scen_samp, iter_pop=1, 
-                                samp_n_seq=samp_n_seq, model="wsOFMM")
-metrics_Strat_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                               scen_pop=scen_pop, scen_samp=scen_samp, iter_pop=1, 
-                               samp_n_seq=samp_n_seq, model="sOFMM")
-metrics_Strat_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                   scen_pop=scen_pop, scen_samp=scen_samp, iter_pop=1, 
-                                   samp_n_seq=samp_n_seq, model="wOFMM")
-
-# Load simulated population data
-load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
-
-# Obtain true observed population parameters
-true_params <- get_true_params(sim_pop = sim_pop)    
-
-#================ Supervised scenario ==========================================
-scenario <- "Supervised"
-# Get all metrics and outputs
-metrics_SRS_ws <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                              scen_pop=2, scen_samp=102, iter_pop=1, 
-                              samp_n_seq=samp_n_seq, model="wsOFMM")
-metrics_SRS_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                             scen_pop=2, scen_samp=102, iter_pop=1, 
-                             samp_n_seq=samp_n_seq,  model="sOFMM")
-metrics_SRS_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                 scen_pop=2, scen_samp=102, iter_pop=1, 
-                                 samp_n_seq=samp_n_seq, model="wOFMM")
-metrics_Strat_ws <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                scen_pop=2, scen_samp=202, iter_pop=1, 
-                                samp_n_seq=samp_n_seq, model="wsOFMM")
-metrics_Strat_s <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                               scen_pop=2, scen_samp=202, iter_pop=1, 
-                               samp_n_seq=samp_n_seq, model="sOFMM")
-metrics_Strat_unsup <- get_metrics(wd=wd, data_dir=data_dir, res_dir=res_dir, 
-                                   scen_pop=2, scen_samp=202, iter_pop=1, 
-                                   samp_n_seq=samp_n_seq, model="wOFMM")
-scen_pop <- 2
-# Load simulated population data
-sim_pop <- readMat(paste0(data_dir, "simdata_scen", scen_pop,"_iter", 
-                          iter_pop, ".mat"))$sim.data
-names(sim_pop) <- str_replace_all(dimnames(sim_pop)[[1]], "[.]", "_")
-# Obtain true observed population parameters
-true_params <- get_true_params(sim_pop = sim_pop)   
-
-#================ TABLE METRICS SUMMARY ========================================
-### Create table of metrics with bias and variance
-metrics_summ <- as.data.frame(matrix(NA, nrow=3, ncol=12))
-colnames(metrics_summ) <- c("Sampling Scheme", "Model", 
-                            "K Bias^2", "$\\pi$ Bias^2", "$\\pi$ CI width", 
-                            "$\\theta$ Bias^2", "$\\theta$ CI width", 
-                            "$\\xi$ Bias^2", "$\\xi$ CI width", 
-                            "$\\pi$ Coverage","$\\theta$ Coverage", "$\\xi$ Coverage")
-metrics_summ[, 1] <- rep("Stratified", 3)
-metrics_summ[, 2] <- rep(c("Unwtd(sOFMM)", "Wtd(wsOFMM)", "Unsup(wOFMM)"), 1)  ## latent versions
-output_inds <- 1:7
-metrics_summ[1, -c(1,2)] <- c(metrics_Strat_s[output_inds], 
-                              mean(metrics_Strat_s$pi_cover_avg), 
-                              mean(metrics_Strat_s$theta_cover_avg),
-                              mean(metrics_Strat_s$xi_cover_avg))
-metrics_summ[2, -c(1,2)] <- c(metrics_Strat_ws[output_inds], 
-                              mean(metrics_Strat_ws$pi_cover_avg), 
-                              mean(metrics_Strat_ws$theta_cover_avg),
-                              mean(metrics_Strat_ws$xi_cover_avg))
-metrics_summ[3, -c(1,2)] <- c(metrics_Strat_unsup[output_inds], 
-                              mean(metrics_Strat_unsup$pi_cover_avg), 
-                              mean(metrics_Strat_unsup$theta_cover_avg),
-                              mean(metrics_Strat_unsup$xi_cover_avg))
-metrics_summ %>% 
-  gt(caption = paste0(scen_samp, " scenario metrics of posterior parameter estimates, averaged over 100 samples")) %>%
-  cols_label("$\\pi$ Bias^2" = "π Bias^2", "$\\theta$ Bias^2" = "θ Bias^2", 
-             "$\\xi$ Bias^2" = "ξ Bias^2",
-             "$\\pi$ CI width" = "π CI width", "$\\theta$ CI width" = "θ CI width", 
-             "$\\xi$ CI width" = "ξ CI width", "$\\pi$ Coverage" = "π Coverage",
-             "$\\theta$ Coverage" = "θ Coverage", "$\\xi$ Coverage" = "ξ Coverage") %>%
-  fmt_number(
-    columns = 3:12,
-    decimals = 4)
-
-### Create table of metrics with bias and variance (OLD VERSION)
-metrics_summ <- as.data.frame(matrix(NA, nrow=6, ncol=12))
-colnames(metrics_summ) <- c("Sampling Scheme", "Model", 
-                        "K Bias^2", "$\\pi$ Bias^2", "$\\pi$ CI width", 
-                        "$\\theta$ Bias^2", "$\\theta$ CI width", 
-                        "$\\xi$ Bias^2", "$\\xi$ CI width", 
-                        "$\\pi$ Coverage","$\\theta$ Coverage", "$\\xi$ Coverage")
-metrics_summ[, 1] <- c(rep("SRS", 3), rep("Stratified", 3))
-metrics_summ[, 2] <- rep(c("Unwtd(sOFMM)", "Wtd(wsOFMM)", "Unsup(wOFMM)"), 2)  ## latent versions
-output_inds <- 1:7
-metrics_summ[1, -c(1,2)] <- c(metrics_SRS_s[output_inds])
-metrics_summ[2, -c(1,2)] <- c(metrics_SRS_ws[output_inds])
-metrics_summ[3, -c(1,2)] <- c(metrics_SRS_unsup[output_inds])
-metrics_summ[4, -c(1,2)] <- c(metrics_Strat_s[output_inds], 
-                              mean(metrics_Strat_s$pi_cover_avg), 
-                              mean(metrics_Strat_s$theta_cover_avg),
-                              mean(metrics_Strat_s$xi_cover_avg))
-metrics_summ[5, -c(1,2)] <- c(metrics_Strat_ws[output_inds], 
-                              mean(metrics_Strat_ws$pi_cover_avg), 
-                              mean(metrics_Strat_ws$theta_cover_avg),
-                              mean(metrics_Strat_ws$xi_cover_avg))
-metrics_summ[6, -c(1,2)] <- c(metrics_Strat_unsup[output_inds], 
-                              mean(metrics_Strat_unsup$pi_cover_avg), 
-                              mean(metrics_Strat_unsup$theta_cover_avg),
-                              mean(metrics_Strat_unsup$xi_cover_avg))
-metrics_summ %>% 
-  gt(caption = paste0(scen_samp, " scenario metrics of posterior parameter estimates, averaged over 100 samples")) %>%
-  cols_label("$\\pi$ Bias^2" = "π Bias^2", "$\\theta$ Bias^2" = "θ Bias^2", 
-             "$\\xi$ Bias^2" = "ξ Bias^2",
-             "$\\pi$ CI width" = "π CI width", "$\\theta$ CI width" = "θ CI width", 
-             "$\\xi$ CI width" = "ξ CI width", "$\\pi$ Coverage" = "π Coverage",
-             "$\\theta$ Coverage" = "θ Coverage", "$\\xi$ Coverage" = "ξ Coverage") %>%
-  fmt_number(
-    columns = 3:12,
-    decimals = 4)
-  # fmt_scientific(
-  #   columns = 3:9,
-  #   decimals = 3
-  # ) 
 
 #================ COVERAGE PLOTS ===============================================
 plot_pi_cov <- data.frame(
@@ -930,7 +538,7 @@ for (i in 1:length(wrong_K)) {
   print(paste0("i: ", i, ", K: ", length(analysis$pi_med)))
   
   MCMC_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
-                     "_samp", samp_n, ".RData")  # Output file
+                      "_samp", samp_n, ".RData")  # Output file
   load(MCMC_path)
   K_med <- res_MCMC$post_MCMC_out$K_med
   print(paste0("K_med: ", K_med))
@@ -1039,7 +647,7 @@ for (k in 1:3) {
   for (s in 1:2) {
     print(paste0("k: ", k, ", s: ", s))
     print(sum(sim_pop$Y_data==1 & sim_pop$true_Si==s & 
-                                sim_pop$true_Ci==k))
+                sim_pop$true_Ci==k))
     print(sum(sim_pop$true_Si==s & sim_pop$true_Ci==k))
     print("sample")
     print(sum(sim_samp$Y_data==1 & sim_samp$true_Si==s & 
@@ -1051,13 +659,4 @@ plot(MCMC_out$pi_MCMC[,1], type = "l", ylim=c(0.1, 0.7))
 lines(MCMC_out$pi_MCMC[,2], col = "red")
 lines(MCMC_out$pi_MCMC[,3], col = "blue")
 
-
-#================ Marginal effect of C on Y ====================================
-# Load simulated population data
-pop_data_path <- paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter", 
-                        iter_pop, ".RData") 
-load(pop_data_path)
-
-as.matrix(get_marg_eff(sim_pop$true_xi, sim_pop$true_pi_s, sim_pop$true_pi, 
-                       sim_pop$N_s, sim_pop$N), ncol = 1)
 
