@@ -24,12 +24,85 @@ library(Rcpp)
 library(RcppArmadillo)
 library(RcppTN)
 
+#========================= Helper functions ====================================
+# `process_data` reads in data and converts it into a processed format for the 
+# 'WSOLCA_app_covs_Rcpp' function
+# Input:
+#   data_path: String specifying path for input data
+# Output: list 'data_vars' containing the following objects:
+#   x_mat
+#   y_all
+#   s_all
+#   clus_id_all
+#   sample_wt
+#   V
+process_data <- function(data_path) {
+  # Read in data
+  data_vars_all <- read.csv(data_path)
+  # Filter for low-income women and complete cases: n = 3028
+  data_vars_f_low <- data_vars_all %>% 
+    filter(sex == "female", poverty == "At or Below") %>%
+    select(SEQN, RIDAGEYR, racethnic, EDU, SDMVPSU, SDMVSTRA, obese, smoker,
+           bp.flag, sumrisk, dietwt8yr, bb1:bb29) %>% na.omit()
+  
+  # Obtain exposure and outcome data
+  x_mat <- as.matrix(data_vars_f_low %>% select(bb1:bb29))
+  y_all <- data_vars_f_low$bp.flag
+  
+  # Get stratum IDs
+  s_all <- data_vars_f_low$SDMVSTRA  # 59 strata
+  # Create unique PSU IDs using stratum IDs
+  max_psus <- max(data_vars_f_low$SDMVPSU)
+  clus_id_all <- (s_all - 1) * max_psus + data_vars_f_low$SDMVPSU
+
+  # Other covariates to be included in the probit model 
+  other_covs <- data_vars_f_low %>% 
+    select(RIDAGEYR, racethnic, EDU, smoker) %>%
+    mutate(racethnic = factor(racethnic),
+           educ = factor(EDU),
+           smoker = factor(smoker), .keep = "unused") %>%
+    mutate(
+      racethnic = case_when(
+        racethnic == "NH White" ~ 1,
+        racethnic == "NH Black" ~ 2,
+        racethnic == "NH Asian" ~ 3,
+        racethnic == "Mexican" | racethnic == "Other Hispanic" ~ 4,
+        racethnic == "Other/Mixed" ~ 5),
+      educ = case_when(
+        educ == "At least some college" ~ 1,
+        educ == "HS/GED" ~ 2,
+        educ == "less than HS" ~ 3),
+      age_cat = case_when(
+        20 <= RIDAGEYR & RIDAGEYR <= 29 ~ 1,
+        30 <= RIDAGEYR & RIDAGEYR <= 39 ~ 2,
+        40 <= RIDAGEYR & RIDAGEYR <= 49 ~ 3,
+        50 <= RIDAGEYR & RIDAGEYR <= 59 ~ 4,
+        60 <= RIDAGEYR & RIDAGEYR <= 69 ~ 5,
+       RIDAGEYR >= 70 ~ 6), .keep = "unused")
+
+  # Regression design matrix without class assignment, nxq
+  # Exclude stratifying variable as well
+  V <- as.matrix(other_covs %>% 
+    dummy_cols(select_columns = c("age_cat", "racethnic", "educ", "smoker"), 
+               remove_selected_columns = TRUE))
+  
+  # Get sampling weights
+  sample_wt <- data_vars_f_low$dietwt8yr
+  
+  # Return processed data
+  data_vars <- list(x_mat = x_mat, y_all = y_all, s_all = s_all, 
+                         clus_id_all = clus_id_all, sample_wt = sample_wt, 
+                         V = V)
+  return(data_vars)
+}
+
+
 #========================= MAIN FUNCTION =======================================
 
 # 'WSOLCA_app_covs_Rcpp' runs the WSOLCA model with covariates and saves and 
 # returns results
 # Inputs:
-#   data_path: String path for input dataset
+#   data_vars: Output list from "process_data" function 
 #   res_path: String path for output file
 #   adj_path: String path for adjusted output file
 #   stan_path: String path for Stan file
@@ -42,45 +115,24 @@ library(RcppTN)
 #   runtime: Total runtime for model
 #   data_vars: Input dataset
 # Also saved 'analysis' MCMC output prior to variance adjustment
-WSOLCA_app_covs_Rcpp <- function(data_path, res_path, adj_path, stan_path, 
+WSOLCA_app_covs_Rcpp <- function(data_vars, res_path, adj_path, stan_path, 
                             save_res = TRUE, n_runs, burn, thin) {
   start_time <- Sys.time()
   
   #================= Read in data ==============================================
   print("Read in data")
-  data_vars_all <- read.csv(data_path)
-  # Filter for low-income women and complete cases: n = 3028
-  data_vars_f_low <- data_vars_all %>% 
-    filter(sex == "female", poverty == "At or Below") %>%
-    select(SEQN, RIDAGEYR, racethnic, EDU, SDMVPSU, SDMVSTRA, obese, smoker,
-           bp.flag, sumrisk, dietwt8yr, bb1:bb29) %>% na.omit()
-  
-  # Obtain data
-  x_mat <- as.matrix(data_vars_f_low %>% select(bb1:bb29))
-  y_all <- data_vars_f_low$bp.flag
-  s_all <- data_vars_f_low$SDMVPSU
-  s_mat <- dummy_cols(data.frame(s = factor(s_all)),  # Stratifying variable as dummy columns
-                      remove_selected_columns = TRUE)
-  other_covs <- data_vars_f_low %>% 
-    select(RIDAGEYR, racethnic, EDU, smoker) %>%
-    mutate(age_cent = RIDAGEYR - mean(RIDAGEYR, na.rm = TRUE),
-           racethnic = dummy_cols(data.frame(racethnic = factor(racethnic)),
-                                  remove_selected_columns = TRUE),
-           EDU = dummy_cols(data.frame(EDU = factor(EDU)),
-                            remove_selected_columns = TRUE),
-           smoker = dummy_cols(data.frame(smoker = factor(smoker)),
-                               remove_selected_columns = TRUE))
-  # Regression design matrix without class assignment, nxq
-  V <- as.matrix(cbind(s_mat, other_covs))                
-  sample_wt <- data_vars_f_low$dietwt8yr
-  data_vars <- data.frame(x_mat, y_all, s_all, sample_wt)
+  x_mat <- data_vars$x_mat
+  y_all <- data_vars$y_all
+  s_all <- data_vars$s_all
+  clus_id_all <- data_vars$clus_id_all
+  sample_wt <- data_vars$sample_wt
+  V <- data_vars$V
   
   # Obtain dimensions
   n <- dim(x_mat)[1]        # Number of individuals
   p <- dim(x_mat)[2]        # Number of exposure items
   d <- max(apply(x_mat, 2,  # Number of exposure categories 
                  function(x) length(unique(x))))  # CHANGE TO ADAPT TO ITEM
-  S <- length(unique(s_all))           # Number of strata
   q <- ncol(V)                         # Number of regression covariates excluding class assignment
   
   # Obtain normalized weights
@@ -186,7 +238,7 @@ WSOLCA_app_covs_Rcpp <- function(data_path, res_path, adj_path, stan_path,
   analysis_adj <- var_adjust(mod_stan = mod_stan, analysis = analysis, 
                              K = analysis$K_red, p = p, d = d, n = n, q = q, 
                              x_mat = x_mat, y_all = y_all, V = V, w_all = w_all, 
-                             s_all = s_all)
+                             s_all = s_all, clus_id_all = clus_id_all)
   
   runtime <- Sys.time() - start_time
   
@@ -212,10 +264,9 @@ model_dir <- "Model_Code/"
 model <- "wsOFMM"
 
 # Define paths
-# REMOVE ITER_POP
 data_path <- paste0(wd, data_dir, "nhanesallage_frscores1118.csv")   # Input dataset
 res_path <- paste0(wd, res_dir, model, "_results_nhanes", ".RData")  # Output file
-adj_path <- paste0(wd, res_dir, model, "_results_adj_nhanes", ".RData")  # Adjusted output file
+adj_path <- paste0(wd, res_dir, model, "_results_covs_adj_nhanes", ".RData")  # Adjusted output file
 stan_path <- paste0(wd, model_dir, "WSOLCA_main.stan")  # Stan file
 
 # Check if results already exist
@@ -227,12 +278,14 @@ if (already_done) {
   source(paste0(wd, model_dir, "helper_functions.R"))
   # Source Rcpp functions
   Rcpp::sourceCpp(paste0(wd, model_dir, "main_Rcpp_functions.cpp"))
+  # Read and process data
+  data_vars <- process_data(data_path = data_path)
   # Set seed
   set.seed(20230225)
   print(paste0("Running WSOLCA_application..."))
-  results_adj <- WSOLCA_app_Rcpp(data_path = data_path, res_path = res_path,
+  results_adj <- WSOLCA_app_covs_Rcpp(data_vars = data_vars, res_path = res_path,
                                  adj_path = adj_path, stan_path = stan_path, 
-                                 save_res = TRUE, n_runs = 25000, burn = 15000, 
+                                 save_res = TRUE, n_runs = 20000, burn = 10000, 
                                  thin = 5)
   print(paste0("Runtime: ", results_adj$runtime))
 }
@@ -338,8 +391,8 @@ lcmodel %>%
 # axis.text.y = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 
-# # Testing
+# Testing
 # results_adj <- WSOLCA_app_Rcpp(data_path = data_path, res_path = res_path,
-#                                 adj_path = adj_path, stan_path = stan_path, 
-#                                 save_res = FALSE, n_runs = 60, burn = 30, 
+#                                 adj_path = adj_path, stan_path = stan_path,
+#                                 save_res = FALSE, n_runs = 60, burn = 30,
 #                                 thin = 3)

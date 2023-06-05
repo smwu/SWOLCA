@@ -414,10 +414,27 @@ get_metrics <- function(pop_data_path, sim_data_path, sim_res_path, model,
       analysis <- res$analysis_adj
       names(analysis) <- str_replace_all(names(analysis), "_adj", "")
       runtime_all[l] <- res$runtime
-    } else {  # sOFMM and wOFMM models
+    } else if (model == "sOFMM") { 
       load(sim_res_path_full)
       analysis <- res$analysis
       runtime_all[l] <- res$runtime
+    } else if (model == "wOFMM") {
+      load(sim_res_path_full)
+      analysis <- res$analysis
+      runtime_all[l] <- res$runtime
+      n <- length(sim_samp$true_Si)
+      ##### CHECK THIS!!!!!!!!!!!!!!
+      Phi_med <- numeric(n)                    # Initialize individual outcome probabilities
+      # Calculate posterior class membership, p(c_i=k|-), for each class k
+      for (i in 1:n) {
+        if (marg) {
+          Phi_med[i] <- analysis$xi_med[analysis$c_all[i], ]
+        }
+        Phi_med[i] <- analysis$xi_med[analysis$c_all[i], sim_data$true_Si[i]]
+      }
+      analysis$Phi_med <- Phi_med
+    } else {
+      stop("Error: model must be one of 'wsOFMM', 'sOFMM', or 'wOFMM'")
     }
     
     S <- length(unique(sim_samp$true_Si))  # Number of strata
@@ -780,45 +797,49 @@ save_scen_metrics <- function(scen_pop, scen_samp, WSOLCA = TRUE, SOLCA = TRUE,
 # Inputs:
 #   wd: String specifying working directory
 #   analysis_dir: String specifying analysis directory where summaries are saved
+#   format: String specifying kable table format. Must be "latex", "html", 
+# "pipe", "simple", or "rst". Default is "latex"
 # Output: Formatted table with absolute bias, CI width, and coverage
-create_table1 <- function(wd, analysis_dir) {
+create_table1 <- function(wd, analysis_dir, format) {
   metrics_summ <- as.data.frame(matrix(NA, nrow = 9, ncol = 12))
   colnames(metrics_summ) <- c("Sampling Scheme", "Model", 
-                              "$K$ Abs Bias", "$\\pi$ Abs Bias", "$\\pi$ CI Width", 
-                              "$\\theta$ Abs Bias", "$\\theta$ CI Width", 
-                              "$\\xi$ Abs Bias", "$\\xi$ CI Width", 
+                              "$K$ Abs Bias", "$\\pi$ Abs Bias",  
+                              "$\\theta$ Abs Bias", "$\\xi$ Abs Bias", 
+                              "$\\pi$ CI Width", "$\\theta$ CI Width", "$\\xi$ CI Width", 
                               "$\\pi$ Coverage","$\\theta$ Coverage", "$\\xi$ Coverage")
   metrics_summ[, 1] <- c(rep("SRS", 3), rep("Stratified", 3), rep("Stratified Cluster", 3))
-  metrics_summ[, 2] <- rep(c("SOLCA", "WSOLCA", "WOLCA"), 3)  
-  output_inds <- 1:7
+  metrics_summ[, 2] <- rep(c("SOLCA", "WOLCA", "WSOLCA"), 3)  
+  # output_inds <- 1:7
+  output_inds <- c(1, 2, 4, 6, 3, 5, 7)
   # SRS results
   load(paste0(wd, analysis_dir, "metrics_scen", 111213, ".RData"))
   metrics_summ[1, -c(1,2)] <- c(metrics_all$metrics_s[output_inds], 
                                 mean(metrics_all$metrics_s$pi_cover_avg), 
                                 mean(metrics_all$metrics_s$theta_cover_avg),
                                 mean(metrics_all$metrics_s$xi_cover_avg))
-  metrics_summ[2, -c(1,2)] <- c(metrics_all$metrics_ws[output_inds], 
-                                mean(metrics_all$metrics_ws$pi_cover_avg), 
-                                mean(metrics_all$metrics_ws$theta_cover_avg),
-                                mean(metrics_all$metrics_ws$xi_cover_avg))
-  metrics_summ[3, -c(1,2)] <- c(metrics_all$metrics_unsup[output_inds], 
+  metrics_summ[2, -c(1,2)] <- c(metrics_all$metrics_unsup[output_inds], 
                                 mean(metrics_all$metrics_unsup$pi_cover_avg), 
                                 mean(metrics_all$metrics_unsup$theta_cover_avg),
                                 mean(metrics_all$metrics_unsup$xi_cover_avg))
+  metrics_summ[3, -c(1,2)] <- c(metrics_all$metrics_ws[output_inds], 
+                                mean(metrics_all$metrics_ws$pi_cover_avg), 
+                                mean(metrics_all$metrics_ws$theta_cover_avg),
+                                mean(metrics_all$metrics_ws$xi_cover_avg))
+
   # Stratified results
   load(paste0(wd, analysis_dir, "metrics_scen", 111211, ".RData"))
   metrics_summ[4, -c(1,2)] <- c(metrics_all$metrics_s[output_inds], 
                                 mean(metrics_all$metrics_s$pi_cover_avg), 
                                 mean(metrics_all$metrics_s$theta_cover_avg),
                                 mean(metrics_all$metrics_s$xi_cover_avg))
-  metrics_summ[5, -c(1,2)] <- c(metrics_all$metrics_ws[output_inds], 
-                                mean(metrics_all$metrics_ws$pi_cover_avg), 
-                                mean(metrics_all$metrics_ws$theta_cover_avg),
-                                mean(metrics_all$metrics_ws$xi_cover_avg))
-  metrics_summ[6, -c(1,2)] <- c(metrics_all$metrics_unsup[output_inds], 
+  metrics_summ[5, -c(1,2)] <- c(metrics_all$metrics_unsup[output_inds], 
                                 mean(metrics_all$metrics_unsup$pi_cover_avg), 
                                 mean(metrics_all$metrics_unsup$theta_cover_avg),
                                 mean(metrics_all$metrics_unsup$xi_cover_avg))
+  metrics_summ[6, -c(1,2)] <- c(metrics_all$metrics_ws[output_inds], 
+                                mean(metrics_all$metrics_ws$pi_cover_avg), 
+                                mean(metrics_all$metrics_ws$theta_cover_avg),
+                                mean(metrics_all$metrics_ws$xi_cover_avg))
   
   # Stratified cluster results
   load(paste0(wd, analysis_dir, "metrics_scen", 111212, ".RData"))
@@ -826,17 +847,17 @@ create_table1 <- function(wd, analysis_dir) {
                                 mean(metrics_all$metrics_s$pi_cover_avg), 
                                 mean(metrics_all$metrics_s$theta_cover_avg),
                                 mean(metrics_all$metrics_s$xi_cover_avg))
-  metrics_summ[8, -c(1,2)] <- c(metrics_all$metrics_ws[output_inds], 
-                                mean(metrics_all$metrics_ws$pi_cover_avg), 
-                                mean(metrics_all$metrics_ws$theta_cover_avg),
-                                mean(metrics_all$metrics_ws$xi_cover_avg))
-  metrics_summ[9, -c(1,2)] <- c(metrics_all$metrics_unsup[output_inds], 
+  metrics_summ[8, -c(1,2)] <- c(metrics_all$metrics_unsup[output_inds], 
                                 mean(metrics_all$metrics_unsup$pi_cover_avg), 
                                 mean(metrics_all$metrics_unsup$theta_cover_avg),
                                 mean(metrics_all$metrics_unsup$xi_cover_avg))
+  metrics_summ[9, -c(1,2)] <- c(metrics_all$metrics_ws[output_inds], 
+                                mean(metrics_all$metrics_ws$pi_cover_avg), 
+                                mean(metrics_all$metrics_ws$theta_cover_avg),
+                                mean(metrics_all$metrics_ws$xi_cover_avg))
   
   metrics_summ %>% 
-    kbl(digits = 4, align = "rrrrrrrrrrrr", booktabs = TRUE, format = "latex",
+    kbl(digits = 4, align = "rrrrrrrrrrrr", booktabs = TRUE, format = format,
         caption = "Summary of mean absolute bias, 95% credible interval width, and coverage for simulations based on posterior samples.") %>%
     kable_classic() %>%
     kable_styling(full_width = FALSE)
@@ -931,14 +952,14 @@ plot_rmse_boxplot <- function(wd, analysis_dir, save_names, scenarios,
     save_name <- save_names[i]
     load(paste0(wd, analysis_dir, save_name, scen_samp, ".RData"))
     plot_df[, i] <- c(sqrt(metrics_all$metrics_s[[param_dist]]), 
-                      sqrt(metrics_all$metrics_ws[[param_dist]]),
-                      sqrt(metrics_all$metrics_unsup[[param_dist]]))
+                      sqrt(metrics_all$metrics_unsup[[param_dist]]),
+                      sqrt(metrics_all$metrics_ws[[param_dist]]))
   }
   colnames(plot_df) <- scen_names
   # Add column indicating model
-  plot_df$Model <- factor(c(rep("SOLCA", times=L), rep("WSOLCA", times=L), 
-                            rep("WOLCA", times=L)), 
-                          levels = c("SOLCA", "WSOLCA", "WOLCA"))
+  plot_df$Model <- factor(c(rep("SOLCA", times=L), rep("WOLCA", times=L), 
+                            rep("WSOLCA", times=L)), 
+                          levels = c("SOLCA", "WOLCA", "WSOLCA"))
   
   # Create a single Sampling column by gathering sampling columns together
   # Dimensions (9*L)x3 with columns Model, overall_name, MSE
@@ -950,14 +971,325 @@ plot_rmse_boxplot <- function(wd, analysis_dir, save_names, scenarios,
   # Create grouped boxplot of mse values for the scenarios
   p <- plot_df %>% 
     ggplot(aes_string(x = overall_name, y = "RMSE", fill = "Model")) + 
-    theme_bw() + 
+    theme_bw() + scale_fill_brewer(palette="Set2") + 
     geom_boxplot() + 
     ylim(lower_lim, upper_lim) + 
-    xlab({{xlab}}) + ylab({{ylab}})
+    xlab({{xlab}}) + ylab({{ylab}})  + 
+    theme(axis.text=element_text(size=12),
+          axis.title=element_text(size=12))
   
   return(p)
 }
 
+#================== Plot parameters across iterations ==========================
+# `theta_mode_plot` plots the modal theta patterns for each class across all 
+# simulation iterations, for a given model
+# Inputs: 
+#   theta_plot_data: Modal patterns
+#   x_label: x-axis label
+# Output: Returns a ggplot object that plots the modal pattern with text 
+# displaying the average mode across iterations
+theta_mode_plot <- function(theta_plot_data, x_label) {
+  p <- dim(theta_plot_data)[1]
+  K <- dim(theta_plot_data)[2]
+  Item <- factor(as.character(1:p), levels = as.character(p:1))
+  theta_plot <- data.frame(theta_plot_data, Item)
+  colnames(theta_plot) <- c(1:K, "Item")
+  theta_plot <- theta_plot %>% gather("Class", "Level", 1:K) 
+  patterns <- ggplot(theta_plot, aes(x=Class, y=Item, fill=Level)) + 
+    theme_classic() +
+    xlab(x_label) +
+    geom_tile(color="gray") + 
+    geom_text(aes(label = round(Level,2)), col="white", cex=2.5) +
+    scale_fill_gradient(trans = "reverse")
+  return(patterns)
+}
+
+# `plot_theta_patterns` plots the modal theta patterns for each class across
+# all simulation iterations, comparing all models to the true patterns
+# Inputs: 
+#   wd: String specifying working directory
+#   data_dir: String specifying directory where data are saved
+#   analysis_dir: String specifying analysis directory where summaries are saved
+#   scen_pop: Four-digit population scenario
+#   scen_samp: Six-digit sample scenario
+#   scen_name: String with main file name with saved metrics
+# Output: Plot with the modal patterns for all models beside each other,
+# with text displaying the average mode across iterations
+plot_theta_patterns <- function(wd, data_dir, analysis_dir, 
+                                scen_pop, iter_pop, scen_samp, scen_name) {
+  # Load true population data
+  load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
+  # Obtain true observed population parameters
+  true_params <- get_true_params(sim_pop = sim_pop)  
+  
+  # Load simulated sample data
+  load(paste0(wd, analysis_dir, scen_name, scen_samp, ".RData"))
+  
+  p_true <- theta_mode_plot(sim_pop$true_global_patterns, "True Classes") + 
+    guides(fill = guide_legend(reverse = FALSE)) +
+    labs(fill = "Modal θ Level")
+  p_SOLCA <- theta_mode_plot(metrics_all$metrics_s$theta_mode, "SOLCA Classes")
+  p_WOLCA <- theta_mode_plot(metrics_all$metrics_unsup$theta_mode, "WOLCA Classes")
+  p_WSOLCA <- theta_mode_plot(metrics_all$metrics_ws$theta_mode, "WSOLCA Classes")
+  p_comb <- ggarrange(p_true, 
+                      p_SOLCA + theme(axis.title.y = element_blank()), 
+                      p_WOLCA + theme(axis.title.y = element_blank()), 
+                      p_WSOLCA + theme(axis.title.y = element_blank()),
+                      nrow = 1, common.legend = TRUE, legend = "top")
+  return(p_comb)
+}
+
+# plot pi
+plot_pi_patterns <- function(wd, data_dir, analysis_dir, y_lim = c(0,1),
+                             scen_pop, iter_pop, scen_samp, scen_name) {
+  # Load true population data
+  load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
+  # Obtain true observed population parameters
+  true_params <- get_true_params(sim_pop = sim_pop)  
+  
+  # Load simulated sample data
+  load(paste0(wd, analysis_dir, scen_name, scen_samp, ".RData"))
+  L <- length(metrics_all$metrics_ws$K_dist)
+  
+  pi_plot_data <- as.data.frame(rbind(metrics_all$metrics_s$pi_all,
+                                      metrics_all$metrics_unsup$pi_all,
+                                      metrics_all$metrics_ws$pi_all))
+  colnames(pi_plot_data) <- 1:ncol(pi_plot_data)
+  pi_plot_data$Model <- c(rep("SOLCA", times=L), rep("WOLCA", times=L),
+                          rep("WSOLCA", times=L))
+  pi_plot_data <- pi_plot_data %>% gather("pi_component", "value", -Model)
+  ggplot(pi_plot_data, aes(x=pi_component, y=value, fill=Model)) +
+    theme_bw() + scale_fill_brewer(palette="RdYlBu") + 
+    geom_boxplot() +
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_pi[1],
+                             yend=true_params$true_pi[1]),color="#d7191c") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_pi[2],
+                             yend=true_params$true_pi[2]),color="#d7191c") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_pi[3],
+                             yend=true_params$true_pi[3]),color="#d7191c") +
+    # ggtitle(paste0("Parameter estimation for π across 100 samples")) + 
+    xlab("Latent Class") + ylab("π Value") + ylim(y_lim[1],y_lim[2])
+}
+
+# plot xi
+plot_xi_patterns <- function(wd, data_dir, analysis_dir, y_lim = c(0,1),
+                             scen_pop, iter_pop, scen_samp, scen_name) {
+  # Load true population data
+  load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
+  # Obtain true observed population parameters
+  true_params <- get_true_params(sim_pop = sim_pop)  
+  
+  # Load simulated sample data
+  load(paste0(wd, analysis_dir, scen_name, scen_samp, ".RData"))
+  L <- length(metrics_all$metrics_ws$K_dist)
+  
+  xi_plot_data <- as.data.frame(rbind(t(apply(metrics_all$metrics_s$xi_all, 1, c)),
+                                      t(apply(metrics_all$metrics_unsup$xi_all, 1, c)),
+                                      t(apply(metrics_all$metrics_ws$xi_all, 1, c))))
+  colnames(xi_plot_data) <- c("S=1\nC=1", "S=1\nC=2", "S=1\nC=3",
+                              "S=2\nC=1", "S=2\nC=2", "S=2\nC=3")
+  xi_plot_data$Model <- c(rep("SOLCA", times=L), rep("WOLCA", times=L),
+                          rep("WSOLCA", times=L))
+  xi_plot_data <- xi_plot_data %>% gather("xi_component", "value", -Model)
+  ggplot(xi_plot_data, aes(x=xi_component, y=value, fill=Model)) +
+    theme_bw() + scale_fill_brewer(palette="RdYlBu") + 
+    geom_boxplot() +
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_xi[1,1],
+                             yend=true_params$true_xi[1,1]),color="#d7191c") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_xi[2,1],
+                             yend=true_params$true_xi[2,1]),color="#d7191c") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_xi[3,1],
+                             yend=true_params$true_xi[3,1]),color="#d7191c") +
+    geom_segment(mapping=aes(x=3.5, xend=4.5, y=true_params$true_xi[1,2],
+                             yend=true_params$true_xi[1,2]),color="#d7191c") +
+    geom_segment(mapping=aes(x=4.5, xend=5.5, y=true_params$true_xi[2,2],
+                             yend=true_params$true_xi[2,2]),color="#d7191c") +
+    geom_segment(mapping=aes(x=5.5, xend=6.5, y=true_params$true_xi[3,2],
+                             yend=true_params$true_xi[3,2]),color="#d7191c") +
+    # ggtitle(paste0("Parameter estimation for ξ across 100 samples")) + 
+    xlab("Covariate Levels") + ylab("ξ Value") + ylim(y_lim[1],y_lim[2])
+}
+
+# Plot Phi
+plot_Phi_patterns <- function(wd, data_dir, analysis_dir, y_lim = c(0,1),
+                             scen_pop, iter_pop, scen_samp, scen_name) {
+  # Load true population data
+  load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
+  # Obtain true observed population parameters
+  true_params <- get_true_params(sim_pop = sim_pop)  
+  
+  # Load simulated sample data
+  load(paste0(wd, analysis_dir, scen_name, scen_samp, ".RData"))
+  L <- length(metrics_all$metrics_ws$K_dist)
+  
+  Phi_plot_data <- as.data.frame(rbind(pnorm(t(apply(metrics_all$metrics_s$xi_all, 1, c))),
+                                      pnorm(t(apply(metrics_all$metrics_unsup$xi_all, 1, c))),
+                                      pnorm(t(apply(metrics_all$metrics_ws$xi_all, 1, c)))))
+  colnames(Phi_plot_data) <- c("S=1\nC=1", "S=1\nC=2", "S=1\nC=3",
+                               "S=2\nC=1", "S=2\nC=2", "S=2\nC=3")
+  Phi_plot_data$Model <- c(rep("SOLCA", times=L), rep("WOLCA", times=L),
+                          rep("WSOLCA", times=L))
+  Phi_plot_data <- Phi_plot_data %>% gather("Phi_component", "value", -Model)
+  true_Phi <- true_params$true_Phi_mat
+  ggplot(Phi_plot_data, aes(x=Phi_component, y=value, fill=Model)) +
+    theme_bw() + scale_fill_brewer(palette="RdYlBu") + 
+    geom_boxplot() +
+    ylab("P(Y=1|S,C)") +
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_Phi[1,1],
+                             yend=true_Phi[1,1]),color="#d7191c") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_Phi[2,1],
+                             yend=true_Phi[2,1]),color="#d7191c") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_Phi[3,1],
+                             yend=true_Phi[3,1]),color="#d7191c") +
+    geom_segment(mapping=aes(x=3.5, xend=4.5, y=true_Phi[1,2],
+                             yend=true_Phi[1,2]),color="#d7191c") +
+    geom_segment(mapping=aes(x=4.5, xend=5.5, y=true_Phi[2,2],
+                             yend=true_Phi[2,2]),color="#d7191c") +
+    geom_segment(mapping=aes(x=5.5, xend=6.5, y=true_Phi[3,2],
+                             yend=true_Phi[3,2]),color="#d7191c") +
+    # ggtitle(paste0("Parameter estimation for outcome probabilities across 100 samples")) + 
+      xlab("Covariate Levels") + ylab("Outcome Probability") + ylim(y_lim[1],y_lim[2])
+}
+
+#============== Plot parameters, by latent class, across sampling designs ======
+# `plot_pi_samp` plots pi values across iterations for the three latent classes
+# as a grouped boxplot for the three models, and facetted by sampling design
+# Inputs:
+#   wd: String specifying working directory
+#   analysis_dir: String specifying analysis directory where summaries are saved
+#   scen_pop: 4-digit number specifying population scenario
+#   iter_pop: Number specifying population iteration. Default is 1
+# Output: ggplot plot object with grouped boxplot of pis for the three models
+plot_pi_samp <- function(wd, analysis_dir, scen_pop, iter_pop = 1) {
+  
+  # Load true population data
+  load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
+  # Obtain true observed population parameters
+  true_params <- get_true_params(sim_pop = sim_pop)
+  
+  # Load saved metrics
+  load(paste0(wd, analysis_dir, "metrics_scen", 111213, ".RData"))
+  metrics_SRS_s <- metrics_all$metrics_s
+  metrics_SRS_ws <- metrics_all$metrics_ws
+  metrics_SRS_unsup <- metrics_all$metrics_unsup
+  load(paste0(wd, analysis_dir, "metrics_scen", 111211, ".RData"))
+  metrics_Strat_s <- metrics_all$metrics_s
+  metrics_Strat_ws <- metrics_all$metrics_ws
+  metrics_Strat_unsup <- metrics_all$metrics_unsup
+  load(paste0(wd, analysis_dir, "metrics_scen", 111212, ".RData"))
+  metrics_Clus_s <- metrics_all$metrics_s
+  metrics_Clus_ws <- metrics_all$metrics_ws
+  metrics_Clus_unsup <- metrics_all$metrics_unsup
+  
+  # Create plot data
+  L <- length(metrics_SRS_ws$K_dist)
+  pi_plot_data <- as.data.frame(rbind(metrics_SRS_s$pi_all,
+                                      metrics_Strat_s$pi_all,
+                                      metrics_Clus_s$pi_all,
+                                      metrics_SRS_unsup$pi_all,
+                                      metrics_Strat_unsup$pi_all,
+                                      metrics_Clus_unsup$pi_all,
+                                      metrics_SRS_ws$pi_all,
+                                      metrics_Strat_ws$pi_all,
+                                      metrics_Clus_ws$pi_all))
+  colnames(pi_plot_data) <- 1:ncol(pi_plot_data)
+  pi_plot_data$Model <- c(rep("SOLCA", times=3*L), 
+                          rep("WOLCA", times=3*L),
+                          rep("WSOLCA", times=3*L))
+  pi_plot_data$Sampling <- factor(rep(c("SRS", "Stratified", "Stratified Cluster"), 
+                                      each = L, times = 3),
+                                  levels = c("SRS", "Stratified", 
+                                             "Stratified Cluster"))
+  pi_plot_data <- pi_plot_data %>% 
+    gather("pi_component", "value", -c(Model, Sampling))
+  
+  # Create and return plot
+  gg <- ggplot(pi_plot_data, aes(x=pi_component, y=value, fill=Model)) +
+    theme_bw() + scale_fill_brewer(palette="Set2") + 
+    geom_boxplot() +
+    facet_grid(~Sampling) + 
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_pi[1],
+                             yend=true_params$true_pi[1]),color="#d7191c") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_pi[2],
+                             yend=true_params$true_pi[2]),color="#d7191c") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_pi[3],
+                             yend=true_params$true_pi[3]),color="#d7191c") +
+    # ggtitle(paste0("Parameter estimation for π across 100 samples")) + 
+    xlab("Latent Class") + ylab("π Value") + 
+    theme(legend.position="top")  + 
+    theme(axis.text=element_text(size=12),
+          axis.title=element_text(size=12))
+  return(gg)
+}
+
+plot_xi_samp <- function(wd, analysis_dir, scen_pop, iter_pop = 1) {
+  # Load true population data
+  load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
+  # Obtain true observed population parameters
+  true_params <- get_true_params(sim_pop = sim_pop)
+  
+  # Load saved metrics
+  load(paste0(wd, analysis_dir, "metrics_scen", 111213, ".RData"))
+  metrics_SRS_s <- metrics_all$metrics_s
+  metrics_SRS_ws <- metrics_all$metrics_ws
+  metrics_SRS_unsup <- metrics_all$metrics_unsup
+  load(paste0(wd, analysis_dir, "metrics_scen", 111211, ".RData"))
+  metrics_Strat_s <- metrics_all$metrics_s
+  metrics_Strat_ws <- metrics_all$metrics_ws
+  metrics_Strat_unsup <- metrics_all$metrics_unsup
+  load(paste0(wd, analysis_dir, "metrics_scen", 111212, ".RData"))
+  metrics_Clus_s <- metrics_all$metrics_s
+  metrics_Clus_ws <- metrics_all$metrics_ws
+  metrics_Clus_unsup <- metrics_all$metrics_unsup
+  
+  # Create plot data
+  L <- length(metrics_SRS_ws$K_dist)
+  xi_plot_data <- as.data.frame(rbind(t(apply(metrics_SRS_s$xi_all, 1, c)),
+                                      t(apply(metrics_Strat_s$xi_all, 1, c)),
+                                      t(apply(metrics_Clus_s$xi_all, 1, c)),
+                                      t(apply(metrics_SRS_unsup$xi_all, 1, c)),
+                                      t(apply(metrics_Strat_unsup$xi_all, 1, c)),
+                                      t(apply(metrics_Clus_unsup$xi_all, 1, c)),
+                                      t(apply(metrics_SRS_ws$xi_all, 1, c)),
+                                      t(apply(metrics_Strat_ws$xi_all, 1, c)),
+                                      t(apply(metrics_Clus_ws$xi_all, 1, c))))
+  colnames(xi_plot_data) <- c("S=1\nC=1", "S=1\nC=2", "S=1\nC=3",
+                              "S=2\nC=1", "S=2\nC=2", "S=2\nC=3")
+  xi_plot_data$Model <- c(rep("SOLCA (Unweighted)", times=3*L), 
+                          rep("WOLCA (Two-Step)", times=3*L),
+                          rep("WSOLCA", times=3*L))
+  xi_plot_data$Sampling <- factor(rep(c("SRS", "Stratified", "Stratified Cluster"), 
+                                      each = L, times = 3),
+                                  levels = c("SRS", "Stratified", 
+                                             "Stratified Cluster"))
+  xi_plot_data <- xi_plot_data %>% 
+    gather("xi_component", "value", -c(Model, Sampling))
+  
+  # Create and return plot
+  gg <- ggplot(xi_plot_data, aes(x=xi_component, y=value, fill=Model)) +
+    theme_bw() + scale_fill_brewer(palette="Set2") + 
+    geom_boxplot() +
+    facet_grid(~Sampling) + 
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_xi[1,1],
+                             yend=true_params$true_xi[1,1]),color="#d7191c") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_xi[2,1],
+                             yend=true_params$true_xi[2,1]),color="#d7191c") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_xi[3,1],
+                             yend=true_params$true_xi[3,1]),color="#d7191c") +
+    geom_segment(mapping=aes(x=3.5, xend=4.5, y=true_params$true_xi[1,2],
+                             yend=true_params$true_xi[1,2]),color="#d7191c") +
+    geom_segment(mapping=aes(x=4.5, xend=5.5, y=true_params$true_xi[2,2],
+                             yend=true_params$true_xi[2,2]),color="#d7191c") +
+    geom_segment(mapping=aes(x=5.5, xend=6.5, y=true_params$true_xi[3,2],
+                             yend=true_params$true_xi[3,2]),color="#d7191c") +
+    # ggtitle(paste0("Parameter estimation for ξ across 100 samples")) + 
+    xlab("Covariate Levels") + ylab("ξ Value") + 
+    theme(legend.position="top")  + 
+    theme(axis.text=element_text(size=12),
+          axis.title=element_text(size=12))
+  return(gg)
+}
 
 #============== Create Appendix Tables =========================================
 
@@ -980,13 +1312,14 @@ create_app_tables <- function(wd, analysis_dir, save_names, scenarios,
   metrics_summ <- as.data.frame(matrix(NA, nrow = 3*length(scenarios), 
                                        ncol = 12))
   colnames(metrics_summ) <- c(overall_name, "Model", 
-                              "$K$ Abs Bias", "$\\pi$ Abs Bias", "$\\pi$ CI Width", 
-                              "$\\theta$ Abs Bias", "$\\theta$ CI Width", 
-                              "$\\xi$ Abs Bias", "$\\xi$ CI Width", 
+                              "$K$ Abs Bias", "$\\pi$ Abs Bias",  
+                              "$\\theta$ Abs Bias", "$\\xi$ Abs Bias", 
+                              "$\\pi$ CI Width", "$\\theta$ CI Width", "$\\xi$ CI Width", 
                               "$\\pi$ Coverage","$\\theta$ Coverage", "$\\xi$ Coverage")
   metrics_summ[, 1] <- rep(scen_names, each = 3)
-  metrics_summ[, 2] <- rep(c("SOLCA", "WSOLCA", "WOLCA"), num_scen)  
-  output_inds <- 1:7
+  metrics_summ[, 2] <- rep(c("SOLCA", "WOLCA", "WSOLCA"), num_scen)  
+  # output_inds <- 1:7
+  output_inds <- c(1, 2, 4, 6, 3, 5, 7)
   for (i in 1:num_scen) {
     scen_samp <- scenarios[i]
     save_name <- save_names[i]
@@ -996,14 +1329,14 @@ create_app_tables <- function(wd, analysis_dir, save_names, scenarios,
                                   mean(metrics_all$metrics_s$pi_cover_avg), 
                                   mean(metrics_all$metrics_s$theta_cover_avg),
                                   mean(metrics_all$metrics_s$xi_cover_avg))
-    metrics_summ[row_ind + 2, -c(1,2)] <- c(metrics_all$metrics_ws[output_inds], 
+    metrics_summ[row_ind + 2, -c(1,2)] <- c(metrics_all$metrics_unsup[output_inds], 
+                                            mean(metrics_all$metrics_unsup$pi_cover_avg), 
+                                            mean(metrics_all$metrics_unsup$theta_cover_avg),
+                                            mean(metrics_all$metrics_unsup$xi_cover_avg))
+    metrics_summ[row_ind + 3, -c(1,2)] <- c(metrics_all$metrics_ws[output_inds], 
                                   mean(metrics_all$metrics_ws$pi_cover_avg), 
                                   mean(metrics_all$metrics_ws$theta_cover_avg),
                                   mean(metrics_all$metrics_ws$xi_cover_avg))
-    metrics_summ[row_ind + 3, -c(1,2)] <- c(metrics_all$metrics_unsup[output_inds], 
-                                  mean(metrics_all$metrics_unsup$pi_cover_avg), 
-                                  mean(metrics_all$metrics_unsup$theta_cover_avg),
-                                  mean(metrics_all$metrics_unsup$xi_cover_avg))
   }
   
   metrics_summ %>% 

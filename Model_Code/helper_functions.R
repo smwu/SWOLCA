@@ -477,7 +477,7 @@ grad_par <- function(pwts, svydata, stan_mod, stan_data, par_stan, u_pars) {
 #   pred_class_probs: Matrix of individual posterior class probabilities from `analyze_results`. nx(K_red)
 #   loglik_med: Vector of final individual log-likelihoods from `analyze_results`. nx1
 var_adjust <- function(mod_stan, analysis, K, p, d, n, q, x_mat, y_all, V, w_all, 
-                       s_all, clus_id_all = clus_id_all) {
+                       s_all, clus_id_all) {
   #=============== Run Stan model ==============================================
   # Define data for Stan model
   alpha <- rep(1, K) / K            # Hyperparameter for prior for pi
