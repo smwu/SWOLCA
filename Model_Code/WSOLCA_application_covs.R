@@ -23,6 +23,7 @@ library(survey)
 library(Rcpp)
 library(RcppArmadillo)
 library(RcppTN)
+library(ggpubr)
 
 #========================= Helper functions ====================================
 # `process_data` reads in data and converts it into a processed format for the 
@@ -257,7 +258,7 @@ WSOLCA_app_covs_Rcpp <- function(data_vars, res_path, adj_path, stan_path,
 
 # Define directories
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
-# wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
+# wd <- "~/Documents/Github/wsOFMM/"
 data_dir <- "Data/"
 res_dir <- "Results/"
 model_dir <- "Model_Code/"
@@ -291,7 +292,34 @@ if (already_done) {
 }
 
 
-
+res_demog <- other_covs %>%
+  mutate(racethnic = factor(racethnic),
+         smoker = factor(smoker),
+         educ = factor(educ),
+         age_cat = factor(age_cat))
+res_demog$lc <- factor(res$analysis_adj$c_all)
+res_demog$y <- res$data_vars$y_all
+p_educ <- res_demog %>% ggplot(aes(x = educ, fill = lc, group = lc)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_bar(position = "dodge") + 
+  scale_x_discrete(labels = educ_categs) + 
+  ggtitle("Dietary Patterns by Education") + xlab("Education") + ylab("Count")
+p_age <- res_demog %>% ggplot(aes(x = age_cat, fill = lc, group = lc)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_bar(position = "dodge") + 
+  scale_x_discrete(labels = age_categs) + 
+  ggtitle("Dietary Patterns by Age") + xlab("Age") + ylab("Count")
+p_race <- res_demog %>% ggplot(aes(x = racethnic, fill = lc, group = lc)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_bar(position = "dodge") + 
+  scale_x_discrete(labels = racethnic_categs) + 
+  ggtitle("Dietary Patterns by Race/Ethnicity") + xlab("Race/Ethnicity") + ylab("Count")
+p_smoker <- res_demog %>% ggplot(aes(x = smoker, fill = lc, group = lc)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_bar(position = "dodge") + 
+  scale_x_discrete(labels = smoker_categs) + 
+  ggtitle("Dietary Patterns by Smoking Status") + xlab("Smoking Status") + ylab("Count")
+ggarrange(p_age, p_educ, p_race, p_smoker, ncol = 4, common.legend = TRUE)
 #===================== PLOT OUTPUT =============================================
 
 load(adj_path)
@@ -300,32 +328,128 @@ pi_red <- as.data.frame(res$analysis_adj$pi_red_adj)
 colnames(pi_red) <- paste0("pi_", 1:(dim(pi_red)[2]))
 pi_red_plot <- pi_red %>% pivot_longer(cols = everything(), names_to = "pi_comp", 
                                        values_to = "value")
-pi_red_plot %>% ggplot(aes(x = pi_comp, y = value)) + 
-  theme_bw() + 
+pi_red_plot %>% ggplot(aes(x = pi_comp, y = value, fill = pi_comp)) + 
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
   geom_boxplot() + 
   ggtitle(as.expression(bquote("Parameter estimation for "~pi~" "))) +
-  xlab("Pi Component") + ylab("Value")
+  xlab("Latent Class") + ylab(as.expression(bquote(~pi~"Value"))) + ylim(0,0.5)
 
 #### xi
 xi_dims <- dim(res$analysis_adj$xi_red_adj)
+K <- xi_dims[2]
 xi_red <- as.data.frame(t(matrix(res$analysis_adj$xi_red_adj, 
                                  nrow = xi_dims[1], 
-                                 ncol = xi_dims[2]*xi_dims[3])))
-xi_red$Class <- factor(c(rep(1:xi_dims[2], times = xi_dims[3])))
-xi_red$Stratum <- factor(c(rep(1:xi_dims[3], each = xi_dims[2])))
-xi_red_plot <- xi_red %>% pivot_longer(cols = -c("Class", "Stratum"), 
+                                 ncol = K*xi_dims[3])))
+xi_red$Class <- as.character(factor(c(rep(1:K, times = xi_dims[3]))))
+xi_red$Covariate_Level <- rep(c(age_categs, educ_categs, racethnic_categs, 
+                                smoker_categs), each = K)
+xi_red$Covariate <- c(rep("Age", K*6), rep("Education", K*3), 
+                      rep("Race/Ethnicity", K*5), rep("Smoking", K*2))
+xi_red_plot <- xi_red %>% pivot_longer(cols = -c("Class", "Covariate", "Covariate_Level"), 
                                        names_to = "iter", values_to = "value")
-xi_red_plot %>% ggplot(aes(x = Class, y = value, group = Class, fill = Class)) + 
+xi_red_plot %>% ggplot(aes(x = Covariate_Level, y = value, group = Class, fill = Class)) + 
   theme_bw() + 
   geom_boxplot() + 
-  facet_grid(.~Stratum, labeller = label_both) +
+  facet_grid(.~Covariate, labeller = label_both) +
   ggtitle(as.expression(bquote("Parameter estimation for "~xi~" ")))
+xi_red_plot %>% filter(Covariate == "Age") %>%
+  ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_boxplot()
+
+Phi_red_plot <- xi_red_plot %>%
+  mutate(value = pnorm(value))
+Phi_red_plot %>% filter(Covariate == "Age") %>%
+  ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_boxplot() + ylab("Hypertension Risk") + xlab("Age")
+Phi_red_plot %>% filter(Covariate == "Education") %>%
+  ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_boxplot() + ylab("Hypertension Risk") + xlab("Education")
+Phi_red_plot %>% filter(Covariate == "Race/Ethnicity") %>%
+  ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_boxplot() + ylab("Hypertension Risk") + xlab("Race/Ethnicity")
+Phi_red_plot %>% filter(Covariate == "Smoking") %>%
+  ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_boxplot() + ylab("Hypertension Risk") + xlab("Smoking Status")
 # xi_red_plot %>% ggplot(aes(x = Stratum, y = value, group = Stratum, 
 #                            fill = Stratum)) + 
 #   theme_bw() + 
 #   geom_boxplot() +
 #   facet_grid(.~Class, labeller = label_both) + 
 #   ggtitle(as.expression(bquote("Parameter estimation for "~xi~" ")))
+
+#### Phi with covariates
+df_Phi <- data.frame(Stratum = factor(res$data_vars$s_all), 
+                     Class = factor(res$analysis_adj$c_all), 
+                     Phi = res$analysis_adj$Phi_med)
+df_Phi %>% ggplot(aes(x = Class, y = Phi, col = Stratum, group = Stratum)) + 
+  theme_bw() + 
+  geom_point() + 
+  geom_line() + 
+  ylim(0, 0.5) + 
+  ggtitle("Parameter estimation for conditional outcome probabilities") +
+  ylab("P(Y=1|Class, Stratum)")
+
+age_categs <- c("[20,30)", "[30,40)", "[40,50)", "[50,60)", "[60,70)", ">=70")
+educ_categs <- c("Some College", "HS/GED", "<HS")
+racethnic_categs <- c("NH White", "NH Black", "NH Asian", "Hispanic", "Other/Mixed")
+smoker_categs <- c("No", "Yes")
+K <- length(res$analysis_adj$pi_med_adj)
+df_Phi <- data.frame(pnorm(res$analysis_adj$xi_med_adj))
+colnames(df_Phi) <- c(age_categs, educ_categs, racethnic_categs, smoker_categs)
+# colnames(df_Phi) <- colnames(res$data_vars$V)
+df_Phi$Class <- factor(1:4)
+df_Phi <- df_Phi %>% gather("Covariate_Level", "Phi", -Class)
+df_Phi$Covariate <- c(rep("Age", K*6), rep("Education", K*3), 
+                      rep("Race/Ethnicity", K*5), rep("Smoking", K*2))
+df_Phi %>% ggplot(aes(x = Covariate_Level, y = Phi, col = Class, group = Class)) +
+  theme_bw() + scale_color_brewer(palette="Set2") + 
+  geom_point() + geom_line() + 
+  facet_grid(~Covariate) +
+  ggtitle("Parameter estimation for conditional outcome probabilities") +
+  ylab("P(Y=1|-")
+p_age <- df_Phi %>% filter(Covariate == "Age") %>%
+  ggplot(aes(x = Covariate_Level, y = Phi, col = Class, group = Class)) +
+  theme_bw() + scale_color_brewer(palette="Set2") + 
+  geom_point() + geom_line() + ylim(0,1) + 
+  ylab("Hypertension Probability") + xlab("Age") +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10))
+p_educ <- df_Phi %>% filter(Covariate == "Education") %>%
+  ggplot(aes(x = Covariate_Level, y = Phi, col = Class, group = Class)) +
+  theme_bw() + scale_color_brewer(palette="Set2") + 
+  geom_point() + geom_line() +  ylim(0,1) + 
+  ylab("Hypertension Probability") + xlab("Education") +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10))
+p_race <- df_Phi %>% filter(Covariate == "Race/Ethnicity") %>%
+  ggplot(aes(x = Covariate_Level, y = Phi, col = Class, group = Class)) +
+  theme_bw() + scale_color_brewer(palette="Set2") + 
+  geom_point() + geom_line() +  ylim(0,1) + 
+  ylab("Hypertension Probability") + xlab("Race/Ethnicity") +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10))
+p_smoker <- df_Phi %>% filter(Covariate == "Smoking") %>%
+  ggplot(aes(x = Covariate_Level, y = Phi, col = Class, group = Class)) +
+  theme_bw() + scale_color_brewer(palette="Set2") + 
+  geom_point() + geom_line() +  ylim(0,1) + 
+  ylab("Hypertension Probability") + xlab("Smoking") +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10))
+ggarrange(p_age, p_educ, p_race, p_smoker, ncol = 4,
+          common.legend = TRUE, legend = "top", widths = c(1,0.7,1,0.5))
+
+df_Phi %>% ggplot(aes(x = Stratum, y = Phi, col = Class, group = Class)) + 
+  theme_bw() + 
+  geom_point() + 
+  geom_line() + 
+  ylim(0, 0.5) + 
+  ggtitle("Parameter estimation for conditional outcome probabilities") +
+  ylab("P(Y=1|Class, Stratum")
 
 #### Phi
 df_Phi <- data.frame(Stratum = factor(res$data_vars$s_all), 
@@ -366,11 +490,12 @@ mode_plot <- mode_item_probs %>% gather("Class", "Level", -Item)
 mode_plot %>% ggplot(aes(x=Class, y=factor(Item, levels = rev(food_items)), 
                          fill=Level)) + 
   geom_tile(color="black") + 
-  geom_text(aes(label = Level), col="white", cex=2) +
+  geom_text(aes(label = Level), col="white", cex=3) +
   scale_fill_gradient(trans="reverse") + 
   theme(legend.position="none") +
-  ylab("Item") +
-  ggtitle("Estimated modal item \nconsumption levels")
+  ylab("Item") + xlab("Latent Class") +
+  ggtitle("Estimated modal item \nconsumption levels") + 
+  theme(text = element_text(size = 15))
 
 # Plot probabilities of consumption levels
 dimnames(est_item_probs)[[1]] <- food_items
