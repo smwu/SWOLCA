@@ -37,7 +37,7 @@ library(ggpubr)
 #   clus_id_all
 #   sample_wt
 #   V
-process_data <- function(data_path) {
+process_data <- function(data_path, covs) {
   # Read in data
   data_vars_all <- read.csv(data_path)
   # Filter for low-income women and complete cases: n = 3028
@@ -57,35 +57,42 @@ process_data <- function(data_path) {
   clus_id_all <- (s_all - 1) * max_psus + data_vars_f_low$SDMVPSU
 
   # Other covariates to be included in the probit model 
-  other_covs <- data_vars_f_low %>% 
-    select(RIDAGEYR, racethnic, EDU, smoker) %>%
-    mutate(racethnic = factor(racethnic),
-           educ = factor(EDU),
-           smoker = factor(smoker), .keep = "unused") %>%
-    mutate(
-      racethnic = case_when(
-        racethnic == "NH White" ~ 1,
-        racethnic == "NH Black" ~ 2,
-        racethnic == "NH Asian" ~ 3,
-        racethnic == "Mexican" | racethnic == "Other Hispanic" ~ 4,
-        racethnic == "Other/Mixed" ~ 5),
-      educ = case_when(
-        educ == "At least some college" ~ 1,
-        educ == "HS/GED" ~ 2,
-        educ == "less than HS" ~ 3),
-      age_cat = case_when(
-        20 <= RIDAGEYR & RIDAGEYR <= 29 ~ 1,
-        30 <= RIDAGEYR & RIDAGEYR <= 39 ~ 2,
-        40 <= RIDAGEYR & RIDAGEYR <= 49 ~ 3,
-        50 <= RIDAGEYR & RIDAGEYR <= 59 ~ 4,
-        60 <= RIDAGEYR & RIDAGEYR <= 69 ~ 5,
-       RIDAGEYR >= 70 ~ 6), .keep = "unused")
-
-  # Regression design matrix without class assignment, nxq
-  # Exclude stratifying variable as well
-  V <- as.matrix(other_covs %>% 
-    dummy_cols(select_columns = c("age_cat", "racethnic", "educ", "smoker"), 
-               remove_selected_columns = TRUE))
+  ##### CHANGE THIS!!!!!!
+  if (is.null(covs)) {
+    V <- matrix(1, nrow = n) 
+    q <- 1
+  } else {
+    other_covs <- data_vars_f_low %>% 
+      select(RIDAGEYR, racethnic, EDU, smoker) %>%
+      mutate(racethnic = factor(racethnic),
+             educ = factor(EDU),
+             smoker = factor(smoker), .keep = "unused") %>%
+      mutate(
+        racethnic = case_when(
+          racethnic == "NH White" ~ 1,
+          racethnic == "NH Black" ~ 2,
+          racethnic == "NH Asian" ~ 3,
+          racethnic == "Mexican" | racethnic == "Other Hispanic" ~ 4,
+          racethnic == "Other/Mixed" ~ 5),
+        educ = case_when(
+          educ == "At least some college" ~ 1,
+          educ == "HS/GED" ~ 2,
+          educ == "less than HS" ~ 3),
+        age_cat = case_when(
+          20 <= RIDAGEYR & RIDAGEYR <= 29 ~ 1,
+          30 <= RIDAGEYR & RIDAGEYR <= 39 ~ 2,
+          40 <= RIDAGEYR & RIDAGEYR <= 49 ~ 3,
+          50 <= RIDAGEYR & RIDAGEYR <= 59 ~ 4,
+          60 <= RIDAGEYR & RIDAGEYR <= 69 ~ 5,
+          RIDAGEYR >= 70 ~ 6), .keep = "unused")
+    
+    # Regression design matrix without class assignment, nxq
+    # Exclude stratifying variable as well
+    V <- as.matrix(other_covs %>% 
+                     dummy_cols(select_columns = c("age_cat", "racethnic", "educ", "smoker"), 
+                                remove_selected_columns = TRUE))
+    V <- V[, -c(1, 7, 12, 15)]
+  }
   
   # Get sampling weights
   sample_wt <- data_vars_f_low$dietwt8yr
@@ -267,7 +274,7 @@ model <- "wsOFMM"
 # Define paths
 data_path <- paste0(wd, data_dir, "nhanesallage_frscores1118.csv")   # Input dataset
 res_path <- paste0(wd, res_dir, model, "_results_nhanes", ".RData")  # Output file
-adj_path <- paste0(wd, res_dir, model, "_results_covs_adj_nhanes", ".RData")  # Adjusted output file
+adj_path <- paste0(wd, res_dir, model, "_results_no_covs_adj_nhanes", ".RData")  # Adjusted output file
 stan_path <- paste0(wd, model_dir, "WSOLCA_main.stan")  # Stan file
 
 # Check if results already exist
@@ -292,38 +299,15 @@ if (already_done) {
 }
 
 
-res_demog <- other_covs %>%
-  mutate(racethnic = factor(racethnic),
-         smoker = factor(smoker),
-         educ = factor(educ),
-         age_cat = factor(age_cat))
-res_demog$lc <- factor(res$analysis_adj$c_all)
-res_demog$y <- res$data_vars$y_all
-p_educ <- res_demog %>% ggplot(aes(x = educ, fill = lc, group = lc)) +
-  theme_bw() + scale_fill_brewer(palette="Set2") + 
-  geom_bar(position = "dodge") + 
-  scale_x_discrete(labels = educ_categs) + 
-  ggtitle("Dietary Patterns by Education") + xlab("Education") + ylab("Count")
-p_age <- res_demog %>% ggplot(aes(x = age_cat, fill = lc, group = lc)) +
-  theme_bw() + scale_fill_brewer(palette="Set2") + 
-  geom_bar(position = "dodge") + 
-  scale_x_discrete(labels = age_categs) + 
-  ggtitle("Dietary Patterns by Age") + xlab("Age") + ylab("Count")
-p_race <- res_demog %>% ggplot(aes(x = racethnic, fill = lc, group = lc)) +
-  theme_bw() + scale_fill_brewer(palette="Set2") + 
-  geom_bar(position = "dodge") + 
-  scale_x_discrete(labels = racethnic_categs) + 
-  ggtitle("Dietary Patterns by Race/Ethnicity") + xlab("Race/Ethnicity") + ylab("Count")
-p_smoker <- res_demog %>% ggplot(aes(x = smoker, fill = lc, group = lc)) +
-  theme_bw() + scale_fill_brewer(palette="Set2") + 
-  geom_bar(position = "dodge") + 
-  scale_x_discrete(labels = smoker_categs) + 
-  ggtitle("Dietary Patterns by Smoking Status") + xlab("Smoking Status") + ylab("Count")
-ggarrange(p_age, p_educ, p_race, p_smoker, ncol = 4, common.legend = TRUE)
 #===================== PLOT OUTPUT =============================================
-
 load(adj_path)
-#### pi
+age_categs <- c("[20,30)", "[30,40)", "[40,50)", "[50,60)", "[60,70)", ">=70")
+educ_categs <- c("Some College", "HS/GED", "<HS")
+racethnic_categs <- c("NH White", "NH Black", "NH Asian", "Hispanic", "Other/Mixed")
+smoker_categs <- c("No", "Yes")
+K <- length(res$analysis_adj$pi_med_adj)
+
+#### Plot pi boxplots for each latent class
 pi_red <- as.data.frame(res$analysis_adj$pi_red_adj)
 colnames(pi_red) <- paste0("pi_", 1:(dim(pi_red)[2]))
 pi_red_plot <- pi_red %>% pivot_longer(cols = everything(), names_to = "pi_comp", 
@@ -334,7 +318,7 @@ pi_red_plot %>% ggplot(aes(x = pi_comp, y = value, fill = pi_comp)) +
   ggtitle(as.expression(bquote("Parameter estimation for "~pi~" "))) +
   xlab("Latent Class") + ylab(as.expression(bquote(~pi~"Value"))) + ylim(0,0.5)
 
-#### xi
+#### Plot xi boxplots, separately for each covariate, then combined 
 xi_dims <- dim(res$analysis_adj$xi_red_adj)
 K <- xi_dims[2]
 xi_red <- as.data.frame(t(matrix(res$analysis_adj$xi_red_adj, 
@@ -347,16 +331,37 @@ xi_red$Covariate <- c(rep("Age", K*6), rep("Education", K*3),
                       rep("Race/Ethnicity", K*5), rep("Smoking", K*2))
 xi_red_plot <- xi_red %>% pivot_longer(cols = -c("Class", "Covariate", "Covariate_Level"), 
                                        names_to = "iter", values_to = "value")
-xi_red_plot %>% ggplot(aes(x = Covariate_Level, y = value, group = Class, fill = Class)) + 
-  theme_bw() + 
-  geom_boxplot() + 
-  facet_grid(.~Covariate, labeller = label_both) +
-  ggtitle(as.expression(bquote("Parameter estimation for "~xi~" ")))
-xi_red_plot %>% filter(Covariate == "Age") %>%
+# xi_red_plot %>% ggplot(aes(x = Covariate_Level, y = value, group = Class, fill = Class)) + 
+#   theme_bw() + 
+#   geom_boxplot() + 
+#   facet_grid(.~Covariate, labeller = label_both) +
+#   ggtitle(as.expression(bquote("Parameter estimation for "~xi~" ")))
+# xi_red_plot %>% ggplot(aes(x = Stratum, y = value, group = Stratum, 
+#                            fill = Stratum)) + 
+#   theme_bw() + 
+#   geom_boxplot() +
+#   facet_grid(.~Class, labeller = label_both) + 
+#   ggtitle(as.expression(bquote("Parameter estimation for "~xi~" ")))
+p3_age <- xi_red_plot %>% filter(Covariate == "Age") %>%
   ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
   theme_bw() + scale_fill_brewer(palette="Set2") + 
-  geom_boxplot()
+  geom_boxplot() + xlab("Age")
+p3_race <- xi_red_plot %>% filter(Covariate == "Race/Ethnicity") %>%
+  ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_boxplot() + xlab("Race/Ethnicity")
+p3_educ <- xi_red_plot %>% filter(Covariate == "Education") %>%
+  ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_boxplot() + xlab("Education")
+p3_smoke <- xi_red_plot %>% filter(Covariate == "Smoking") %>%
+  ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_boxplot() + xlab("Smoking")
+ggarrange(p3_age, p3_race, p3_educ, p3_smoke, common.legend = TRUE,
+          legend = "right", ncol = 2, nrow = 2)
 
+#### Plot Phi boxplots separatey for each covariate
 Phi_red_plot <- xi_red_plot %>%
   mutate(value = pnorm(value))
 Phi_red_plot %>% filter(Covariate == "Age") %>%
@@ -375,30 +380,19 @@ Phi_red_plot %>% filter(Covariate == "Smoking") %>%
   ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
   theme_bw() + scale_fill_brewer(palette="Set2") + 
   geom_boxplot() + ylab("Hypertension Risk") + xlab("Smoking Status")
-# xi_red_plot %>% ggplot(aes(x = Stratum, y = value, group = Stratum, 
-#                            fill = Stratum)) + 
-#   theme_bw() + 
-#   geom_boxplot() +
-#   facet_grid(.~Class, labeller = label_both) + 
-#   ggtitle(as.expression(bquote("Parameter estimation for "~xi~" ")))
 
-#### Phi with covariates
+
+#### Plot Phi line plots, separately for each covariate, then combined 
 df_Phi <- data.frame(Stratum = factor(res$data_vars$s_all), 
                      Class = factor(res$analysis_adj$c_all), 
                      Phi = res$analysis_adj$Phi_med)
-df_Phi %>% ggplot(aes(x = Class, y = Phi, col = Stratum, group = Stratum)) + 
-  theme_bw() + 
-  geom_point() + 
-  geom_line() + 
-  ylim(0, 0.5) + 
-  ggtitle("Parameter estimation for conditional outcome probabilities") +
-  ylab("P(Y=1|Class, Stratum)")
-
-age_categs <- c("[20,30)", "[30,40)", "[40,50)", "[50,60)", "[60,70)", ">=70")
-educ_categs <- c("Some College", "HS/GED", "<HS")
-racethnic_categs <- c("NH White", "NH Black", "NH Asian", "Hispanic", "Other/Mixed")
-smoker_categs <- c("No", "Yes")
-K <- length(res$analysis_adj$pi_med_adj)
+# df_Phi %>% ggplot(aes(x = Class, y = Phi, col = Stratum, group = Stratum)) + 
+#   theme_bw() + 
+#   geom_point() + 
+#   geom_line() + 
+#   ylim(0, 0.5) + 
+#   ggtitle("Parameter estimation for conditional outcome probabilities") +
+#   ylab("P(Y=1|Class, Stratum)")
 df_Phi <- data.frame(pnorm(res$analysis_adj$xi_med_adj))
 colnames(df_Phi) <- c(age_categs, educ_categs, racethnic_categs, smoker_categs)
 # colnames(df_Phi) <- colnames(res$data_vars$V)
@@ -406,34 +400,36 @@ df_Phi$Class <- factor(1:4)
 df_Phi <- df_Phi %>% gather("Covariate_Level", "Phi", -Class)
 df_Phi$Covariate <- c(rep("Age", K*6), rep("Education", K*3), 
                       rep("Race/Ethnicity", K*5), rep("Smoking", K*2))
-df_Phi %>% ggplot(aes(x = Covariate_Level, y = Phi, col = Class, group = Class)) +
-  theme_bw() + scale_color_brewer(palette="Set2") + 
-  geom_point() + geom_line() + 
-  facet_grid(~Covariate) +
-  ggtitle("Parameter estimation for conditional outcome probabilities") +
-  ylab("P(Y=1|-")
-p_age <- df_Phi %>% filter(Covariate == "Age") %>%
+# df_Phi %>% ggplot(aes(x = Covariate_Level, y = Phi, col = Class, group = Class)) +
+#   theme_bw() + scale_color_brewer(palette="Set2") + 
+#   geom_point() + geom_line() + 
+#   facet_grid(~Covariate) +
+#   ggtitle("Parameter estimation for conditional outcome probabilities") +
+#   ylab("P(Y=1|-")
+p2_age <- df_Phi %>% filter(Covariate == "Age") %>%
   ggplot(aes(x = Covariate_Level, y = Phi, col = Class, group = Class)) +
   theme_bw() + scale_color_brewer(palette="Set2") + 
   geom_point() + geom_line() + ylim(0,1) + 
   ylab("Hypertension Probability") + xlab("Age") +
   theme(axis.text=element_text(size=10),
         axis.title=element_text(size=10))
-p_educ <- df_Phi %>% filter(Covariate == "Education") %>%
+p2_educ <- df_Phi %>% filter(Covariate == "Education") %>%
   ggplot(aes(x = Covariate_Level, y = Phi, col = Class, group = Class)) +
   theme_bw() + scale_color_brewer(palette="Set2") + 
   geom_point() + geom_line() +  ylim(0,1) + 
   ylab("Hypertension Probability") + xlab("Education") +
   theme(axis.text=element_text(size=10),
         axis.title=element_text(size=10))
-p_race <- df_Phi %>% filter(Covariate == "Race/Ethnicity") %>%
+p2_race <- df_Phi %>% filter(Covariate == "Race/Ethnicity") %>%
+  mutate(Covariate_Level = factor(Covariate_Level, levels = racethnic_categs)) %>%
   ggplot(aes(x = Covariate_Level, y = Phi, col = Class, group = Class)) +
   theme_bw() + scale_color_brewer(palette="Set2") + 
   geom_point() + geom_line() +  ylim(0,1) + 
   ylab("Hypertension Probability") + xlab("Race/Ethnicity") +
   theme(axis.text=element_text(size=10),
-        axis.title=element_text(size=10))
-p_smoker <- df_Phi %>% filter(Covariate == "Smoking") %>%
+        axis.title=element_text(size=10)) +
+  ggtitle("Hypertension Risk by Dietary Pattern and Race/Ethnicity")
+p2_smoker <- df_Phi %>% filter(Covariate == "Smoking") %>%
   ggplot(aes(x = Covariate_Level, y = Phi, col = Class, group = Class)) +
   theme_bw() + scale_color_brewer(palette="Set2") + 
   geom_point() + geom_line() +  ylim(0,1) + 
@@ -442,16 +438,15 @@ p_smoker <- df_Phi %>% filter(Covariate == "Smoking") %>%
         axis.title=element_text(size=10))
 ggarrange(p_age, p_educ, p_race, p_smoker, ncol = 4,
           common.legend = TRUE, legend = "top", widths = c(1,0.7,1,0.5))
+# df_Phi %>% ggplot(aes(x = Stratum, y = Phi, col = Class, group = Class)) + 
+#   theme_bw() + 
+#   geom_point() + 
+#   geom_line() + 
+#   ylim(0, 0.5) + 
+#   ggtitle("Parameter estimation for conditional outcome probabilities") +
+#   ylab("P(Y=1|Class, Stratum")
 
-df_Phi %>% ggplot(aes(x = Stratum, y = Phi, col = Class, group = Class)) + 
-  theme_bw() + 
-  geom_point() + 
-  geom_line() + 
-  ylim(0, 0.5) + 
-  ggtitle("Parameter estimation for conditional outcome probabilities") +
-  ylab("P(Y=1|Class, Stratum")
-
-#### Phi
+#### Plot Phi line plot OLD VERSION
 df_Phi <- data.frame(Stratum = factor(res$data_vars$s_all), 
                      Class = factor(res$analysis_adj$c_all), 
                      Phi = res$analysis_adj$Phi_med)
@@ -470,7 +465,7 @@ df_Phi %>% ggplot(aes(x = Stratum, y = Phi, col = Class, group = Class)) +
   ggtitle("Parameter estimation for conditional outcome probabilities") +
   ylab("P(Y=1|Class, Stratum)")
 
-#### theta
+#### Plot theta modes and probabilities
 # Plot modal consumption levels
 est_item_probs <- res$analysis_adj$theta_med_adj
 mode_item_probs <- as.data.frame(apply(est_item_probs, c(1, 2), which.max))
@@ -514,6 +509,156 @@ lcmodel %>%
   theme( axis.text.x=element_text(size=7),
          panel.grid.major.x=element_blank())
 # axis.text.y = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+#=================== Plot latent classes by demographic ========================
+res_demog <- other_covs %>%
+  mutate(racethnic = factor(racethnic),
+         smoker = factor(smoker),
+         educ = factor(educ),
+         age_cat = factor(age_cat))
+res_demog$Class <- factor(res$analysis_adj$c_all)
+res_demog$y <- res$data_vars$y_all
+p_educ <- res_demog %>% ggplot(aes(x = educ, fill = Class, group = Class)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_bar(position = "dodge") + 
+  scale_x_discrete(labels = educ_categs) + 
+  ggtitle("Dietary Patterns by Education") + xlab("Education") + ylab("Count")
+p_age <- res_demog %>% ggplot(aes(x = age_cat, fill = Class, group = Class)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_bar(position = "dodge") + 
+  scale_x_discrete(labels = age_categs) + 
+  ggtitle("Dietary Patterns by Age") + xlab("Age") + ylab("Count")
+p_race <- res_demog %>% ggplot(aes(x = racethnic, fill = Class, group = Class)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_bar(position = "dodge") + 
+  scale_x_discrete(labels = racethnic_categs) + 
+  ggtitle("Dietary Patterns by Race/Ethnicity") + xlab("Race/Ethnicity") + ylab("Count")
+p_smoker <- res_demog %>% ggplot(aes(x = smoker, fill = Class, group = Class)) +
+  theme_bw() + scale_fill_brewer(palette="Set2") + 
+  geom_bar(position = "dodge") + 
+  scale_x_discrete(labels = smoker_categs) + 
+  ggtitle("Dietary Patterns by Smoking") + xlab("Smoking Status") + ylab("Count")
+ggarrange(p_age, p_educ, p_race, p_smoker, ncol = 4, common.legend = TRUE,
+          widths = c(1,0.7,1,0.7))
+ggarrange(p_race, p2_race, ncol = 2, common.legend = TRUE, legend = "right")
+
+
+#===================== Create colored dendrogram ===============================
+# from https://atrebas.github.io/post/2019-06-08-lightweight-dendrograms/
+dendro_data_k <- function(hc, k) {
+  hcdata    <-  ggdendro::dendro_data(hc, type = "rectangle")
+  seg       <-  hcdata$segments
+  labclust  <-  cutree(hc, k)[hc$order]
+  segclust  <-  rep(0L, nrow(seg))
+  heights   <-  sort(hc$height, decreasing = TRUE)
+  height    <-  mean(c(heights[k], heights[k - 1L]), na.rm = TRUE)
+  for (i in 1:k) {
+    xi      <-  hcdata$labels$x[labclust == i]
+    idx1    <-  seg$x    >= min(xi) & seg$x    <= max(xi)
+    idx2    <-  seg$xend >= min(xi) & seg$xend <= max(xi)
+    idx3    <-  seg$yend < height
+    idx     <-  idx1 & idx2 & idx3
+    segclust[idx] <- i
+  }
+  idx                    <-  which(segclust == 0L)
+  segclust[idx]          <-  segclust[idx + 1L]
+  hcdata$segments$clust  <-  segclust
+  hcdata$segments$line   <-  as.integer(segclust < 1L)
+  hcdata$labels$clust    <-  labclust
+  hcdata
+}
+
+set_labels_params <- function(nbLabels, direction = c("tb", "bt", "lr", "rl"),
+                              fan = FALSE) {
+  if (fan) {
+    angle       <-  360 / nbLabels * 1:nbLabels + 90
+    idx         <-  angle >= 90 & angle <= 270
+    angle[idx]  <-  angle[idx] + 180
+    hjust       <-  rep(0, nbLabels)
+    hjust[idx]  <-  1
+  } else {
+    angle       <-  rep(0, nbLabels)
+    hjust       <-  0
+    if (direction %in% c("tb", "bt")) { angle <- angle + 45 }
+    if (direction %in% c("tb", "rl")) { hjust <- 1 }
+  }
+  list(angle = angle, hjust = hjust, vjust = 0.5)
+}
+
+plot_ggdendro <- function(hcdata, direction = c("lr", "rl", "tb", "bt"),
+                          fan = FALSE, scale.color = NULL, branch.size = 1,
+                          label.size  = 3, nudge.label = 0.01, expand.y = 0.1) {
+  direction <- match.arg(direction) # if fan = FALSE
+  ybreaks   <- pretty(segment(hcdata)$y, n = 5)
+  ymax      <- max(segment(hcdata)$y)
+  ## branches
+  p <- ggplot() +
+    geom_segment(data         =  segment(hcdata),
+                 aes(x        =  x,
+                     y        =  y,
+                     xend     =  xend,
+                     yend     =  yend,
+                     linetype =  factor(line),
+                     colour   =  factor(clust)),
+                 lineend      =  "round",
+                 show.legend  =  FALSE,
+                 size         =  branch.size)
+  ## orientation
+  if (fan) {
+    p <- p +
+      coord_polar(direction = -1) +
+      scale_x_continuous(breaks = NULL,
+                         limits = c(0, nrow(label(hcdata)))) +
+      scale_y_reverse(breaks = ybreaks)
+  } else {
+    p <- p + scale_x_continuous(breaks = NULL)
+    if (direction %in% c("rl", "lr")) {
+      p <- p + coord_flip()
+    }
+    if (direction %in% c("bt", "lr")) {
+      p <- p + scale_y_reverse(breaks = ybreaks)
+    } else {
+      p <- p + scale_y_continuous(breaks = ybreaks)
+      nudge.label <- -(nudge.label)
+    }
+  }
+  # labels
+  labelParams <- set_labels_params(nrow(hcdata$labels), direction, fan)
+  hcdata$labels$angle <- labelParams$angle
+  p <- p +
+    geom_text(data        =  label(hcdata),
+              aes(x       =  x,
+                  y       =  y,
+                  label   =  label,
+                  colour  =  factor(clust),
+                  angle   =  angle),
+              vjust       =  labelParams$vjust,
+              hjust       =  labelParams$hjust,
+              nudge_y     =  ymax * nudge.label,
+              size        =  label.size,
+              show.legend =  FALSE)
+  # colors and limits
+  if (!is.null(scale.color)) {
+    p <- p + scale_color_manual(values = scale.color)
+  }
+  ylim <- -round(ymax * expand.y, 1)
+  p    <- p + expand_limits(y = ylim)
+  p
+}
+
+library(ggdendro)
+MCMC_out <- res$MCMC_out
+M <- dim(MCMC_out$pi_MCMC)[1] 
+K_med <- round(median(rowSums(MCMC_out$pi_MCMC >= 0.05)))
+distMat <- hamming.distance(t(MCMC_out$c_all_MCMC))
+dendrogram <- hclust(as.dist(distMat), method = "complete")
+dendro_k <- dendro_data_k(dendrogram, K_med)
+plot_ggdendro(dendro_k, direction = "tb") + 
+  theme_bw() + scale_color_brewer(palette="Set2") + 
+  geom_hline(yintercept=1750, linetype = "dashed") +
+  xlab("") + ylab("")
+
 
 
 # Testing
