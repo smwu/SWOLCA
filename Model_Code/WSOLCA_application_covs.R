@@ -62,7 +62,7 @@ process_data <- function(data_path, covs) {
     V <- matrix(1, nrow = n) 
     q <- 1
   } else {
-    other_covs <- data_vars_f_low %>% 
+    V_data <- data_vars_f_low %>% 
       select(RIDAGEYR, racethnic, EDU, smoker) %>%
       mutate(racethnic = factor(racethnic),
              educ = factor(EDU),
@@ -88,10 +88,11 @@ process_data <- function(data_path, covs) {
     
     # Regression design matrix without class assignment, nxq
     # Exclude stratifying variable as well
-    V <- as.matrix(other_covs %>% 
-                     dummy_cols(select_columns = c("age_cat", "racethnic", "educ", "smoker"), 
-                                remove_selected_columns = TRUE))
-    V <- V[, -c(1, 7, 12, 15)]
+    V <- model.matrix(~ age_cat + racethnic + educ + smoker, V_data)
+    # V <- as.matrix(other_covs %>% 
+    #                  dummy_cols(select_columns = c("age_cat", "racethnic", "educ", "smoker"), 
+    #                             remove_selected_columns = TRUE))
+    # V <- V[, -c(1, 7, 12, 15)]
   }
   
   # Get sampling weights

@@ -63,17 +63,35 @@ WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path,
   x_mat <- data_vars$X_data            # Categorical exposure matrix, nxp
   y_all <- c(data_vars$Y_data)         # Binary outcome vector, nx1
   clus_id_all <- data_vars$cluster_id  # Cluster indicators, nx1
-  if (!is.null(covs)) {  # Other covariates are included in the probit model  
-    s_all <- data_vars[[covs]]    # Stratifying variable, nx1
-    # Stratifying variable as dummy columns
-    s_mat <- dummy_cols(data.frame(s = factor(s_all)),  
-                        remove_selected_columns = TRUE)
-    V <- as.matrix(s_mat)              # Regression design matrix without class assignment, nxq
-    q <- ncol(V)                       # Number of regression covariates excluding class assignment
-  } else {  # Only latent class is included in the probit model
-    s_all <- NULL  # No stratifying variable
+  if (is.null(covs)) {
+    # Probit model only includes latent class C
+    # No stratifying variable
+    s_all <- NULL  
     V <- matrix(1, nrow = n) 
     q <- 1
+  } else if (covs == "true_Si") {  
+    # Probit model includes C and S: C + S + C:S
+    # Stratifying variable, nx1
+    s_all <- data_vars[[covs]]    
+    # Regression design matrix without class assignment, nxq
+    V_data <- data.frame(s = as.factor(s_all))
+    V <- model.matrix(~ s, V_data)
+    # Number of regression covariates excluding class assignment
+    q <- ncol(V)                       
+  } else if (covs == "additional") {
+    # Probit model includes C, S, A (binary), and B (continuous)
+    # C + S + A + B + C:S + C:A + C:B
+    # Stratifying variable, nx1
+    s_all <- data_vars[["true_Si"]]  
+    a_all <- data_vars[["true_Ai"]]
+    b_all <- data_vars[["true_Bi"]]
+    # Regression design matrix without class assignment, nxq
+    V_data <- data.frame(s = as.factor(s_all), a = as.factor(a_all), b = b_all)
+    V <- model.matrix(~ s + a + b, V_data)
+    # Number of regression covariates excluding class assignment
+    q <- ncol(V)      
+  } else {  
+    stop("Error: covs must be one of 'true_Si', 'additiona', or NULL")
   }
   
   # Obtain normalized weights
@@ -222,16 +240,16 @@ res_dir <- "Results/"
 model_dir <- "Model_Code/"
 model <- "wsOFMM"
 
-# # Testing code
-# scen_samp <- 111111
-# iter_pop <- 1
-# samp_n <- 1
-# 
-# n_runs <- 100
-# burn <- 50
-# thin <- 5
-# covs <- "true_Si"
-# save_res <- FALSE
+# Testing code
+scen_samp <- 113211
+iter_pop <- 1
+samp_n <- 1
+
+n_runs <- 100
+burn <- 50
+thin <- 5
+covs <- "additional"
+save_res <- FALSE
 
 # Define paths
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,

@@ -47,14 +47,16 @@ convert_to_reference <- function(xi) {
 #   true_global_patterns: Matrix of true global exposure patterns defined by
 # modal category. pxK
 #   true_global_thetas: Array of true thetas. pxKxd 
-#   true_Si = true_Si: Vector of true stratum indicators. Nx1 
-#   true_Ci = true_Ci: Vector of true latent class indicators. Nx1 
+#   true_Si: Vector of true stratum indicators. Nx1 
+#   true_Ci: Vector of true latent class indicators. Nx1 
+#   true_Ai: Vector of additional binary confounder. Nx1 
+#   true_Bi: Vector of additional continuous confounder. Nx1 
 #   cluster_id: Vector of true cluster indicators. Nx1 
 #   cluster_size: Cluster size, same for all clusters
-#   X_data = X_data: Matrix of categorical exposure for all individuals. Nxp
-#   Y_data = Y_data: Vector of binary outcome for all individuals. Nx1
+#   X_data: Matrix of categorical exposure for all individuals. Nxp
+#   Y_data: Vector of binary outcome for all individuals. Nx1
 #   true_xi: Matrix of true xis. Kxq
-#   true_Phi_mat: Matrix of true outcome probabilities, pnorm(true_xi). Kxq
+#   true_Phi_mat: Matrix of true outcome probabilities. Kxq. NULL if continuous confounder
 #   true_Phi: Vector of true outcome probabilities for all individuals. Nx1
 create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
   # Set seed
@@ -253,8 +255,9 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
                   true_pi_s = true_pi_s, true_pi = true_pi, 
                   true_global_patterns = true_global_patterns,
                   true_global_thetas = true_global_thetas, true_Si = true_Si, 
-                  true_Ci = true_Ci, cluster_id = cluster_id, 
-                  cluster_size = cluster_size, X_data = X_data, Y_data = Y_data, 
+                  true_Ci = true_Ci, true_Ai = true_Ai, true_Bi = true_Bi, 
+                  cluster_id = cluster_id, cluster_size = cluster_size, 
+                  X_data = X_data, Y_data = Y_data, 
                   true_xi = true_xi, true_Phi_mat = true_Phi_mat, true_Phi = true_Phi)
   save(sim_pop, file = pop_data_path)
   return(sim_pop)
@@ -273,6 +276,8 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
 #   samp_ind: Vector of population indices for sampled individuals. nx1
 #   sample_wt: Vector of sampling weights for sampled individuals. nx1
 #   true_Si = true_Si: Vector of stratum indicators. Nx1 
+#   true_Ai: Vector of additional binary confounder. Nx1 
+#   true_Bi: Vector of additional continuous confounder. Nx1 
 #   cluster_id: Vector of true cluster indicators. Nx1 
 #   X_data = X_data: Matrix of categorical exposure for all individuals. Nxp
 #   Y_data = Y_data: Vector of binary outcome for all individuals. Nx1
@@ -289,7 +294,7 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
 #   true_global_thetas: Array of true thetas. pxKxd 
 #   true_xi: Matrix of true xis. Kxq
 #   true_Ci = true_Ci: Vector of true latent class indicators. Nx1 
-#   true_Phi_mat: Matrix of true outcome probabilities, pnorm(true_xi). Kxq
+#   true_Phi_mat: Matrix of true outcome probabilities. Kxq. NULL if continuous confounder
 #   true_Phi: Vector of true outcome probabilities for all individuals. Nx1
 create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
   set.seed(100 + samp_n)
@@ -362,9 +367,12 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
   cluster_id <- sim_pop$cluster_id[samp_ind]
   true_Si <- sim_pop$true_Si[samp_ind]
   true_Ci <- sim_pop$true_Ci[samp_ind]
+  true_Ai <- sim_pop$true_Ai[samp_ind]
+  true_Bi <- sim_pop$true_Bi[samp_ind]
   
   #================ Save and return output =====================================
-  sim_data <- list(samp_ind = samp_ind, sample_wt = sample_wt, true_Si = true_Si, 
+  sim_data <- list(samp_ind = samp_ind, sample_wt = sample_wt, true_Si = true_Si,
+                   true_Ai = true_Ai, true_Bi = true_Bi, 
                    cluster_id = cluster_id, X_data = X_data, Y_data = Y_data, 
                    N = sim_pop$N, N_s = sim_pop$N_s, p = sim_pop$p, 
                    d = sim_pop$d, S = sim_pop$S, true_K = sim_pop$true_K, 

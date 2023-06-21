@@ -32,17 +32,20 @@ get_true_params <- function(sim_pop) {
   true_xi <- matrix(sim_pop$true_xi, nrow = theta_dim[2], byrow = FALSE)
   S <- length(unique(sim_pop$true_Si))
   K <- length(unique(sim_pop$true_Ci))
-  # Get true Phi
-  true_Phi_mat <- matrix(NA, nrow=K, ncol=S)
-  for (k in 1:K) {
-    for (s in 1:S) {
-      true_Phi_mat[k, s] <- sum(sim_pop$Y_data==1 & sim_pop$true_Si==s & 
-                                  sim_pop$true_Ci==k) / 
-        sum(sim_pop$true_Si==s & sim_pop$true_Ci==k)
+  # Get true Phi if no continuous covariates
+  if (!is.null(sim_pop$true_Phi_mat)) {
+    true_Phi_mat <- matrix(NA, nrow=K, ncol=S)
+    for (k in 1:K) {
+      for (s in 1:S) {
+        true_Phi_mat[k, s] <- sum(sim_pop$Y_data==1 & sim_pop$true_Si==s & 
+                                    sim_pop$true_Ci==k) / 
+          sum(sim_pop$true_Si==s & sim_pop$true_Ci==k)
+      }
     }
   }
+
   # Get true xi
-  true_xi <- qnorm(true_Phi_mat)
+  true_xi <- sim_pop$true_xi
   
   return(list(true_pi = true_pi, true_theta = true_theta, true_xi = true_xi, 
               true_Phi_mat = true_Phi_mat))
