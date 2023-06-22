@@ -43,7 +43,13 @@ library(RcppTN)
 #   analysis_adj: List of adjusted posterior model results
 #   runtime: Total runtime for model
 #   data_vars: Input dataset
-# Also saved 'analysis' MCMC output prior to variance adjustment
+#   MCMC_out:
+#   post_MCMC_out:
+#   K_MCMC:
+# Also saves list `adapt_MCMC` containing:
+#   MCMC_out:
+#   K_fixed:
+#   K_MCMC:
 WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path, 
                              save_res = TRUE, n_runs, burn, thin, 
                              covs = NULL) {
@@ -133,12 +139,13 @@ WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path,
   #================= Post-processing for adaptive sampler ======================
   # Get median number of classes with >= 5% of individuals, over all iterations
   M <- dim(MCMC_out$pi_MCMC)[1]  # Number of stored MCMC iterations
-  K_med <- round(median(rowSums(MCMC_out$pi_MCMC >= 0.05)))
+  K_MCMC <- rowSums(MCMC_out$pi_MCMC >= 0.05)
+  K_med <- round(median(K_MCMC))
   # Get number of unique classes for fixed sampler
   K_fixed <- K_med
   print(paste0("K_fixed: ", K_fixed))
   # Save adaptive output
-  adapt_MCMC <- list(MCMC_out = MCMC_out, K_fixed = K_fixed)
+  adapt_MCMC <- list(MCMC_out = MCMC_out, K_fixed = K_fixed, K_MCMC = K_MCMC)
   if (save_res) {
     save(adapt_MCMC, file = adapt_path)
   }
@@ -221,7 +228,7 @@ WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path,
   #================= Save and return output ====================================
   res <- list(analysis_adj = analysis_adj, runtime = runtime, 
               data_vars = data_vars, MCMC_out = MCMC_out, 
-              post_MCMC_out = post_MCMC_out)
+              post_MCMC_out = post_MCMC_out, K_MCMC = adapt_MCMC$K_MCMC)
   if (save_res) {
     save(res, file = adj_path)
   }
@@ -235,28 +242,28 @@ WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path,
 # Define directories
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 # wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
-data_dir <- "Data/"
-res_dir <- "Results/"
+data_dir <- "Data/June22/"
+res_dir <- "Results/June22/"
 model_dir <- "Model_Code/"
 model <- "wsOFMM"
 
 # Testing code
-scen_samp <- 113211
+scen_samp <- 111211
 iter_pop <- 1
 samp_n <- 1
 
-n_runs <- 100
-burn <- 50
+n_runs <- 500
+burn <- 250
 thin <- 5
-covs <- "additional"
+covs <- "true_Si"
 save_res <- FALSE
 
 # Define paths
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
-adapt_path <- paste0(wd, res_dir, model, "_adapt_effmod_scen", scen_samp, 
+adapt_path <- paste0(wd, res_dir, model, "_adapt_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
-adj_path <- paste0(wd, res_dir, model, "_results_effmod_adjRcpp_scen", scen_samp, 
+adj_path <- paste0(wd, res_dir, model, "_results_adjRcpp_scen", scen_samp, 
                    "_samp", samp_n, ".RData")      # Adjusted output file
 stan_path <- paste0(wd, model_dir, "WSOLCA_main.stan")  # Stan file
 

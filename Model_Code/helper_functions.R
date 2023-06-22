@@ -251,6 +251,7 @@ get_mode <- function(v) {
 #   pi: Matrix of reduced and relabeled posterior samples for pi. (n_iter)x(K_med)
 #   theta: Array of reduced and relabeled posterior samples for theta. (n_iter)xpx(K_med)xd
 #   xi: Array of reduced and relabeled posterior samples for xi. (n_iter)x(K_med)xq
+#   dendrogram: Hierarchical clustering dendrogram used for relabeling
 post_process <- function(MCMC_out, p, d, q) {
   # Get median number of classes with >= 5% of individuals, over all iterations
   M <- dim(MCMC_out$pi_MCMC)[1]  # Number of stored MCMC iterations
@@ -281,7 +282,8 @@ post_process <- function(MCMC_out, p, d, q) {
     xi[m, , ] <- MCMC_out$xi_MCMC[m, iter_order, ]
   }
   
-  post_MCMC_out <- list(K_med = K_med, pi = pi, theta = theta, xi = xi)
+  post_MCMC_out <- list(K_med = K_med, pi = pi, theta = theta, xi = xi,
+                        dendrogram = dendrogram)
   
   return(post_MCMC_out)  
   # plot(dendrogram, labels = FALSE)

@@ -28,11 +28,10 @@ get_true_params <- function(sim_pop) {
       }
     }
   }
-  # Get true xi
-  true_xi <- matrix(sim_pop$true_xi, nrow = theta_dim[2], byrow = FALSE)
+  
+  # Get true Phi if no continuous covariates
   S <- length(unique(sim_pop$true_Si))
   K <- length(unique(sim_pop$true_Ci))
-  # Get true Phi if no continuous covariates
   if (!is.null(sim_pop$true_Phi_mat)) {
     true_Phi_mat <- matrix(NA, nrow=K, ncol=S)
     for (k in 1:K) {

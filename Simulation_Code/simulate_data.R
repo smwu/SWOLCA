@@ -9,6 +9,35 @@ library(LaplacesDemon)
 library(SimCorMultRes)
 library(dplyr)
 
+# `convert_to_factor_reference` converts a probit coefficient matrix to a vector of 
+# coefficients using a combination of factor variable and reference cell coding
+# Inputs:
+#   xi: Matrix of probit coefficients in factor variable coding; Kxq
+# Outputs:
+#   beta: Matrix of probit coefficients in a combination of factor variable and 
+# reference cell coding with interactions; (K*q)x1
+convert_to_factor_reference <- function(xi) {
+  # Convert to b1*I(C=1) + b2*I(C=1,S=2) + b3*I(C=2) + b4*I(C=2,S=2) + b5*I(C=3) + b6*I(C=3,S=2)
+  beta <- xi
+  beta[, 1] <- xi[, 1]
+  beta[, 2] <- xi[, 2] - xi[, 1]
+  return(beta)
+}
+
+# `convert_comb_to_reference` converts a combination of factor variable and 
+# reference cell coding to purely reference cell coding
+# Inputs:
+#   beta_comb: Matrix of probit coefficients in combination coding; Kxq
+# Outputs:
+#   beta_ref: Matrix of probit coefficients in reference cell coding; (K*q)x1
+convert_comb_to_reference <- function(beta_comb) {
+  beta_ref <- beta_comb
+  for (i in 2:nrow(beta_comb)) {
+    beta_ref[i, ] <- beta_comb[i, ] - beta_comb[1, ]
+  }
+  return(beta_ref)
+}
+
 # `convert_to_reference` converts a probit coefficient matrix to a vector of 
 # coefficients using reference cell coding
 # Inputs:
@@ -161,12 +190,12 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
     # No additional confounders or interactions
     # Underlying true parameter values for probit model coefficients, xi
     # Reference cell coding for each class (one class per row)
-    # xi1 + xi2*I(S=2) + 
+    # xi1*I(C=1) + xi2*I(C=1,S=2) + 
     # + xi3*I(C=2) + xi4*I(C=2,S=2) 
     # + xi5*I(C=3) + xi6*I(C=3,S=2) 
     true_xi <- matrix(c(1, -0.5,
-                        -0.7, -0.5,
-                        -1.5, -0.3), nrow = 3, byrow = TRUE)
+                        0.3, -1,
+                        -0.5, -0.8), nrow = 3, byrow = TRUE)
     # Create probit regression design matrix with interactions
     S2 <- ifelse(true_Si == 2, 1, 0)
     C2 <- ifelse(true_Ci == 2, 1, 0)
@@ -179,12 +208,12 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
     # Additional confounders and interactions
     # Underlying true parameter values for probit model coefficients, xi
     # Reference cell coding for each class (one class per row)
-    # xi1 + xi2*I(S=2) + xi3*I(A=2) + xi4*B
+    # xi1*I(C=1) + xi2*I(C=1,S=2) + xi3*I(C=1,A=2) + xi4*I(C=1)B
     # + xi5*I(C=2) + xi6*I(C=2,S=2) + xi7*I(C=2,A=2) + xi8*I(C=2)B
     # + xi9*I(C=3) + xi10*I(C=3,S=2) + xi11*I(C=3,A=2) + xi12*I(C=3)B
     true_xi <- matrix(c(1, -0.5, -0.2, -0.04,
-                        -0.7, -0.5, 0.1, 0.01,
-                        -1.5, -0.3, 0.4, 0.02), nrow = 3, byrow = TRUE)
+                        0.3, -1, 0.1, 0.01,
+                        -0.5, -0.8, 0.4, 0.02), nrow = 3, byrow = TRUE)
     # Create probit regression design matrix with interactions
     S2 <- ifelse(true_Si == 2, 1, 0)
     A2 <- ifelse(true_Ai == 2, 1, 0)
@@ -195,14 +224,15 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
                       C3 = C3, C3S2 = C3*S2, C3A2 = C3*A2, C3B = C3*true_Bi)
     formula <- ~S2+A2+B + C2+C2S2+C2A2+C2B + C3+C3S2+C3A2+C3B
   }
+  # Obtain true outcome probability for each individual
+  true_Phi_under <- pnorm(V_design %*% c(t(true_xi)))
+  # xi_under <- matrix(c(1, 0.3, -0.5, 0.5, -0.7, -1.3), nrow = 3, byrow = FALSE)
   
   #================ Binary outcome and true outcome probabilities ==============
   if (scenario_vec[4] == 1) {
     # No clustering in the data
     cluster_id <- pop_inds
     cluster_size <- 1
-    # Obtain true outcome probability for each individual
-    true_Phi_under <- pnorm(V_design %*% c(t(true_xi)))
     # Outcome data
     Y_data <- rbinom(n = N, size = 1, prob = true_Phi_under)
   } else if (scenario_vec[4] == 2) {
@@ -212,7 +242,7 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
     # Assume exchangeable correlation matrix
     latent_correlation_matrix <- toeplitz(c(1, rep(0.5, cluster_size - 1)))
     # Convert xi to cell reference coding beta coefficients
-    beta_coefs <- c(t(true_xi))
+    beta_coefs <- c(t(convert_comb_to_reference(true_xi)))
     intercepts <- beta_coefs[1]
     betas <- beta_coefs[-1]
     # Simulate correlated binary outcomes
@@ -369,6 +399,7 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
   true_Ci <- sim_pop$true_Ci[samp_ind]
   true_Ai <- sim_pop$true_Ai[samp_ind]
   true_Bi <- sim_pop$true_Bi[samp_ind]
+  true_Phi <- sim_pop$true_Phi[samp_ind]
   
   #================ Save and return output =====================================
   sim_data <- list(samp_ind = samp_ind, sample_wt = sample_wt, true_Si = true_Si,
@@ -381,7 +412,7 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
                    true_global_thetas = sim_pop$true_global_thetas, 
                    true_xi = sim_pop$true_xi, true_Ci = true_Ci, 
                    true_Phi_mat = sim_pop$true_Phi_mat, 
-                   true_Phi = sim_pop$true_Phi)
+                   true_Phi = true_Phi)
   save(sim_data, file = samp_data_path)
   return(sim_data)
 }
@@ -391,14 +422,13 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 # wd <- "~/Documents/Github/wsOFMM/"
 # wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
-data_dir <- "Data/"
+data_dir <- "Data/June22/"
 
 #==================== Create population scenarios ==============================
 scenarios <- 1112
-scenarios <- 1132
 iter_pop <- 1
 scenarios <- c(1111, 2111, 1211, 1121, 1112)
-scenarios <- c(1112, 2112, 1212, 1122)
+scenarios <- c(1112, 2112, 1212, 1122, 1132)
 for (scenario in scenarios) {
   pop_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
                           iter_pop, ".RData") 
@@ -417,11 +447,11 @@ sim_pop$true_global_patterns
 
 #==================== Create sampling scenarios ================================
 scenarios <- 111211
-scenarios <- 113211
 samp_n_seq <- 1
 scenarios <- c(111111, 211111, 121111, 112111, 111211, 111121, 111131, 111112, 
                111113)
-scenarios <- c(111211, 111212, 111213, 111221, 111231, 211211, 121211, 112211)
+scenarios <- c(111211, 111212, 111213, 111221, 111231, 211211, 121211, 112211,
+               113211)
 samp_n_seq <- 1:100
 for (scenario in scenarios) {
   # Get population scenario
@@ -454,7 +484,7 @@ for (k in 1:K) {
 }
 samp_Phi_mat
 prop.table(table(sim_data$X_data[sim_data$true_Ci == 3,1] == 4))
-
+length(sim_data$true_Phi)
 
 #==================== Additional Sanity checks =================================
 # table(true_Si)
