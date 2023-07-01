@@ -41,6 +41,8 @@ get_true_params <- function(sim_pop) {
           sum(sim_pop$true_Si==s & sim_pop$true_Ci==k)
       }
     }
+  } else {
+    true_Phi_mat <- NULL
   }
 
   # Get true xi
@@ -323,7 +325,7 @@ get_marg_eff <- function(true_xi, true_pi_s, true_pi, N_s, N) {
 #   model: String indicating model. Must be one of "wsOFMM", "sOFMM", or "wOFMM"
 #   samp_n_seq: Vector of sample iterations to summarize over
 #   plot: Boolean indicating if output for plots is needed. Default is TRUE
-#   marg: Boolean indicating if marginal outcome probabilities should be used. 
+#   covs: String vector of covariates to include in probit model. Default = NULL 
 # Default is FALSE
 #   subset: Boolean specifying whether or not to subset to the smaller number of 
 # classes when calculating the distance. Default is TRUE, which applies less 
@@ -345,7 +347,7 @@ get_marg_eff <- function(true_xi, true_pi_s, true_pi, N_s, N) {
 #   xi_cover_avg: if coverage = TRUE, coverage of xi estimate
 #   runtime_avg: Average runtime across iterations
 get_metrics <- function(pop_data_path, sim_data_path, sim_res_path, model,
-                        samp_n_seq, plot = TRUE, marg = FALSE, 
+                        samp_n_seq, plot = TRUE, covs = "true_Si", 
                         subset = TRUE, dist_type = "mean_abs") {
   
   #============== Load data and initialize variables ===========================
@@ -425,14 +427,26 @@ get_metrics <- function(pop_data_path, sim_data_path, sim_res_path, model,
       analysis <- res$analysis
       runtime_all[l] <- res$runtime
       n <- length(sim_samp$true_Si)
+      if (is.null(covs)) {
+        # Probit model only includes latent class C
+        V <- matrix(1, nrow = n) 
+      } else if (covs == "true_Si") {  
+        # Probit model includes C and S: C + S + C:S
+        V_data <- data.frame(s = as.factor(sim_data$true_Si))
+        V <- model.matrix(~ s, V_data)
+      } else if (covs == "additional") {
+        # Probit model includes C, S, A (binary), and B (continuous)
+        # C + S + A + B + C:S + C:A + C:B
+        V_data <- data.frame(s = as.factor(sim_data$true_Si), 
+                             a = as.factor(sim_data$true_Ai), 
+                             b = sim_data$true_Bi)
+        V <- model.matrix(~ s + a + b, V_data)
+      }
       ##### CHECK THIS!!!!!!!!!!!!!!
       Phi_med <- numeric(n)                    # Initialize individual outcome probabilities
       # Calculate posterior class membership, p(c_i=k|-), for each class k
       for (i in 1:n) {
-        if (marg) {
-          Phi_med[i] <- analysis$xi_med[analysis$c_all[i], ]
-        }
-        Phi_med[i] <- analysis$xi_med[analysis$c_all[i], sim_data$true_Si[i]]
+        Phi_med[i] <- pnorm(V[i, ] %*% analysis$xi_med[analysis$c_all[i], ])
       }
       analysis$Phi_med <- Phi_med
     } else {
@@ -447,7 +461,7 @@ get_metrics <- function(pop_data_path, sim_data_path, sim_res_path, model,
     Q <- dim(analysis$xi_med)[2]           # Number of additional covariates
     
     # For the effect modifier scenario, change true_xi to the marginal effect
-    if (marg) {
+    if (is.null(covs)) {
       true_params$true_xi <- qnorm(as.matrix(get_marg_eff(sim_pop$true_xi, 
                                                           sim_pop$true_pi_s, 
                                                           sim_pop$true_pi, 
@@ -723,17 +737,17 @@ get_metrics <- function(pop_data_path, sim_data_path, sim_res_path, model,
 #   WSOLCA_name: String with file name identifier for WSOLCA results
 #   SOLCA_name: String with file name identifier for SOLCA results
 #   WOLCA_name: String with file name identifier for WOLCA results
-#   marg: Boolean indicating if marginal outcome probabilities should be used. 
+#   covs: String vector of covariates to include in probit model. Default = NULL 
 # Default is FALSE
 #   save_name: String with main file name for saving all metrics
 # Outputs: Saves 'metrics_all' list with all metrics in an .RData file
 save_scen_metrics <- function(scen_pop, scen_samp, WSOLCA = TRUE, SOLCA = TRUE,
                               WOLCA = TRUE, WSOLCA_name, SOLCA_name, WOLCA_name,
-                              marg = FALSE, save_name) {
+                              covs = NULL, save_name) {
   # Set parameters and paths
   wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"  # Working directory
-  data_dir <- "Data/"               # Simulated data directory
-  res_dir <- "Results/"             # Model results directory
+  data_dir <- "Data/June22/"               # Simulated data directory
+  res_dir <- "Results/June22/"             # Model results directory
   analysis_dir <- "Analysis_Code/"  # Analysis directory where metrics will be saved
   iter_pop <- 1                     # Population iteration
   samp_n_seq <- 1:100               # Vector of sample iterations to summarize over
@@ -757,7 +771,7 @@ save_scen_metrics <- function(scen_pop, scen_samp, WSOLCA = TRUE, SOLCA = TRUE,
     metrics_ws <- get_metrics(pop_data_path = pop_data_path,
                               sim_data_path = sim_data_path, 
                               sim_res_path = sim_res_path, model = model,
-                              samp_n_seq = samp_n_seq, plot = plot, marg = marg, 
+                              samp_n_seq = samp_n_seq, plot = plot, covs = covs, 
                               subset = subset, dist_type = dist_type)
     metrics_all$metrics_ws <- metrics_ws
   } 
@@ -769,7 +783,7 @@ save_scen_metrics <- function(scen_pop, scen_samp, WSOLCA = TRUE, SOLCA = TRUE,
     metrics_s <- get_metrics(pop_data_path = pop_data_path,
                              sim_data_path = sim_data_path,
                              sim_res_path = sim_res_path, model = model,
-                             samp_n_seq = samp_n_seq, plot = plot, marg = marg, 
+                             samp_n_seq = samp_n_seq, plot = plot, covs = covs, 
                              subset = subset, dist_type = dist_type)
     metrics_all$metrics_s <- metrics_s
   }
@@ -781,7 +795,7 @@ save_scen_metrics <- function(scen_pop, scen_samp, WSOLCA = TRUE, SOLCA = TRUE,
     metrics_unsup <- get_metrics(pop_data_path = pop_data_path,
                                  sim_data_path = sim_data_path,
                                  sim_res_path = sim_res_path, model = model,
-                                 samp_n_seq = samp_n_seq, plot = plot, marg = marg, 
+                                 samp_n_seq = samp_n_seq, plot = plot, covs = covs, 
                                  subset = subset, dist_type = dist_type)
     metrics_all$metrics_unsup <- metrics_unsup
   }

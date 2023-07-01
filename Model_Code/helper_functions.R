@@ -367,17 +367,22 @@ analyze_results <- function(MCMC_out, post_MCMC_out, n, p, V, y_all, x_mat) {
       for (j in 1:p) {
         log_theta_comp_k <- log_theta_comp_k + log(theta_med[j, k, x_mat[i, j]])
       }
-      # Individual log-likelihood for class k
-      log_cond_c[i, k] <- log(pi_med[k]) + log_theta_comp_k +
-        log(dnorm(z_all[i], mean = V[i, ] %*% xi_med[k, ])) +  # probit component
+      # Calculate and control extremes for probit component
+      log_probit_part <- log(dnorm(z_all[i], mean = V[i, ] %*% xi_med[k, ])) 
+      if (log_probit_part == -Inf) {
+        log_probit_part <- log(1e-16)
+      }
+      log_probit_comp_k <- log_probit_part + 
         log(y_all[i]*(z_all[i] > 0) + (1 - y_all[i])*(z_all[i] <= 0))
+      # Individual log-likelihood for class k
+      log_cond_c[i, k] <- log(pi_med[k]) + log_theta_comp_k + log_probit_comp_k
     }
     # Calculate p(c_i=k|-) = p(x,y,c_i=k) / p(x,y)
     pred_class_probs[i, ] <- exp(log_cond_c[i, ] - logSumExp(log_cond_c[i, ]))
     # Update class assignment using the posterior probabilities
     c_all[i] <- rcat(n = 1, p = pred_class_probs[i, ])
     # Calculate outcome probabilities P(Y=1|-) using updated class assignment
-    Phi_med[i] <- Phi_med_all_c[i, c_all[i]] 
+    Phi_med[i] <- Phi_med_all_c[i, c_all[i]]
   }
   
   #============== Update individual log-likelihood  ============================
@@ -820,4 +825,18 @@ analyze_results_WOLCA <- function(MCMC_out, post_MCMC_out, n, p, x_mat) {
                    pred_class_probs = pred_class_probs)
   
   return(analysis)
+}
+
+# `convert_ref_to_comb` converts a combination of factor variable and 
+# reference cell coding to purely reference cell coding
+# Inputs:
+#   beta_ref: Matrix of probit coefficients in reference cell coding; (K*q)x1
+# Outputs:
+#   beta_comb: Matrix of probit coefficients in combination coding; Kxq
+convert_ref_to_comb <- function(beta_ref) {
+  beta_comb <- beta_ref
+  for (i in 2:nrow(beta_ref)) {
+    beta_comb[i, ] <- beta_ref[i, ] - beta_ref[1, ]
+  }
+  return(beta_comb)
 }

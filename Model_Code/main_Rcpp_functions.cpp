@@ -128,14 +128,22 @@ void update_c(vec& c_all, const int& n, const int& K, const int& p,
     for (int k = 0; k < K; k++) {
       // Calculate theta component of individual log-likelihood for class k
       double log_theta_comp_k = 0.0;
+      double log_probit_comp_k = 0.0;
       for (int j = 0; j < p; j++) {
         // Subtract 1 from exposure value due to 0-based indexing
         log_theta_comp_k += log(theta(j, k, x_mat(i, j) - 1));
       }
+      // Calculate and control extremes for probit component
+      log_probit_comp_k = log(R::dnorm(z_all(i), (V.row(i) * xi.row(k).t()).eval()(0,0), 1.0, false));
+      if (log_probit_comp_k == R_NegInf) {
+        log_probit_comp_k = log(1e-16);
+      }
+      log_probit_comp_k += log((y_all(i) * (z_all(i) > 0)) + ((1 - y_all(i)) * (z_all(i) <= 0)));
       // Individual log-likelihood for class k
-      log_cond_c(i, k) = log(pi(k)) + log_theta_comp_k +
-        log(R::dnorm(z_all(i), (V.row(i) * xi.row(k).t()).eval()(0,0), 1.0, false)) +
-        log((y_all(i) * (z_all(i) > 0)) + ((1 - y_all(i)) * (z_all(i) <= 0)));
+      log_cond_c(i, k) = log(pi(k)) + log_theta_comp_k + log_probit_comp_k;
+      // log_cond_c(i, k) = log(pi(k)) + log_theta_comp_k + 
+      //   log(R::dnorm(z_all(i), (V.row(i) * xi.row(k).t()).eval()(0,0), 1.0, false)) + 
+      //   log((y_all(i) * (z_all(i) > 0)) + ((1 - y_all(i)) * (z_all(i) <= 0)));
     }
     // Calculate p(c_i=k|-) = p(x,y,c_i=k) / p(x,y)
     pred_class_probs.row(i) = exp(log_cond_c.row(i) - logSumExp_cpp(log_cond_c.row(i)));

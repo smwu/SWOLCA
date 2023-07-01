@@ -159,7 +159,7 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
     }
   }
   
-  # Add additional confounders if necessary
+  # Add additional effect modifiers if necessary
   if (scenario_vec[3] == 3) {
     prob_A <- c(0.3, 0.7)
     true_Ai <- rbinom(n = N, size = 1, prob = prob_A[true_Si]) + 1

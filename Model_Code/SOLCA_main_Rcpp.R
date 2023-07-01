@@ -9,6 +9,14 @@ args <- commandArgs(trailingOnly = TRUE)
 scen_samp <- args[[1]]  # Simulation scenario
 iter_pop <- args[[2]]   # Population iteration
 samp_n <- args[[3]]     # Sample number
+covs <- args[[4]]       # Probit covariates
+if (covs == 1) {
+  covs <- NULL
+} else if (covs == 2) {
+  covs <- "true_Si"
+} else if (covs == 3) {
+  covs <- "additional"
+}
 
 # Load libraries
 library(R.matlab)
@@ -44,8 +52,13 @@ library(RcppTN)
 #   analysis: List of posterior model results
 #   runtime: Total runtime for model
 #   data_vars: Input dataset
-#   MCMC_out: List of MCMC output
-# Also saved 'analysis' MCMC output prior to variance adjustment
+#   MCMC_out: List of full MCMC output
+#   post_MCMC_out: List of MCMC output after relabeling
+#   K_MCMC: Adaptive sampler MCMC output for K
+# Also saves list `adapt_MCMC` containing:
+#   MCMC_out: List of full MCMC output
+#   K_fixed: Number of classes to use for fixed sampler; output from adaptive sampler
+#   K_MCMC: Adaptive sampler MCMC output for K
 SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE, 
                             n_runs, burn, thin, covs = NULL) {
   start_time <- Sys.time()
@@ -65,18 +78,35 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   # Obtain data
   x_mat <- data_vars$X_data            # Categorical exposure matrix, nxp
   y_all <- c(data_vars$Y_data)         # Binary outcome vector, nx1
-  # clus_id_all <- data_vars$cluster_id  # Cluster indicators, nx1. CHANGE BACK!!!!!!!!!!!!!!!!!!!!!
-  if (!is.null(covs)) {  # Other covariates are included in the probit model  
-    s_all <- data_vars[[covs]]    # Stratifying variable, nx1
-    # Stratifying variable as dummy columns
-    s_mat <- dummy_cols(data.frame(s = factor(s_all)),  
-                        remove_selected_columns = TRUE)
-    V <- as.matrix(s_mat)              # Regression design matrix without class assignment, nxq
-    q <- ncol(V)                       # Number of regression covariates excluding class assignment
-  } else {  # Only latent class is included in the probit model
-    s_all <- NULL  # No stratifying variable
+  if (is.null(covs)) {
+    # Probit model only includes latent class C
+    # No stratifying variable
+    s_all <- NULL  
     V <- matrix(1, nrow = n) 
     q <- 1
+  } else if (covs == "true_Si") {  
+    # Probit model includes C and S: C + S + C:S
+    # Stratifying variable, nx1
+    s_all <- data_vars[[covs]]    
+    # Regression design matrix without class assignment, nxq
+    V_data <- data.frame(s = as.factor(s_all))
+    V <- model.matrix(~ s, V_data)
+    # Number of regression covariates excluding class assignment
+    q <- ncol(V)                       
+  } else if (covs == "additional") {
+    # Probit model includes C, S, A (binary), and B (continuous)
+    # C + S + A + B + C:S + C:A + C:B
+    # Stratifying variable, nx1
+    s_all <- data_vars[["true_Si"]]  
+    a_all <- data_vars[["true_Ai"]]
+    b_all <- data_vars[["true_Bi"]]
+    # Regression design matrix without class assignment, nxq
+    V_data <- data.frame(s = as.factor(s_all), a = as.factor(a_all), b = b_all)
+    V <- model.matrix(~ s + a + b, V_data)
+    # Number of regression covariates excluding class assignment
+    q <- ncol(V)      
+  } else {  
+    stop("Error: covs must be one of 'true_Si', 'additiona', or NULL")
   }
   
   # Set normalized weights to 1
@@ -130,12 +160,13 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   
   # Get median number of classes with >= 5% of individuals, over all iterations
   M <- dim(MCMC_out$pi_MCMC)[1]  # Number of stored MCMC iterations
-  K_med <- round(median(rowSums(MCMC_out$pi_MCMC >= 0.05)))
+  K_MCMC <- rowSums(MCMC_out$pi_MCMC >= 0.05)
+  K_med <- round(median(K_MCMC))
   # Get number of unique classes for fixed sampler
   K_fixed <- K_med
   print(paste0("K_fixed: ", K_fixed))
   # Save adaptive output
-  adapt_MCMC <- list(MCMC_out = MCMC_out, K_fixed = K_fixed)
+  adapt_MCMC <- list(MCMC_out = MCMC_out, K_fixed = K_fixed, K_MCMC = K_MCMC)
   if (save_res) {
     save(adapt_MCMC, file = adapt_path)
   }
@@ -145,6 +176,7 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   
   #================= FIXED SAMPLER =============================================
   print("Fixed sampler")
+  set.seed(20230629)
   #================= Run fixed sampler to obtain posteriors ====================
   # Initialize OLCA model using fixed number of classes
   # alpha <- rep(2, K_fixed) # Hyperparameter for prior for pi
@@ -189,8 +221,8 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
   
   #================= Save and return output ====================================
   res <- list(analysis = analysis, runtime = runtime, 
-              data_vars = data_vars, MCMC_out = MCMC_out, 
-              post_MCMC_out = post_MCMC_out)
+              data_vars = data_vars, V = V, MCMC_out = MCMC_out, 
+              post_MCMC_out = post_MCMC_out, K_MCMC = adapt_MCMC$K_MCMC)
   if (save_res) {
     save(res, file = res_path)
   }
@@ -204,8 +236,8 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
 # Define directories
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 # wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
-data_dir <- "Data/"
-res_dir <- "Results/"
+data_dir <- "Data/June22/"
+res_dir <- "Results/June22/"
 model_dir <- "Model_Code/"
 model <- "sOFMM"
 
@@ -224,9 +256,9 @@ data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
 # data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
 #                     "_samp", samp_n, ".mat")   # Input dataset
-adapt_path <- paste0(wd, res_dir, model, "_adapt_effmod_scen", scen_samp, 
+adapt_path <- paste0(wd, res_dir, model, "_adapt_scen", scen_samp, 
                      "_samp", samp_n, ".RData")  # Output file
-res_path <- paste0(wd, res_dir, model, "_results_effmod_scen", scen_samp, 
+res_path <- paste0(wd, res_dir, model, "_results_scen", scen_samp, 
                    "_samp", samp_n, ".RData")  # Output file
 
 # Check if results already exist
@@ -239,7 +271,7 @@ if (already_done) {
   burn <- 10000
   thin <- 5
   save_res <- TRUE
-  covs <- NULL
+  # covs <- "true_Si"
   
   # Source R helper functions
   source(paste0(wd, model_dir, "helper_functions.R"))

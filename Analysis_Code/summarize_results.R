@@ -26,72 +26,77 @@ source("Analysis_Code/summarize_results_functions.R")
 
 scen_pop <- 1112
 scen_samp <- 111211
-WSOLCA_name <- "_results_2mod20000_adjRcpp_scen"
-SOLCA_name <- "_results_2mod20000_scen"
-WOLCA_name <- "_results_wt_2mod20000_scen"
+WSOLCA_name <- "_results_comb_adjRcpp_scen"
+SOLCA_name <- "_results_scen"
+WOLCA_name <- "_results_wt_scen"
 
 # Baseline: stratified, 5% sample size, 85/5/5/5, non-supervised, confounder
 save_scen_metrics(scen_pop = 1112, scen_samp = 111211, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
                   SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
-                  save_name = "metrics_scen")
+                  covs = "true_Si", save_name = "metrics_scen")
 # Sampling schemes: stratified cluster
 save_scen_metrics(scen_pop = 1112, scen_samp = 111212, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
                   SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
-                  save_name = "metrics_scen")
+                  covs = "true_Si", save_name = "metrics_scen")
 # Sampling schemes: SRS
 save_scen_metrics(scen_pop = 1112, scen_samp = 111213, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
                   SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
-                  save_name = "metrics_scen")
+                  covs = "true_Si", save_name = "metrics_scen")
 # Sample size: 10%
 save_scen_metrics(scen_pop = 1112, scen_samp = 111221, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
                   SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
-                  save_name = "metrics_scen")
+                  covs = "true_Si", save_name = "metrics_scen")
 # Sample size: 1%
 save_scen_metrics(scen_pop = 1112, scen_samp = 111231, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
                   SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
-                  save_name = "metrics_scen")
+                  covs = "true_Si", save_name = "metrics_scen")
 # Weak patterns
 save_scen_metrics(scen_pop = 2112, scen_samp = 211211, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
                   SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
-                  save_name = "metrics_scen")
+                  covs = "true_Si", save_name = "metrics_scen")
 # Supervised
 save_scen_metrics(scen_pop = 1212, scen_samp = 121211, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
                   SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
-                  save_name = "metrics_scen")
+                  covs = "true_Si", save_name = "metrics_scen")
 # Effect modifier
 save_scen_metrics(scen_pop = 1122, scen_samp = 112211, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
                   SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
-                  save_name = "metrics_scen")
+                  covs = "true_Si", save_name = "metrics_scen")
 # Effect modifier marginal
 save_scen_metrics(scen_pop = 1122, scen_samp = 112211, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, 
-                  WSOLCA_name = "_results_effmod_adjRcpp_scen", 
-                  SOLCA_name = "_results_effmod_scen", 
-                  WOLCA_name = "_results_wt_effmod_scen",
-                  marg = TRUE, 
-                  save_name = "metrics_marg_scen")
+                  WSOLCA_name = WSOLCA_name, SOLCA_name = SOLCA_name, 
+                  WOLCA_name = WOLCA_name,
+                  # WSOLCA_name = "_results_effmod_adjRcpp_scen", 
+                  # SOLCA_name = "_results_effmod_scen", 
+                  # WOLCA_name = "_results_wt_effmod_scen",
+                  covs = NULL, save_name = "metrics_marg_scen")
 # Confounder marginal
 save_scen_metrics(scen_pop = 1112, scen_samp = 111211, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, 
                   WSOLCA_name = "_results_effmod_adjRcpp_scen", 
                   SOLCA_name = "_results_effmod_scen", 
                   WOLCA_name = "_results_wt_effmod_scen",
-                  marg = TRUE, 
-                  save_name = "metrics_marg_scen")
+                  covs = NULL, save_name = "metrics_marg_scen")
+# Additional confounders
+save_scen_metrics(scen_pop = 1132, scen_samp = 113211, WSOLCA = TRUE, 
+                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
+                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
+                  covs = "true_Si", save_name = "metrics_scen")
 
 #================ TABLE METRICS SUMMARY ========================================
 
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/" # Working directory
-data_dir <- "Data/"               # Simulated data directory
-res_dir <- "Results/"             # Model results directory
+data_dir <- "Data/June22/"               # Simulated data directory
+res_dir <- "Results/June22/"             # Model results directory
 analysis_dir <- "Analysis_Code/"  # Analysis directory where metrics are saved
 
 create_table1(wd = wd, analysis_dir = analysis_dir, format = "latex")
@@ -169,10 +174,10 @@ ggarrange(ss_pi, ss_theta, ss_xi, nrow = 1, ncol = 3, common.legend = TRUE)
 
 
 # Selection bias
-scenarios <- c(111211, 111211, 112211)
-scen_names <- c("Confounder \nMeasured", "Confounder \nUnmeasured", 
-                "Precision \nUnmeasured")
-save_names <- c("metrics_scen", "metrics_marg_scen", "metrics_marg_scen")
+scenarios <- c(111211, 112211, 113211)
+scen_names <- c("Confounder \nMeasured", "Precision \nUnmeasured", 
+                "Additional \nConfounders")
+save_names <- c("metrics_scen", "metrics_marg_scen", "metrics_scen")
 selection_pi <- plot_rmse_boxplot(wd = wd, analysis_dir = analysis_dir, 
                           save_names = save_names, scenarios = scenarios,
                           scen_names = scen_names, overall_name = "selection", 

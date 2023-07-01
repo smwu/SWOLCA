@@ -37,7 +37,7 @@ library(ggpubr)
 #   clus_id_all
 #   sample_wt
 #   V
-process_data <- function(data_path, covs) {
+process_data <- function(data_path, covs = "all") {
   # Read in data
   data_vars_all <- read.csv(data_path)
   # Filter for low-income women and complete cases: n = 3028
@@ -124,7 +124,7 @@ process_data <- function(data_path, covs) {
 #   runtime: Total runtime for model
 #   data_vars: Input dataset
 # Also saved 'analysis' MCMC output prior to variance adjustment
-WSOLCA_app_covs_Rcpp <- function(data_vars, res_path, adj_path, stan_path, 
+WSOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, adj_path, stan_path, 
                             save_res = TRUE, n_runs, burn, thin) {
   start_time <- Sys.time()
   
@@ -183,10 +183,16 @@ WSOLCA_app_covs_Rcpp <- function(data_vars, res_path, adj_path, stan_path,
   #================= Post-processing for adaptive sampler ======================
   # Get median number of classes with >= 5% of individuals, over all iterations
   M <- dim(MCMC_out$pi_MCMC)[1]  # Number of stored MCMC iterations
-  K_med <- round(median(rowSums(MCMC_out$pi_MCMC >= 0.05)))
+  K_MCMC <- rowSums(MCMC_out$pi_MCMC >= 0.05)
+  K_med <- round(median(K_MCMC))
   # Get number of unique classes for fixed sampler
   K_fixed <- K_med
   print(paste0("K_fixed: ", K_fixed))
+  # Save adaptive output
+  adapt_MCMC <- list(MCMC_out = MCMC_out, K_fixed = K_fixed, K_MCMC = K_MCMC)
+  if (save_res) {
+    save(adapt_MCMC, file = adapt_path)
+  }
   # Reduce memory burden
   rm(OLCA_params, probit_params, MCMC_out)
 
@@ -231,11 +237,6 @@ WSOLCA_app_covs_Rcpp <- function(data_vars, res_path, adj_path, stan_path,
   # c_all, pred_class_probs, loglik_med
   analysis <- analyze_results(MCMC_out = MCMC_out, post_MCMC_out = post_MCMC_out, 
                               n = n, p = p, V = V, y_all = y_all, x_mat = x_mat)
-  res_MCMC <- list(MCMC_out = MCMC_out, post_MCMC_out = post_MCMC_out,
-                   analysis = analysis)
-  if (save_res) {
-    save(res_MCMC, file = res_path)  # Save MCMC output
-  }
   
   #================= VARIANCE ADJUSTMENT =======================================
   print("Variance adjustment")
@@ -253,7 +254,9 @@ WSOLCA_app_covs_Rcpp <- function(data_vars, res_path, adj_path, stan_path,
   
   #================= Save and return output ====================================
   res <- list(analysis_adj = analysis_adj, runtime = runtime, 
-              data_vars = data_vars, MCMC_out = MCMC_out)
+              data_vars = data_vars, MCMC_out = MCMC_out, 
+              post_MCMC_out = post_MCMC_out,
+              K_MCMC = adapt_MCMC$K_MCMC)
   if (save_res) {
     save(res, file = adj_path)
   }
@@ -268,14 +271,14 @@ WSOLCA_app_covs_Rcpp <- function(data_vars, res_path, adj_path, stan_path,
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 # wd <- "~/Documents/Github/wsOFMM/"
 data_dir <- "Data/"
-res_dir <- "Results/"
+res_dir <- "Results/June22/"
 model_dir <- "Model_Code/"
 model <- "wsOFMM"
 
 # Define paths
 data_path <- paste0(wd, data_dir, "nhanesallage_frscores1118.csv")   # Input dataset
-res_path <- paste0(wd, res_dir, model, "_results_nhanes", ".RData")  # Output file
-adj_path <- paste0(wd, res_dir, model, "_results_no_covs_adj_nhanes", ".RData")  # Adjusted output file
+adapt_path <- paste0(wd, res_dir, model, "_adapt_nhanes", ".RData")  # Output file
+adj_path <- paste0(wd, res_dir, model, "_results_adj_nhanes", ".RData")  # Adjusted output file
 stan_path <- paste0(wd, model_dir, "WSOLCA_main.stan")  # Stan file
 
 # Check if results already exist

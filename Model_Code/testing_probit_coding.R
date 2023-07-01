@@ -1,22 +1,22 @@
 #===================================================
-## Weighted Supervised Overfitted Latent Class Model
-## Programmer: SM Wu   
-## Data: Simulations       
+# OLD WSOLCA VERSION from Github May 11 commit
 #===================================================
+
+samp_n <- 98
+scen_samp <- 111221
+iter_pop <- 1
+n_runs <- 100
+burn <- 0
+thin <- 5
+covs <- "true_Si"
+save_res <- FALSE
+
 
 # Read in command line arguments
 args <- commandArgs(trailingOnly = TRUE)
 scen_samp <- args[[1]]  # Simulation scenario
 iter_pop <- args[[2]]   # Population iteration
 samp_n <- args[[3]]     # Sample number
-covs <- args[[4]]       # Probit covariates
-if (covs == 1) {
-  covs <- NULL
-} else if (covs == 2) {
-  covs <- "true_Si"
-} else if (covs == 3) {
-  covs <- "additional"
-}
 
 # Load libraries
 library(plyr)
@@ -51,13 +51,7 @@ library(RcppTN)
 #   analysis_adj: List of adjusted posterior model results
 #   runtime: Total runtime for model
 #   data_vars: Input dataset
-#   MCMC_out: List of full MCMC output
-#   post_MCMC_out: List of MCMC output after relabeling
-#   K_MCMC: Adaptive sampler MCMC output for K
-# Also saves list `adapt_MCMC` containing:
-#   MCMC_out: List of full MCMC output
-#   K_fixed: Number of classes to use for fixed sampler; output from adaptive sampler
-#   K_MCMC: Adaptive sampler MCMC output for K
+# Also saved 'analysis' MCMC output prior to variance adjustment
 WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path, 
                              save_res = TRUE, n_runs, burn, thin, 
                              covs = NULL) {
@@ -77,35 +71,17 @@ WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path,
   x_mat <- data_vars$X_data            # Categorical exposure matrix, nxp
   y_all <- c(data_vars$Y_data)         # Binary outcome vector, nx1
   clus_id_all <- data_vars$cluster_id  # Cluster indicators, nx1
-  if (is.null(covs)) {
-    # Probit model only includes latent class C
-    # No stratifying variable
-    s_all <- NULL  
+  if (!is.null(covs)) {  # Other covariates are included in the probit model  
+    s_all <- data_vars[[covs]]    # Stratifying variable, nx1
+    # Stratifying variable as dummy columns
+    s_mat <- dummy_cols(data.frame(s = factor(s_all)),  
+                        remove_selected_columns = TRUE)
+    V <- as.matrix(s_mat)              # Regression design matrix without class assignment, nxq
+    q <- ncol(V)                       # Number of regression covariates excluding class assignment
+  } else {  # Only latent class is included in the probit model
+    s_all <- NULL  # No stratifying variable
     V <- matrix(1, nrow = n) 
     q <- 1
-  } else if (covs == "true_Si") {  
-    # Probit model includes C and S: C + S + C:S
-    # Stratifying variable, nx1
-    s_all <- data_vars[[covs]]    
-    # Regression design matrix without class assignment, nxq
-    V_data <- data.frame(s = as.factor(s_all))
-    V <- model.matrix(~ s, V_data)
-    # Number of regression covariates excluding class assignment
-    q <- ncol(V)                       
-  } else if (covs == "additional") {
-    # Probit model includes C, S, A (binary), and B (continuous)
-    # C + S + A + B + C:S + C:A + C:B
-    # Stratifying variable, nx1
-    s_all <- data_vars[["true_Si"]]  
-    a_all <- data_vars[["true_Ai"]]
-    b_all <- data_vars[["true_Bi"]]
-    # Regression design matrix without class assignment, nxq
-    V_data <- data.frame(s = as.factor(s_all), a = as.factor(a_all), b = b_all)
-    V <- model.matrix(~ s + a + b, V_data)
-    # Number of regression covariates excluding class assignment
-    q <- ncol(V)      
-  } else {  
-    stop("Error: covs must be one of 'true_Si', 'additiona', or NULL")
   }
   
   # Obtain normalized weights
@@ -147,13 +123,12 @@ WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path,
   #================= Post-processing for adaptive sampler ======================
   # Get median number of classes with >= 5% of individuals, over all iterations
   M <- dim(MCMC_out$pi_MCMC)[1]  # Number of stored MCMC iterations
-  K_MCMC <- rowSums(MCMC_out$pi_MCMC >= 0.05)
-  K_med <- round(median(K_MCMC))
+  K_med <- round(median(rowSums(MCMC_out$pi_MCMC >= 0.05)))
   # Get number of unique classes for fixed sampler
   K_fixed <- K_med
   print(paste0("K_fixed: ", K_fixed))
   # Save adaptive output
-  adapt_MCMC <- list(MCMC_out = MCMC_out, K_fixed = K_fixed, K_MCMC = K_MCMC)
+  adapt_MCMC <- list(MCMC_out = MCMC_out, K_fixed = K_fixed)
   if (save_res) {
     save(adapt_MCMC, file = adapt_path)
   }
@@ -179,7 +154,6 @@ WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path,
   
   #================= FIXED SAMPLER =============================================
   print("Fixed sampler")
-  set.seed(20230629)
   #================= Run fixed sampler to obtain posteriors ====================
   # Initialize OLCA model using fixed number of classes
   # alpha <- rep(2, K_fixed) # Hyperparameter for prior for pi
@@ -236,15 +210,46 @@ WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path,
   
   #================= Save and return output ====================================
   res <- list(analysis_adj = analysis_adj, runtime = runtime, 
-              data_vars = data_vars, V = V, MCMC_out = MCMC_out, 
-              post_MCMC_out = post_MCMC_out, K_MCMC = adapt_MCMC$K_MCMC)
+              data_vars = data_vars, MCMC_out = MCMC_out, 
+              post_MCMC_out = post_MCMC_out)
   if (save_res) {
     save(res, file = adj_path)
   }
   return(list(res = res, adapt_MCMC = adapt_MCMC))
 }
 
+temp_lin_pred <- numeric(n)
+for (i in 1:n) {
+  temp_lin_pred[i] <- t(as.matrix(V[i,])) %*% 
+    as.matrix(res$MCMC_out$xi_MCMC[1, res$MCMC_out$c_all_MCMC[1, i], ])
+}
 
+log_cond_c <- matrix(NA, nrow = n, ncol = K)
+pred_class_probs <- matrix(NA, nrow = n, ncol = K)
+probit_part <- matrix(NA, nrow = n, ncol = K)
+for (i in 1:n) {
+  for (k in 1:K) {
+    # Calculate theta component of individual log-likelihood assuming class k
+    log_theta_comp_k <- 0
+    for (j in 1:p) {
+      log_theta_comp_k <- log_theta_comp_k + log(theta[j, k, x_mat[i, j]])
+    }
+    # Calculate and control extremes for probit component
+    probit_part[i, k] <- dnorm(z_all[i], mean = V[i, ] %*% xi[k, ])
+    log_probit_part <- log(dnorm(z_all[i], mean = V[i, ] %*% xi[k, ])) 
+    if (log_probit_part == -Inf) {
+      log_probit_part <- log(1e-16)
+    }
+    log_probit_comp_k <- log_probit_part + 
+      log(y_all[i]*(z_all[i] > 0) + (1 - y_all[i])*(z_all[i] <= 0))
+    # Individual log-likelihood for class k
+    log_cond_c[i, k] <- log(pi[k]) + log_theta_comp_k + log_probit_comp_k
+  }
+  # Calculate p(c_i=k|-) = p(x,y,c_i=k) / p(x,y)
+  pred_class_probs[i, ] <- exp(log_cond_c[i, ] - logSumExp(log_cond_c[i, ]))
+  # Update class assignment using the posterior probabilities
+  c_all[i] <- rcat(n = 1, p = pred_class_probs[i, ])
+}
 
 #===================== RUN MAIN WSOLCA FUNCTION ================================
 
@@ -257,12 +262,12 @@ model_dir <- "Model_Code/"
 model <- "wsOFMM"
 
 # # Testing code
-# scen_samp <- 111211
+# scen_samp <- 111111
 # iter_pop <- 1
 # samp_n <- 1
 # 
-# n_runs <- 500
-# burn <- 250
+# n_runs <- 100
+# burn <- 50
 # thin <- 5
 # covs <- "true_Si"
 # save_res <- FALSE
@@ -270,9 +275,9 @@ model <- "wsOFMM"
 # Define paths
 data_path <- paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop,
                     "_samp", samp_n, ".RData")   # Input dataset
-adapt_path <- paste0(wd, res_dir, model, "_adapt_comb_scen", scen_samp, 
-                   "_samp", samp_n, ".RData")  # Output file
-adj_path <- paste0(wd, res_dir, model, "_results_comb_adjRcpp_scen", scen_samp, 
+adapt_path <- paste0(wd, res_dir, model, "_adapt_effmod_scen", scen_samp, 
+                     "_samp", samp_n, ".RData")  # Output file
+adj_path <- paste0(wd, res_dir, model, "_results_effmod_adjRcpp_scen", scen_samp, 
                    "_samp", samp_n, ".RData")      # Adjusted output file
 stan_path <- paste0(wd, model_dir, "WSOLCA_main.stan")  # Stan file
 
@@ -286,7 +291,7 @@ if (already_done) {
   burn <- 10000
   thin <- 5
   save_res <- TRUE
-  # covs <- "true_Si"
+  covs <- NULL
   
   # Source R helper functions
   source(paste0(wd, model_dir, "helper_functions.R"))
