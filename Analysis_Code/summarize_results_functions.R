@@ -746,8 +746,8 @@ save_scen_metrics <- function(scen_pop, scen_samp, WSOLCA = TRUE, SOLCA = TRUE,
                               covs = NULL, save_name) {
   # Set parameters and paths
   wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"  # Working directory
-  data_dir <- "Data/June22/"               # Simulated data directory
-  res_dir <- "Results/June22/"             # Model results directory
+  data_dir <- "Data/July6/"               # Simulated data directory
+  res_dir <- "Results/July6/"             # Model results directory
   analysis_dir <- "Analysis_Code/"  # Analysis directory where metrics will be saved
   iter_pop <- 1                     # Population iteration
   samp_n_seq <- 1:100               # Vector of sample iterations to summarize over

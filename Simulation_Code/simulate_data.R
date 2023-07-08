@@ -161,10 +161,22 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
   
   # Add additional effect modifiers if necessary
   if (scenario_vec[3] == 3) {
-    prob_A <- c(0.3, 0.7)
+    # true_Ai <- rbinom(n = N, size = 1, prob = 0.3) + 1
+    # true_Bi <- rnorm(n = N, mean = 0, sd = 5)
+    prob_A <- c(0.7, 0.3)
     true_Ai <- rbinom(n = N, size = 1, prob = prob_A[true_Si]) + 1
-    mean_B <- c(-5, 5)
+    mean_B <- c(-3, 5)
     true_Bi <- rnorm(n = N, mean = mean_B[true_Si], sd = 2)
+    # betas <- c(4, 3, 2, 3.25, -1.25, -1.75, -0.75, -1.75, 0, 0, 0, 0)
+    # covariates <- data.frame(true_Si, true_Ai, true_Bi)
+    # test_Ci <- rmult.bcl(clsize = 80, ncategories = K, betas = betas,
+    #                      xformula = ~true_Si+true_Ai+true_Bi, xdata = covariates,
+    #                      cor.matrix = diag(rep(1, 240)))
+    # cor(c(test_Ci$Ysim), c(true_Si))
+    # cor(c(test_Ci$Ysim), c(true_Ai))
+    # cor(c(test_Ci$Ysim), c(true_Bi))
+    # table(test_Ci$Ysim)
+    # latent_correlation_matrix <- toeplitz(c(1, rep(0.5, cluster_size - 1)))
   } else {
     true_Ai <- true_Bi <- NULL
   } 
@@ -198,11 +210,15 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
                         -0.5, -0.8), nrow = 3, byrow = TRUE)
     # Create probit regression design matrix with interactions
     S2 <- ifelse(true_Si == 2, 1, 0)
+    C1 <- ifelse(true_Ci == 1, 1, 0)
     C2 <- ifelse(true_Ci == 2, 1, 0)
     C3 <- ifelse(true_Ci == 3, 1, 0)
-    V_design <- cbind(Ref = 1, S2 = S2, 
+    V_design <- cbind(C1 = C1, C1S2 = C1*S2, 
                       C2 = C2, C2S2 = C2*S2, 
                       C3 = C3, C3S2 = C3*S2)
+    V_design_ref <- cbind(Ref = 1, S2 = S2, 
+                          C2 = C2, C2S2 = C2*S2, 
+                          C3 = C3, C3S2 = C3*S2)
     formula <- ~S2+C2+C2S2+C3+C3S2
   } else {
     # Additional confounders and interactions
@@ -211,22 +227,33 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
     # xi1*I(C=1) + xi2*I(C=1,S=2) + xi3*I(C=1,A=2) + xi4*I(C=1)B
     # + xi5*I(C=2) + xi6*I(C=2,S=2) + xi7*I(C=2,A=2) + xi8*I(C=2)B
     # + xi9*I(C=3) + xi10*I(C=3,S=2) + xi11*I(C=3,A=2) + xi12*I(C=3)B
-    true_xi <- matrix(c(1, -0.5, -0.2, -0.04,
-                        0.3, -1, 0.1, 0.01,
-                        -0.5, -0.8, 0.4, 0.02), nrow = 3, byrow = TRUE)
+    true_xi <- matrix(c(1, -0.5, 0.4, -0.04,
+                        0.3, -1, -0.3, 0.05,
+                        -0.5, -0.8, -0.2, 0.04), nrow = 3, byrow = TRUE)
     # Create probit regression design matrix with interactions
     S2 <- ifelse(true_Si == 2, 1, 0)
     A2 <- ifelse(true_Ai == 2, 1, 0)
+    C1 <- ifelse(true_Ci == 1, 1, 0)
     C2 <- ifelse(true_Ci == 2, 1, 0)
     C3 <- ifelse(true_Ci == 3, 1, 0)
-    V_design <- cbind(Ref = 1, S2 = S2, A2 = A2, B = true_Bi,
+    V_design <- cbind(C1 = C1, C1S2 = C1*S2, C1A2 = C1*A2, C1B = C1*true_Bi,
                       C2 = C2, C2S2 = C2*S2, C2A2 = C2*A2, C2B = C2*true_Bi, 
                       C3 = C3, C3S2 = C3*S2, C3A2 = C3*A2, C3B = C3*true_Bi)
-    formula <- ~S2+A2+B + C2+C2S2+C2A2+C2B + C3+C3S2+C3A2+C3B
+    V_design_ref <- cbind(Ref = 1, S2 = S2, A2 = A2, B = true_Bi,
+                          C2 = C2, C2S2 = C2*S2, C2A2 = C2*A2, C2B = C2*true_Bi, 
+                          C3 = C3, C3S2 = C3*S2, C3A2 = C3*A2, C3B = C3*true_Bi)
+    formula <- ~S2+A2+B + C2+C2S2+C2A2+C2B + C3+C3S2+C3A2+C3B 
+    # true_xi is converted to reference later
   }
   # Obtain true outcome probability for each individual
   true_Phi_under <- pnorm(V_design %*% c(t(true_xi)))
   # xi_under <- matrix(c(1, 0.3, -0.5, 0.5, -0.7, -1.3), nrow = 3, byrow = FALSE)
+  # summary(true_Phi_under)
+  # temp <- data.frame(true_Phi = true_Phi_under, true_Ci)
+  # temp %>% ggplot(aes(x = true_Phi)) +
+  #   geom_histogram(data = subset(temp, true_Ci == 1), fill = "green", alpha = 0.3) +
+  #   geom_histogram(data = subset(temp, true_Ci == 2), fill = "red", alpha = 0.3) +
+  #   geom_histogram(data = subset(temp, true_Ci == 3), fill = "blue", alpha = 0.3)
   
   #================ Binary outcome and true outcome probabilities ==============
   if (scenario_vec[4] == 1) {
@@ -248,7 +275,7 @@ create_pop <- function(scenario, iter_pop = 1, pop_data_path) {
     # Simulate correlated binary outcomes
     sim_binary <- rbin(clsize = cluster_size, intercepts = intercepts,
                        betas = betas, xformula = formula, 
-                       xdata = V_design,
+                       xdata = V_design_ref,
                        cor.matrix = latent_correlation_matrix, link = "probit")
     # Cluster indicator for all individuals. Stratum 1 includes clusters 1-250.
     # Stratum 2 includes clusters 251-1000
@@ -422,7 +449,7 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 # wd <- "~/Documents/Github/wsOFMM/"
 # wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
-data_dir <- "Data/June22/"
+data_dir <- "Data/July6/"
 
 #==================== Create population scenarios ==============================
 scenarios <- 1112

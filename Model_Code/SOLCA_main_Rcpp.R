@@ -106,7 +106,7 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
     # Number of regression covariates excluding class assignment
     q <- ncol(V)      
   } else {  
-    stop("Error: covs must be one of 'true_Si', 'additiona', or NULL")
+    stop("Error: covs must be one of 'true_Si', 'additional', or NULL")
   }
   
   # Set normalized weights to 1
@@ -236,8 +236,8 @@ SOLCA_main_Rcpp <- function(data_path, adapt_path, res_path, save_res = TRUE,
 # Define directories
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 # wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
-data_dir <- "Data/June22/"
-res_dir <- "Results/June22/"
+data_dir <- "Data/July6/"
+res_dir <- "Results/July6/"
 model_dir <- "Model_Code/"
 model <- "sOFMM"
 

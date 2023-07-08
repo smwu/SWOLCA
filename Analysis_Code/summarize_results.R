@@ -90,13 +90,13 @@ save_scen_metrics(scen_pop = 1112, scen_samp = 111211, WSOLCA = TRUE,
 save_scen_metrics(scen_pop = 1132, scen_samp = 113211, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
                   SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
-                  covs = "true_Si", save_name = "metrics_scen")
+                  covs = "additional", save_name = "metrics_scen")
 
 #================ TABLE METRICS SUMMARY ========================================
 
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/" # Working directory
 data_dir <- "Data/June22/"               # Simulated data directory
-res_dir <- "Results/June22/"             # Model results directory
+res_dir <- "Results/July3/"             # Model results directory
 analysis_dir <- "Analysis_Code/"  # Analysis directory where metrics are saved
 
 create_table1(wd = wd, analysis_dir = analysis_dir, format = "latex")
@@ -215,29 +215,29 @@ scenarios <- c(111213, 111211, 111212)
 scen_names <- c("SRS", "Stratified", "Stratified Cluster")
 save_names <- rep("metrics_scen", 3)
 create_app_tables(wd, analysis_dir, save_names, scenarios, scen_names, 
-                  overall_name = "Sampling Scheme", format = "latex")
+                  overall_name = "Sampling Scheme", format = "html")
 
 # Pattern strength and separation
 scenarios <- c(111211, 211211, 121211)
 scen_names <- c("Mode 85%", "Mode 55%", "Overlapping")
 save_names <- rep("metrics_scen", 3)
 create_app_tables(wd, analysis_dir, save_names, scenarios, scen_names, 
-                  overall_name = "Pattern", format = "latex")
+                  overall_name = "Pattern", format = "html")
   
 # Sample size
 scenarios <- c(111221, 111211, 111231)
 scen_names <- c("10% (n=8000)", "5% (n=4000)", "1% (n=800)")
 save_names <- rep("metrics_scen", 3)
 create_app_tables(wd, analysis_dir, save_names, scenarios, scen_names, 
-                  overall_name = "Sample Size", format = "latex")
+                  overall_name = "Sample Size", format = "html")
 
 # Selection bias
-scenarios <- c(111211, 111211, 112211)
-scen_names <- c("Confounder Measured", "Confounder \nUnmeasured", 
-                "Precision \nUnmeasured")
-save_names <- c("metrics_scen", "metrics_marg_scen", "metrics_marg_scen")
+scenarios <- c(111211, 112211, 113211)
+scen_names <- c("Confounder \nMeasured", "Precision \nUnmeasured", 
+                "Additional \nConfounders")
+save_names <- c("metrics_scen", "metrics_marg_scen", "metrics_scen")
 create_app_tables(wd, analysis_dir, save_names, scenarios, scen_names, 
-                  overall_name = "Selection Bias", format = "latex")
+                  overall_name = "Selection Bias", format = "html")
 
 
 #================= Plot theta patterns =========================================

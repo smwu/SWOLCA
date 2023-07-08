@@ -78,7 +78,7 @@ process_data <- function(data_path, covs = "all") {
           educ == "At least some college" ~ 1,
           educ == "HS/GED" ~ 2,
           educ == "less than HS" ~ 3),
-        age_cat = case_when(
+        age_cat = case_when(  # See breakdown of 20-44, 45-64, >=65. If too skewed, just use <=45
           20 <= RIDAGEYR & RIDAGEYR <= 29 ~ 1,
           30 <= RIDAGEYR & RIDAGEYR <= 39 ~ 2,
           40 <= RIDAGEYR & RIDAGEYR <= 49 ~ 3,
