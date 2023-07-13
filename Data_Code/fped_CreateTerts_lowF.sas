@@ -139,11 +139,11 @@ data fped_rhq_ex1;
 	if riagendr=2;
 run; 
 
-/*Exclusion criteria 2: Restrict to living at or below 130% poverty income level */
+/*Exclusion criteria 2: Restrict to living at or below 185% poverty income level */
 data fped_rhq_ex2;
 	set fped_rhq_ex1; 
 	if indfmpir = . then delete;
-	if indfmpir <=1.3 ; 
+	if indfmpir <=1.85 ; 
 run;
 
 /*examine breastfeed/lactating mom consumption of legumes */ 
