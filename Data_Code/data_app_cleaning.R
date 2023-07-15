@@ -46,7 +46,7 @@ fed_all$FED_ASSIST <- ifelse(fed_all$FSQ012 == 1 | fed_all$FSQ162 == 1, 1, 0)
 food_fed <- merge(x = food_terts, y = fed_all, by = "SEQN", 
                   all.x = TRUE, all.y = FALSE)
 # check missingness
-temp <- food_fed[is.na(food_fed$FED_ASSIST), 53:56]  # 181 obs
+temp <- food_fed[is.na(food_fed$FED_ASSIST), 53:56]  # 351 obs
 # Turn missing into no's
 food_fed$FED_ASSIST[is.na(food_fed$FED_ASSIST)] <- 0
 
@@ -129,7 +129,7 @@ bpx_all$SBP_avg <- rowMeans(cbind(bpx_all$BPXSY1, bpx_all$BPXSY2, bpx_all$BPXSY3
                                   bpx_all$BPXSY4), na.rm=TRUE)
 # average diastolic bp
 bpx_all$DBP_avg <- rowMeans(cbind(bpx_all$BPXDI1, bpx_all$BPXDI2, bpx_all$BPXDI3,
-                                 bp_all$BPXDI4), na.rm=TRUE)
+                                 bpx_all$BPXDI4), na.rm=TRUE)
 # flag hypertension per AHA guidelines: https://www.heart.org/en/health-topics/high-blood-pressure
 bpx_all$BPX_flag <- ifelse(bpx_all$SBP_avg > 130 | bpx_all$DBP_avg > 80, 1, 0)  
 
@@ -156,7 +156,7 @@ food_fed_smo_paq_bp <- food_fed_smo_paq %>%
 food_fed_smo_paq_bp$BP_flag <- ifelse(food_fed_smo_paq_bp$BPX_flag == 1 | 
                                       food_fed_smo_paq_bp$BPQ_flag == 1, 1, 0)
 # check missingness
-temp <- food_fed_smo_paq_bp[is.na(food_fed_smo_paq_bp$BP_flag), -c(1:62)]  # 27 obs
+temp <- food_fed_smo_paq_bp[is.na(food_fed_smo_paq_bp$BP_flag), -c(1:62)]  # 35 obs
 # Turn missing into no's
 food_fed_smo_paq_bp$BP_flag[is.na(food_fed_smo_paq_bp$BP_flag)] <- 0
 
@@ -164,7 +164,7 @@ food_fed_smo_paq_bp$BP_flag[is.na(food_fed_smo_paq_bp$BP_flag)] <- 0
 #===================== Save dataset ============================================
 
 write.csv(food_fed_smo_paq_bp,
-          paste0(wd, data_dir, "nhanes_adult_low_f_12jul2023.csv"))
+          paste0(wd, data_dir, "nhanes1518_adult_low_f_12jul2023.csv"))
 
 
 

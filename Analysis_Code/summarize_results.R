@@ -65,11 +65,6 @@ save_scen_metrics(scen_pop = 1212, scen_samp = 121211, WSOLCA = TRUE,
                   SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
                   SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
                   covs = "true_Si", save_name = "metrics_scen")
-# Effect modifier
-save_scen_metrics(scen_pop = 1122, scen_samp = 112211, WSOLCA = TRUE, 
-                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
-                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
-                  covs = "true_Si", save_name = "metrics_scen")
 # Effect modifier marginal
 save_scen_metrics(scen_pop = 1122, scen_samp = 112211, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, 
@@ -79,6 +74,17 @@ save_scen_metrics(scen_pop = 1122, scen_samp = 112211, WSOLCA = TRUE,
                   # SOLCA_name = "_results_effmod_scen", 
                   # WOLCA_name = "_results_wt_effmod_scen",
                   covs = NULL, save_name = "metrics_marg_scen")
+# Additional confounders
+save_scen_metrics(scen_pop = 1132, scen_samp = 113211, WSOLCA = TRUE, 
+                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
+                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
+                  covs = "additional", save_name = "metrics_scen")
+
+# Effect modifier
+save_scen_metrics(scen_pop = 1122, scen_samp = 112211, WSOLCA = TRUE, 
+                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
+                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
+                  covs = "true_Si", save_name = "metrics_scen")
 # Confounder marginal
 save_scen_metrics(scen_pop = 1112, scen_samp = 111211, WSOLCA = TRUE, 
                   SOLCA = TRUE, WOLCA = TRUE, 
@@ -86,11 +92,6 @@ save_scen_metrics(scen_pop = 1112, scen_samp = 111211, WSOLCA = TRUE,
                   SOLCA_name = "_results_effmod_scen", 
                   WOLCA_name = "_results_wt_effmod_scen",
                   covs = NULL, save_name = "metrics_marg_scen")
-# Additional confounders
-save_scen_metrics(scen_pop = 1132, scen_samp = 113211, WSOLCA = TRUE, 
-                  SOLCA = TRUE, WOLCA = TRUE, WSOLCA_name = WSOLCA_name, 
-                  SOLCA_name = SOLCA_name, WOLCA_name = WOLCA_name,
-                  covs = "additional", save_name = "metrics_scen")
 
 #================ TABLE METRICS SUMMARY ========================================
 

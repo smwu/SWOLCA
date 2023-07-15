@@ -4,6 +4,51 @@
 # Last Updated: 2023/05/20
 #==================================================
 
+#============== Probit coefficient conversions =================================
+
+# convert_Phi_to_xi_combo converts a matrix of Phi values to the corresponding
+# matrix of xi values using combination coding. Cannot handle additional covs
+# Input: Phi_mat: KxS matrix of Phi values
+# Output: xi_mat: KxS matrix of xi values in combination coding
+convert_Phi_to_xi_combo <- function(Phi_mat) {
+  K <- nrow(Phi_mat)
+  S <- ncol(Phi_mat)
+  xi_mat <- matrix(NA, nrow = K, ncol = S)
+  for (k in 1:K) {
+    xi_mat[k, 1] <- qnorm(Phi_mat[k, 1])
+    xi_mat[k, 2] <- qnorm(Phi_mat[k, 2]) - xi_mat[k, 1]
+  }
+  return(xi_mat)
+}
+
+# convert_fv_to_combo converts from factor variable coding to a 
+# combination of factor variable and reference cell coding. Cannot handle 
+# additional covariates other than s
+# Input: xi_fv: Matrix of probit coefficients in factor variable coding; KxS
+# Output: xi_combo: Matrix of probit coefficients in combination coding; KxS
+convert_fv_to_combo <- function(xi_fv) {
+  # Convert to b1*I(C=1) + b2*I(C=1,S=2) + b3*I(C=2) + b4*I(C=2,S=2) + b5*I(C=3) + b6*I(C=3,S=2)
+  S <- ncol(xi_fv)
+  xi_combo <- xi_fv
+  xi_combo[, 1] <- xi_fv[, 1]
+  if (S == 2) {
+    xi_combo[, 2] <- xi_fv[, 2] - xi_fv[, 1]
+  }
+  return(xi_combo)
+}
+
+# convert_combo_to_fv converts from combination coding to factor variable coding. 
+# Cannot handle additional covariates other than s
+# Input: xi_combo: Matrix of probit coefficients in combination coding; KxS
+# Output: xi_fv: Matrix of probit coefficients in factor variable coding; KxS
+convert_combo_to_fv <- function(xi_combo) {
+  # Convert to b1*I(C=1,S=1) + b2*I(C=1,S=2) + b3*I(C=2,S=1) + b4*I(C=2,S=2) + b5*I(C=3,S=1) + b6*I(C=3,S=2)
+  xi_fv <- xi_combo
+  xi_fv[, 1] <- xi_combo[, 1]
+  xi_fv[, 2] <- xi_combo[, 2] + xi_combo[, 1]
+  return(xi_fv)
+}
+
 #============== Get true population values =====================================
 
 # get_true_params returns the observed simulated population values for the 
@@ -29,10 +74,10 @@ get_true_params <- function(sim_pop) {
     }
   }
   
-  # Get true Phi if no continuous covariates
-  S <- length(unique(sim_pop$true_Si))
-  K <- length(unique(sim_pop$true_Ci))
+  # Recalculate true Phi and true xi if no continuous covariates
   if (!is.null(sim_pop$true_Phi_mat)) {
+    S <- length(unique(sim_pop$true_Si))
+    K <- length(unique(sim_pop$true_Ci))
     true_Phi_mat <- matrix(NA, nrow=K, ncol=S)
     for (k in 1:K) {
       for (s in 1:S) {
@@ -41,13 +86,14 @@ get_true_params <- function(sim_pop) {
           sum(sim_pop$true_Si==s & sim_pop$true_Ci==k)
       }
     }
+    # Get true xi
+    true_xi <- convert_Phi_to_xi_combo(true_Phi_mat)
   } else {
     true_Phi_mat <- NULL
+    # Get true xi
+    true_xi <- sim_pop$true_xi
   }
 
-  # Get true xi
-  true_xi <- sim_pop$true_xi
-  
   return(list(true_pi = true_pi, true_theta = true_theta, true_xi = true_xi, 
               true_Phi_mat = true_Phi_mat))
 }
@@ -290,8 +336,8 @@ get_Phi_dist <- function(est_Phi, true_Phi, dist_type) {
 
 # `get_marg_eff` returns the true marginal effect of P(Y=1|C)
 # Inputs:
-#   true_xi: Matrix of true probit model coefficients including S and C as 
-# covariates. Applying 'pnorm' gives conditional effects P(Y=1|S,C). KxS
+#   true_xi: Matrix of probit model coefs in factor variable coding with S and C 
+# as covariates. Applying 'pnorm' gives conditional effects P(Y=1|S,C). KxS
 #   true_pi_s: Matrix of stratum-specific class probabilities P(C=k|S=s). SxK
 #   true_pi: Vector of overall class membership probabilities P(C=k). Kx1
 #   N_s: Vector of stratum sizes. Sx1
@@ -443,7 +489,7 @@ get_metrics <- function(pop_data_path, sim_data_path, sim_res_path, model,
         V <- model.matrix(~ s + a + b, V_data)
       }
       ##### CHECK THIS!!!!!!!!!!!!!!
-      Phi_med <- numeric(n)                    # Initialize individual outcome probabilities
+      Phi_med <- numeric(n)         # Initialize individual outcome probabilities
       # Calculate posterior class membership, p(c_i=k|-), for each class k
       for (i in 1:n) {
         Phi_med[i] <- pnorm(V[i, ] %*% analysis$xi_med[analysis$c_all[i], ])
@@ -462,11 +508,13 @@ get_metrics <- function(pop_data_path, sim_data_path, sim_res_path, model,
     
     # For the effect modifier scenario, change true_xi to the marginal effect
     if (is.null(covs)) {
-      true_params$true_xi <- qnorm(as.matrix(get_marg_eff(sim_pop$true_xi, 
-                                                          sim_pop$true_pi_s, 
-                                                          sim_pop$true_pi, 
-                                                          sim_pop$N_s, sim_pop$N), 
-                                             ncol = 1))
+      xi_fv <- convert_combo_to_fv(true_params$true_xi)
+      marg_xi_fv <- qnorm(as.matrix(get_marg_eff(xi_fv, 
+                                                 sim_pop$true_pi_s, 
+                                                 true_params$true_pi, 
+                                                 sim_pop$N_s, sim_pop$N), 
+                                    ncol = 1))
+      true_params$true_xi <- convert_fv_to_combo(marg_xi_fv)
     }
     
     # If number of classes is incorrect, fill remaining components with 0's
