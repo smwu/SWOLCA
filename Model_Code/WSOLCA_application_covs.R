@@ -32,19 +32,25 @@ library(ggpubr)
 # returns results
 # Inputs:
 #   data_vars: Output list from "process_data" function 
-#   res_path: String path for output file
+#   adapt_path: String path for adaptive sampler output file
 #   adj_path: String path for adjusted output file
 #   stan_path: String path for Stan file
 #   save_res: Boolean specifying if results should be saved. Default = TRUE
 #   n_runs: Number of MCMC iterations
 #   burn: Burn-in period
 #   thin: Thinning factor
-#   K_fixed: Number of latent classes. If NULL (default), adaptive sampler runs
+#   K_known: Number of latent classes. If NULL (default), adaptive sampler runs
 # Outputs: Saves and returns list `res` containing:
-#   analysis_adj: List of adjusted posterior model results
+#   analysis_adj: List of posterior model results
 #   runtime: Total runtime for model
 #   data_vars: Input dataset
-# Also saved 'analysis' MCMC output prior to variance adjustment
+#   MCMC_out: List of full MCMC output
+#   post_MCMC_out: List of MCMC output after relabeling
+#   K_MCMC: Adaptive sampler MCMC output for K
+# Also saves list `adapt_MCMC` containing:
+#   MCMC_out: List of full MCMC output
+#   K_fixed: Number of classes to use for fixed sampler; output from adaptive sampler
+#   K_MCMC: Adaptive sampler MCMC output for K
 WSOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, adj_path, stan_path, 
                             save_res = TRUE, n_runs, burn, thin, K_known = NULL) {
   start_time <- Sys.time()
@@ -119,7 +125,6 @@ WSOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, adj_path, stan_path,
     }
     # Reduce memory burden
     rm(OLCA_params, probit_params, MCMC_out)
-    
   }
   
   #================= FIXED SAMPLER =============================================
@@ -226,7 +231,7 @@ if (already_done) {
   # Source Rcpp functions
   Rcpp::sourceCpp(paste0(wd, model_dir, "main_Rcpp_functions.cpp"))
   
-  # Set seed
+  # Set seed and run model
   set.seed(20230225)
   print(paste0("Running WSOLCA_application..."))
   results_adj <- WSOLCA_app_covs_Rcpp(data_vars = data_vars, 
@@ -234,7 +239,7 @@ if (already_done) {
                                       adj_path = adj_path, 
                                       stan_path = stan_path, save_res = TRUE, 
                                       n_runs = 20000, burn = 10000, thin = 5,
-                                      K_known = 5)
+                                      K_known = NULL)
   print(paste0("Runtime: ", results_adj$runtime))
 }
 
