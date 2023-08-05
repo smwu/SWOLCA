@@ -11,48 +11,50 @@ ods preferences;
 ods html close;
 ods html ;
 
-libname pride 'C:\Users\brs380\OneDrive - Harvard University\Migrated-P-Drive\NHANES\fped';
-libname nhanes 'C:\Users\brs380\OneDrive - Harvard University\Migrated-P-Drive\NHANES\input_dietdata'; 
+libname pride 'P:\NHANES_WSOLCA';
+libname nhanes 'P:\NHANES_WSOLCA'; 
 
-proc contents data=pride.HEI1112_avg varnum; run; 
-proc contents data=pride.HEI1314_avg varnum; run; 
+/* View, read in, and sort HEI scores */
 proc contents data=pride.HEI1516_avg varnum; run; 
 proc contents data=pride.HEI1718_avg varnum; run; 
 
-
-data hei1118;
-	set pride.hei1112_avg pride.hei1314_avg pride.hei1516_avg pride.hei1718_avg;
+data hei1518;
+	set pride.hei1516_avg pride.hei1718_avg;
 run; 
 
-proc sort data=hei1118; by seqn; run; 
+proc sort data=hei1518; by seqn; run; 
 
-proc contents data=pride.tert_nhanes1118 varnum; run; 
+/* View, read in, and sort tertiles of consumption */
+proc contents data=pride.tert_nhaneslowf_subset1518 varnum; run; 
 
-data tert1118;
-	set pride.tert_nhanes1118; 
-
-drop  _FREQ_;
-
+data tert1518;
+	set pride.tert_nhaneslowf_subset1518; 
+	drop  _FREQ_;
 RUN; 
 
+proc sort data=tert1518; by seqn; run; 
 
-proc sort data=tert1118; by seqn; run; 
-
-data tert_hei1118clean;
-	merge hei1118(in=inhei) tert1118(in=intert);
+/* Merge in HEI scores */
+data tert_hei1518clean;
+	merge hei1518(in=inhei) tert1518(in=intert);
 	by SEQN;
 	if intert and inhei;
 run; 
 
 
-/*data check*/
-proc means data=tert_hei1118clean n nmiss min mean max;
+/* Data check */
+proc means data=tert_hei1518clean n nmiss min mean max;
 	var RIDAGEYR indfmpir;
 run; 
 
-
-data pride.hei_tert1118;
-	set tert_hei1118clean;
+/* Save data */
+data pride.hei_tert1518;
+	set tert_hei1518clean;
 run; 
 
-/*export file to csv file*/
+/* export data to csv file */
+proc export data=pride.hei_tert1518
+	outfile="nhanes1518_hei_tert_lowF.csv"
+	dbms=csv
+	replace;
+run;
