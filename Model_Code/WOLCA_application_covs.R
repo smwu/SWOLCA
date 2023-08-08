@@ -1,8 +1,8 @@
 #===================================================
-## Supervised Overfitted Latent Class Model
+## Weighted Overfitted Latent Class Model
 ## Programmer: SM Wu   
 ## Data: NHANES Application with Covariates
-## Data Updated: 2023/07/15
+## Date Updated: 2023/07/15
 #===================================================
 
 # Load libraries
@@ -28,11 +28,11 @@ library(ggpubr)
 
 #========================= MAIN FUNCTION =======================================
 
-# 'SOLCA_app_covs_Rcpp' runs the SOLCA model with covariates and saves and 
+# 'WOLCA_app_covs_Rcpp' runs the WOLCA model with covariates and saves and 
 # returns results
 # Inputs:
 #   data_vars: Output list from "process_data" function 
-#   adapt_path: String path for adaptive sampler output file
+#   adapt_path: String path for adaptive sampler file
 #   res_path: String path for output file
 #   save_res: Boolean specifying if results should be saved. Default = TRUE
 #   n_runs: Number of MCMC iterations
@@ -50,11 +50,12 @@ library(ggpubr)
 #   MCMC_out: List of full MCMC output
 #   K_fixed: Number of classes to use for fixed sampler; output from adaptive sampler
 #   K_MCMC: Adaptive sampler MCMC output for K
-SOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, res_path, save_res = TRUE, 
-                                n_runs, burn, thin, K_known = NULL) {
+WOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, res_path, save_res = TRUE, 
+                            n_runs, burn, thin, K_known = NULL) {
   start_time <- Sys.time()
   
   #================= Read in data ==============================================
+  print("Read in data")
   x_mat <- data_vars$x_mat
   y_all <- data_vars$y_all
   s_all <- data_vars$s_all
@@ -69,8 +70,9 @@ SOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, res_path, save_res = TRUE
                  function(x) length(unique(x))))  # CHANGE TO ADAPT TO ITEM
   q <- ncol(V)                         # Number of regression covariates excluding class assignment
   
-  # Set normalized weights to 1
-  w_all <- rep(1, n)
+  # Obtain normalized weights
+  kappa <- sum(sample_wt) / n   # Weights norm. constant. If sum(weights)=N, this is 1/(sampl_frac)
+  w_all <- c(sample_wt / kappa) # Weights normalized to sum to n, nx1
   
   #================= ADAPTIVE SAMPLER ==========================================
   if (!is.null(K_known)) {
@@ -85,27 +87,12 @@ SOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, res_path, save_res = TRUE
     OLCA_params <- init_OLCA(alpha = alpha, eta = eta, n = n, K = K_max, p = p, 
                              d = d)
     
-    #================= Initialize priors and variables for probit model ==========
-    # Initialize hyperparameters for xi
-    mu0 <- Sig0 <- vector("list", K_max)
-    for (k in 1:K_max) {
-      # MVN(0,1) hyperprior for prior mean of xi
-      mu0[[k]] <- rnorm(n = q)
-      # InvGamma(3.5, 6.25) hyperprior for prior variance of xi. Assume uncorrelated 
-      # components and mean variance 2.5 for a weakly informative prior on xi
-      Sig0[[k]] <- diag(rinvgamma(n = q, shape = 3.5, scale = 6.25), nrow = q, ncol = q)
-    }
-    # Obtain xi, z_all                        
-    probit_params <- init_probit(mu0 = mu0, Sig0 = Sig0, K = K_max, q = q, n = n, 
-                                 V = V, y_all = y_all, c_all = OLCA_params$c_all)
-    
     #================= Run adaptive sampler to obtain number of classes ==========
-    # Obtain pi_MCMC, theta_MCMC, xi_MCMC, c_all_MCMC, z_all_MCMC, loglik_MCMC
-    MCMC_out <- run_MCMC_Rcpp(OLCA_params = OLCA_params, probit_params = probit_params, 
-                              n_runs = n_runs, burn = burn, thin = thin, K = K_max, 
-                              p = p, d = d, n = n, q = q, w_all = w_all, x_mat = x_mat, 
-                              y_all = y_all, V = V, alpha = alpha, eta = eta, 
-                              Sig0 = Sig0, mu0 = mu0)
+    # Obtain pi_MCMC, theta_MCMC, c_all_MCMC
+    MCMC_out <- run_MCMC_Rcpp_WOLCA(OLCA_params = OLCA_params,  
+                                    n_runs = n_runs, burn = burn, thin = thin, 
+                                    K = K_max, p = p, d = d, n = n, w_all = w_all, 
+                                    x_mat = x_mat, alpha = alpha, eta = eta)
     
     #================= Post-processing for adaptive sampler ======================
     # Get median number of classes with >= 5% of individuals, over all iterations
@@ -121,59 +108,88 @@ SOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, res_path, save_res = TRUE
       save(adapt_MCMC, file = adapt_path)
     }
     # Reduce memory burden
-    rm(OLCA_params, probit_params, MCMC_out)
-  }
+    rm(OLCA_params, MCMC_out)
+  }  
   
   #================= FIXED SAMPLER =============================================
   print("Fixed sampler")
   #================= Run fixed sampler to obtain posteriors ====================
   # Initialize OLCA model using fixed number of classes
   alpha <- rep(1, K_fixed) / K_fixed  # Hyperparameter for prior for pi
-  eta <- rep(1, d)
+  eta <- rep(1, d)                 # Hyperparameter for prior for theta
   # Obtain pi, theta, c_all
   OLCA_params <- init_OLCA(alpha = alpha, eta = eta, n = n, K = K_fixed, p = p, 
                            d = d)
   
-  # Initialize probit model using fixed number of classes
-  # Initialize hyperparameters for xi
-  mu0 <- Sig0 <- vector("list", K_fixed)
-  for (k in 1:K_fixed) {
-    # MVN(0,1) hyperprior for prior mean of xi
-    mu0[[k]] <- rnorm(n = q)
-    # InvGamma(3.5, 6.25) hyperprior for prior variance of xi. Assume uncorrelated 
-    # components and mean variance 2.5 for a weakly informative prior on xi
-    Sig0[[k]] <- diag(rinvgamma(n = q, shape = 3.5, scale = 6.25), nrow = q, ncol = q)
-  }
-  # Obtain xi, z_all                        
-  probit_params <- init_probit(mu0 = mu0, Sig0 = Sig0, K = K_fixed, q = q, n = n, 
-                               V = V, y_all = y_all, c_all = OLCA_params$c_all)
-  
   # Run MCMC algorithm using fixed number of classes
-  # Obtain pi_MCMC, theta_MCMC, xi_MCMC, c_all_MCMC, z_all_MCMC, loglik_MCMC
-  MCMC_out <- run_MCMC_Rcpp(OLCA_params = OLCA_params, probit_params = probit_params, 
-                            n_runs = n_runs, burn = burn, thin = thin, K = K_fixed, 
-                            p = p, d = d, n = n, q = q, w_all = w_all, x_mat = x_mat, 
-                            y_all = y_all, V = V, alpha = alpha, eta = eta, 
-                            Sig0 = Sig0, mu0 = mu0)
+  # Obtain pi_MCMC, theta_MCMC, c_all_MCMC
+  MCMC_out <- run_MCMC_Rcpp_WOLCA(OLCA_params = OLCA_params,  
+                                  n_runs = n_runs, burn = burn, thin = thin, K = K_fixed, 
+                                  p = p, d = d, n = n, w_all = w_all, x_mat = x_mat, 
+                                  alpha = alpha, eta = eta)
   
   # Post-processing to recalibrate labels and remove extraneous empty classes
   # Obtain K_med, pi, theta, xi, loglik_MCMC
-  post_MCMC_out <- post_process(MCMC_out = MCMC_out, p = p, d = d, q = q)
+  post_MCMC_out <- post_process_WOLCA(MCMC_out = MCMC_out, p = p, d = d)
   
   # Obtain posterior estimates, reduce number of classes, analyze results
   # Obtain K_red, pi_red, theta_red, xi_red, pi_med, theta_med, xi_med, Phi_med, 
   # c_all, pred_class_probs, loglik_med
-  analysis <- analyze_results(MCMC_out = MCMC_out, post_MCMC_out = post_MCMC_out, 
-                              n = n, p = p, V = V, y_all = y_all, x_mat = x_mat)
+  analysis <- analyze_results_WOLCA(MCMC_out = MCMC_out, post_MCMC_out = post_MCMC_out, 
+                                    n = n, p = p, x_mat = x_mat)
+  
+  #================= Fit probit model ==========================================
+  svy_data <- data.frame(s = factor(s_all),
+                         clus = clus_id_all,
+                         x = x_mat,
+                         y = y_all, 
+                         wts = w_all,
+                         c = factor(analysis$c_all),
+                         age_cat = data_vars$V_data$age_cat,
+                         racethnic = data_vars$V_data$racethnic,
+                         smoker = data_vars$V_data$smoker,
+                         physactive = data_vars$V_data$physactive)
+  svydes <- svydesign(ids = ~clus, strata = ~s, weights = ~wts, data = svy_data)
+  fit <- svyglm(y ~ c + age_cat + racethnic + smoker + physactive + 
+                  c:age_cat + c:racethnic + c:smoker + c:physactive, 
+                design = svydes, family = quasibinomial(link = "probit")) 
+  coefs <- fit$coefficients
+  ci <- confint(fit)
+  
+  # If zero/negative residual df, manually calculate the Wald confidence interval 
+  # using a t-distribution with degrees of freedom from the survey design. 
+  # Best if no cluster-level covariates in the regression model
+  if (all(is.na(ci))) {
+    ci <- manual_CI(model_object = fit, svy_df = degf(svydes), ci = 0.95)[, -1]
+  }
+  
+  # Convert format to match WSOLCA and SOLCA
+  xi_med <- xi_med_lb <- xi_med_ub <- matrix(NA, nrow = analysis$K_red, ncol = q)
+  xi_med[1, ] <- coefs[c(1, (analysis$K_red + 1:(q-1)))]
+  xi_med_lb[1, ] <- ci[c(1, (analysis$K_red + 1:(q-1))), 1]
+  xi_med_ub[1, ] <- ci[c(1, (analysis$K_red + 1:(q-1))), 2]
+  for (k in 2:analysis$K_red) {
+    xi_med[k, ] <- coefs[c(k, (k + (q-1)) + (analysis$K_red-1) * (1:(q-1)))] + 
+      xi_med[1, ]
+    xi_med_lb[k, ] <- ci[c(k, (k + (q-1)) + (analysis$K_red-1) * (1:(q-1))), 1] + 
+      xi_med_lb[1, ]
+    xi_med_ub[k, ] <- ci[c(k, (k + (q-1)) + (analysis$K_red-1) * (1:(q-1))), 2] + 
+      xi_med_ub[1, ]
+  }
+  
+  analysis$xi_med <- xi_med
+  analysis$xi_med_lb <- xi_med_lb
+  analysis$xi_med_ub <- xi_med_ub
+  analysis$fit <- fit
   
   runtime <- Sys.time() - start_time
   
   #================= Save and return output ====================================
   res <- list(analysis = analysis, runtime = runtime, 
-              data_vars = data_vars, MCMC_out = MCMC_out, 
+              data_vars = data_vars, V = V, MCMC_out = MCMC_out, 
               post_MCMC_out = post_MCMC_out)
   if (is.null(K_known)) {
-    res$K_MCMC = K_MCMC
+    res$K_MCMC <- K_MCMC
   }
   if (save_res) {
     save(res, file = res_path)
@@ -183,7 +199,7 @@ SOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, res_path, save_res = TRUE
 
 
 
-#===================== RUN MAIN SOLCA FUNCTION =================================
+#===================== RUN MAIN WOLCA FUNCTION =================================
 
 # Define directories
 wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
@@ -191,12 +207,12 @@ wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
 data_dir <- "Data/"
 res_dir <- "Results/July6/"
 model_dir <- "Model_Code/"
-model <- "sOFMM"
+model <- "wOFMM"
 
 # Define paths
 data_path <- paste0(wd, data_dir, "nhanes1518_adult_low_f_12jul2023.csv")   # Input dataset
 adapt_path <- paste0(wd, res_dir, model, "_adapt_nhanesNOEDUC_NOLEG", ".RData")  # Adaptive output file
-res_path <- paste0(wd, res_dir, model, "_results_nhanesNOEDUC_NOLEG", ".RData")  # Output file
+res_path <- paste0(wd, res_dir, model, "_results_adj_nhanesNOEDUC_NOLEG", ".RData")  # Output file
 
 # Check if results already exist
 already_done <- file.exists(res_path)
@@ -214,11 +230,11 @@ if (already_done) {
   source(paste0(wd, model_dir, "helper_functions.R"))
   # Source Rcpp functions
   Rcpp::sourceCpp(paste0(wd, model_dir, "main_Rcpp_functions.cpp"))
-  
+
   # Set seed and run model
   set.seed(20230225)
-  print(paste0("Running SOLCA_application..."))
-  results <- SOLCA_app_covs_Rcpp(data_vars = data_vars, 
+  print(paste0("Running WOLCA_application..."))
+  results <- WOLCA_app_covs_Rcpp(data_vars = data_vars, 
                                  adapt_path = adapt_path,
                                  res_path = res_path, save_res = TRUE, 
                                  n_runs = 20000, burn = 10000, thin = 5, 
@@ -237,34 +253,9 @@ racethnic_categs <- c("NH White", "NH Black", "NH Asian", "Hispanic/Latino", "Ot
 smoker_categs <- c("Non-Smoker", "Smoker")
 physactive_categs <- c("Inactive", "Active")
 
-new_order <- c(3, 2, 5, 4, 1)
-# new_order <- c(5, 2, 4, 1, 3)
-res <- reorder_classes(res = res, model = "sOFMM", new_order = new_order)
-
-# Plot theta modal consumption levels
-p1 <- plot_theta_modes(res = res, model = "sOFMM")
-# Plot theta probabilities
-p2 <- plot_theta_probs(res = res, model = "sOFMM")
-ggarrange(p1, p2, common.legend = TRUE, widths = c(0.6, 1), legend = "top")
-
-# Plot Phi line plots, separately for each covariate 
-plot_Phi_line(res, model = "sOFMM", age_categs = age_categs, 
+plot_theta_modes(res, model = "wOFMM")
+plot_Phi_line(res, model = "wOFMM", age_categs = age_categs, 
               racethnic_categs = racethnic_categs,
               educ_categs = educ_categs, smoker_categs = smoker_categs, 
               physactive_categs = physactive_categs)
-
-# Output reference cell coefficients table for xi 
-convert_to_ref(xi_med = res$analysis$xi_med, 
-               xi_red = res$analysis$xi_red,
-               age_categs = age_categs, 
-               racethnic_categs = racethnic_categs,
-               smoker_categs = smoker_categs, 
-               physactive_categs = physactive_categs, format = "latex")
-
-plot_xi_boxplots(res, model = "sOFMM", age_categs = age_categs, 
-                 racethnic_categs = racethnic_categs,
-                 educ_categs = educ_categs, smoker_categs = smoker_categs, 
-                 physactive_categs = physactive_categs)
-plot_pi_boxplots(res, model = "sOFMM")
-
-
+plot_pi_boxplots(res, model = "wOFMM")
