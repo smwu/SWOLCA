@@ -202,8 +202,8 @@ WSOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, adj_path, stan_path,
 #===================== RUN MAIN WSOLCA FUNCTION =================================
 
 # Define directories
-wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
-# wd <- "~/Documents/Github/wsOFMM/"
+wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/WSOLCA/"
+# wd <- "~/Documents/Github/WSOLCA/"
 data_dir <- "Data/"
 res_dir <- "Results/July6/"
 model_dir <- "Model_Code/"

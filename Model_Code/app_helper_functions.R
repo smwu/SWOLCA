@@ -282,10 +282,10 @@ get_pop_props <- function(res_demog, cov, categ_labels, res = NULL) {
 create_demog_table_pop <- function(res_demog, age_categs, racethnic_categs,
                                    smoker_categs, physactive_categs, res) {
   demog_df <- as.data.frame(matrix(NA, nrow = 15, ncol = 8))
-  colnames(demog_df) <- c("Variable", "Level", "Ethnic", 
+  colnames(demog_df) <- c("Variable", "Level", "Multicultural", 
                           "Healthy", 
                           "Western", "Restrict Veg", 
-                          "Restrict", "Overall")
+                          "Restrict Amer", "Overall")
   # demog_df[, 1] <- c("N in 1000s", "n",
   #                    paste0("Age ", age_categs), racethnic_categs,  
   #                    smoker_categs, physactive_categs)
@@ -393,9 +393,9 @@ plot_theta_modes <- function(res, model) {
     # theme(legend.position="none") +
     xlab("Dietary Pattern") + ylab("") +
     theme_classic() +
-    scale_x_discrete(labels=c("1" = "1\nEthnic", "2" = "2\nHealthy\nAmerican",
+    scale_x_discrete(labels=c("1" = "1\nMulticultural", "2" = "2\nHealthy\nAmerican",
                               "3" = "3\nWestern", "4" = "4\nRestricted\nVegetarian",
-                              "5" = "5\nRestricted")) + 
+                              "5" = "5\nRestricted\nAmerican")) + 
     theme(text = element_text(size = 15),
           axis.text.x = element_text(size = 11, color = "black"), 
           axis.text.y = element_text(size = 11, color = "black"),
@@ -476,11 +476,11 @@ plot_Phi_line <- function(res, model, age_categs, racethnic_categs,
                y = Phi, group = Class, col = Class)) + 
     theme_bw() + 
     scale_color_brewer(palette = "Set2", 
-                       labels = c("Ethnic", "Healthy American", "Western", 
-                                  "Restricted Vegetarian", "Restricted")) +
+                       labels = c("Multicultural", "Healthy American", "Western", 
+                                  "Restricted Vegetarian", "Restricted American")) +
     labs(col = "Dietary Pattern") +
     geom_line(linewidth = 0.7) + geom_point(size = 2) +
-    ylab("Hypertension Risk") + xlab("Age") +
+    ylab("Probability of Hypertension") + xlab("Age") +
     theme(text = element_text(size = 15),
           axis.text.x = element_text(size = 11, color = "black"), 
           axis.text.y = element_text(size = 11, color = "black"),
@@ -498,8 +498,8 @@ plot_Phi_line <- function(res, model, age_categs, racethnic_categs,
                y = Phi, group = Class, col = Class)) + 
     theme_bw() + 
     scale_color_brewer(palette = "Set2", 
-                       labels = c("Ethnic", "Healthy American", "Western", 
-                                  "Restricted Vegetarian", "Restricted")) +
+                       labels = c("Multicultural", "Healthy American", "Western", 
+                                  "Restricted Vegetarian", "Restricted American")) +
     labs(col = "Dietary Pattern") +
     geom_line(linewidth = 0.7) + geom_point(size = 2) +    
     ylab("") + xlab("Race/Ethnicity") +
@@ -519,8 +519,8 @@ plot_Phi_line <- function(res, model, age_categs, racethnic_categs,
                y = Phi, group = Class, col = Class)) + 
     theme_bw() + 
     scale_color_brewer(palette = "Set2", 
-                       labels = c("Ethnic", "Healthy American", "Western", 
-                                  "Restricted Vegetarian", "Restricted")) +
+                       labels = c("Multicultural", "Healthy American", "Western", 
+                                  "Restricted Vegetarian", "Restricted American")) +
     labs(col = "Dietary Pattern") +
     geom_line(linewidth = 0.7) + geom_point(size = 2) +    
     ylab("") + xlab("Smoking Status") +
@@ -540,8 +540,8 @@ plot_Phi_line <- function(res, model, age_categs, racethnic_categs,
                y = Phi, group = Class, col = Class)) + 
     theme_bw() + 
     scale_color_brewer(palette = "Set2", 
-                       labels = c("Ethnic", "Healthy American", "Western", 
-                                  "Restricted Vegetarian", "Restricted")) +
+                       labels = c("Multicultural", "Healthy American", "Western", 
+                                  "Restricted Vegetarian", "Restricted American")) +
     labs(col = "Dietary Pattern") +
     geom_line(linewidth = 0.7) + geom_point(size = 2) +    
     ylab("") + xlab("Physical Activity") + 

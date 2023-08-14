@@ -202,8 +202,8 @@ WOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, res_path, save_res = TRUE
 #===================== RUN MAIN WOLCA FUNCTION =================================
 
 # Define directories
-wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
-# wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
+wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/WSOLCA/"
+# wd <- "~/Documents/Harvard/Research/Briana/supRPC/WSOLCA/"
 data_dir <- "Data/"
 res_dir <- "Results/July6/"
 model_dir <- "Model_Code/"

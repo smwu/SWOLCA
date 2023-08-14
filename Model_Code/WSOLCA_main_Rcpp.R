@@ -249,8 +249,8 @@ WSOLCA_main_Rcpp <- function(data_path, adapt_path, adj_path, stan_path,
 #===================== RUN MAIN WSOLCA FUNCTION ================================
 
 # Define directories
-wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
-# wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
+wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/WSOLCA/"
+# wd <- "~/Documents/Harvard/Research/Briana/supRPC/WSOLCA/"
 data_dir <- "Data/July6/"
 res_dir <- "Results/July6/"
 model_dir <- "Model_Code/"

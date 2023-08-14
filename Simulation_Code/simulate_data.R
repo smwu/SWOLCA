@@ -446,9 +446,9 @@ create_samp <- function(sim_pop, scenario, samp_n, samp_data_path) {
 
 
 # Define directories
-wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
-# wd <- "~/Documents/Github/wsOFMM/"
-# wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
+wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/WSOLCA/"
+# wd <- "~/Documents/Github/WSOLCA/"
+# wd <- "~/Documents/Harvard/Research/Briana/supRPC/WSOLCA/"
 data_dir <- "Data/July6/"
 
 #==================== Create population scenarios ==============================

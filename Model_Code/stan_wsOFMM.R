@@ -123,8 +123,8 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
   #================= Read in data ================================================
   print("Read in data")
   # Define directories
-  wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"
-  # wd <- "~/Documents/Harvard/Research/Briana/supRPC/wsOFMM/"
+  wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/WSOLCA/"
+  # wd <- "~/Documents/Harvard/Research/Briana/supRPC/WSOLCA/"
   data_dir <- "Data/"
   res_dir <- "Results/"
   model_dir <- "Model_Code/"
@@ -373,9 +373,9 @@ run_WSOLCA <- function(scen_samp, iter_pop, samp_n) {
 
 #========= Read in function arguments and run fixed sampler ====================
 
-# setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
-# setwd("~/Documents/Harvard/Research/Briana/supRPC/wsOFMM")
-# setwd("/Users/Stephanie/Documents/GitHub/wsOFMM")
+# setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/WSOLCA/")
+# setwd("~/Documents/Harvard/Research/Briana/supRPC/WSOLCA")
+# setwd("/Users/Stephanie/Documents/GitHub/WSOLCA")
 print("Reading in input")
 args <- commandArgs(trailingOnly = TRUE)
 scen_samp <- args[[1]]
