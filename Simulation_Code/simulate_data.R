@@ -5,9 +5,10 @@
 # Date updated: 2023/04/10
 #===================================================================
 
-library(LaplacesDemon)
-library(SimCorMultRes)
-library(dplyr)
+library(LaplacesDemon) # Sample from distributions
+library(SimCorMultRes) # Simulated correlated binary outcomes
+library(dplyr)         # Data wrangling and manipulation
+library(ggpubr)        # Multiple plots side-by-side
 
 # `convert_to_factor_reference` converts a probit coefficient matrix to a vector of 
 # coefficients using a combination of factor variable and reference cell coding
@@ -512,6 +513,59 @@ for (k in 1:K) {
 samp_Phi_mat
 prop.table(table(sim_data$X_data[sim_data$true_Ci == 3,1] == 4))
 length(sim_data$true_Phi)
+
+#==================== Plot simulated theta modes ===============================
+# plot true modal theta patterns
+# Input: 
+#   est_item_probs: JxKxR numeric matrix of true theta probabilities
+#   x_lab: String specifying x-axis label
+# Output: Plot of modal theta values for the K latent classes
+plot_sim_theta <- function(est_item_probs, x_lab) {
+  mode_item_probs <- as.data.frame(apply(est_item_probs, c(1, 2), which.max))
+  food_items <- 1:30
+  class_names <- 1:(dim(est_item_probs)[2])
+  rownames(mode_item_probs) <- food_items
+  colnames(mode_item_probs) <- class_names
+  mode_item_probs$Item <- rownames(mode_item_probs)
+  mode_plot <- mode_item_probs %>% gather("Class", "Level", -Item) 
+  mode_plot %>% ggplot(aes(x=Class, y=factor(Item, levels = rev(food_items)), 
+                           fill=factor(Level))) + 
+    geom_tile(color="black", linewidth = 0.3) + 
+    scale_fill_brewer(type="seq", palette="RdYlBu", direction = -1,
+                      name = "Consumption Level",
+                      labels = c("None", "Low", "Med", "High")) +
+    xlab(x_lab) + ylab("Item") +
+    theme_classic() +
+    theme(text = element_text(size = 15),
+          axis.text.x = element_text(size = 11, color = "black"), 
+          axis.text.y = element_text(size = 11, color = "black"),
+          axis.title.x = element_text(size = 13, color = "black", face = "bold"),
+          axis.title.y = element_text(size = 13, color = "black", face = "bold"),
+          legend.title = element_text(size = 13, color = "black", face = "bold"),
+          legend.text = element_text(size = 11, color = "black"),
+          legend.position = "right", legend.box.spacing = unit(0.2, "pt"))
+}
+
+# Default setting
+samp_data_path <- paste0(wd, data_dir, "simdata_scen", 111211, "_iter", 
+                         1, "_samp", 1, ".RData") 
+load(samp_data_path)
+est_item_probs_default <- sim_data$true_global_thetas
+p_default <- plot_sim_theta(est_item_probs = est_item_probs_default,
+                            x_lab = "Default Pattern")
+
+# Supervised setting
+samp_data_path <- paste0(wd, data_dir, "simdata_scen", 121211, "_iter", 
+                         1, "_samp", 1, ".RData") 
+load(samp_data_path)
+est_item_probs_supervised <- sim_data$true_global_thetas
+p_supervised <- plot_sim_theta(est_item_probs = est_item_probs_supervised,
+                               x_lab = "Overlap Pattern")
+
+# Plot thetas together
+ggarrange(p_default, p_supervised, ncol = 2, common.legend = TRUE)
+
+
 
 #==================== Additional Sanity checks =================================
 # table(true_Si)
