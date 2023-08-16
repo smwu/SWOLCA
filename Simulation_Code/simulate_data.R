@@ -564,8 +564,8 @@ p_supervised <- plot_sim_theta(est_item_probs = est_item_probs_supervised,
 
 # Plot thetas together
 ggarrange(p_default, p_supervised, ncol = 2, common.legend = TRUE)
-
-
+p_default + theme(legend.position = "none")
+p_supervised + theme(legend.position = "right")
 
 #==================== Additional Sanity checks =================================
 # table(true_Si)

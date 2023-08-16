@@ -289,6 +289,8 @@ p1 <- plot_theta_modes(res = res, model = "wsOFMM")
 # Plot theta probabilities
 p2 <- plot_theta_probs(res = res, model = "wsOFMM")
 ggarrange(p1, p2, common.legend = TRUE, widths = c(0.6, 1), legend = "top")
+p1 + theme(legend.position = "top")
+p2 + theme(legend.position = "top")
 
 # Table of demographics by hypertension 
 res_demog <- res$data_vars$V_data %>%

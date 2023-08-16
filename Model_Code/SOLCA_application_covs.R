@@ -246,6 +246,8 @@ p1 <- plot_theta_modes(res = res, model = "sOFMM")
 # Plot theta probabilities
 p2 <- plot_theta_probs(res = res, model = "sOFMM")
 ggarrange(p1, p2, common.legend = TRUE, widths = c(0.6, 1), legend = "top")
+p1 + theme(legend.position = "top")
+p2 + theme(legend.position = "top")
 
 # Plot Phi line plots, separately for each covariate 
 plot_Phi_line(res, model = "sOFMM", age_categs = age_categs, 

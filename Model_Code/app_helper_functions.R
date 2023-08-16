@@ -398,7 +398,7 @@ plot_theta_modes <- function(res, model) {
                               "3" = "3\nWestern", "4" = "4\nRestricted\nVegetarian",
                               "5" = "5\nRestricted\nAmerican")) + 
     theme(text = element_text(size = 15),
-          axis.text.x = element_text(size = 11, color = "black"), 
+          axis.text.x = element_text(size = 12, color = "black"), 
           axis.text.y = element_text(size = 11, color = "black"),
           axis.title.x = element_text(size = 13, color = "black", face = "bold"),
           legend.title = element_text(size = 13, color = "black", face = "bold"),
