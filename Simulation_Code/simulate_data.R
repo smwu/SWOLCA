@@ -564,8 +564,20 @@ p_supervised <- plot_sim_theta(est_item_probs = est_item_probs_supervised,
 
 # Plot thetas together
 ggarrange(p_default, p_supervised, ncol = 2, common.legend = TRUE)
-p_default + theme(legend.position = "none")
-p_supervised + theme(legend.position = "right")
+p_default + theme(legend.position = "none",
+                  text = element_text(size = 15),
+                  axis.text.x = element_text(size = 13, color = "black"), 
+                  axis.text.y = element_text(size = 13, color = "black"),
+                  axis.title.x = element_text(size = 15, color = "black", face = "bold"),
+                  axis.title.y = element_text(size = 15, color = "black", face = "bold"))
+p_supervised + theme(legend.position = "right",
+                     text = element_text(size = 15),
+                     axis.text.x = element_text(size = 13, color = "black"), 
+                     axis.text.y = element_text(size = 13, color = "black"),
+                     axis.title.x = element_text(size = 15, color = "black", face = "bold"),
+                     axis.title.y = element_text(size = 15, color = "black", face = "bold"),
+                     legend.title = element_text(size = 15, color = "black", face = "bold"),
+                     legend.text = element_text(size = 15, color = "black"))
 
 #==================== Additional Sanity checks =================================
 # table(true_Si)

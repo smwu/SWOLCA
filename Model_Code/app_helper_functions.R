@@ -637,7 +637,7 @@ plot_pi_boxplots <- function(res, model) {
 
 #====================== Get regression coefs ===================================
 get_ci <- function(x) {
-  quantiles <- format(round(quantile(x, c(0.025, 0.975)), 3), nsmall = 3)
+  quantiles <- format(round(quantile(x, c(0.025, 0.975)), 2), nsmall = 2)
   # quantiles <- round(quantile(x, c(0.05, 0.95)), 3)
   ci <- paste0("(", quantiles[1], ", ", quantiles[2], ")")
   return(ci)
@@ -648,7 +648,7 @@ get_pep <- function(x, x_med) {
   } else {
     pep <- mean(x > 0)
   }
-  pep <- format(round(pep, 3), nsmall = 3)
+  pep <- format(round(pep, 2), nsmall = 2)
   if (pep < 0.001) {
     pep <- "<0.001"
   }
@@ -656,9 +656,9 @@ get_pep <- function(x, x_med) {
 }
 
 get_prob_pos <- function(x) {
-  prob_pos <- format(round(mean(x > 0), 3), nsmall = 3)
-  if (prob_pos < 0.001) {
-    prob_pos <- "<0.001"
+  prob_pos <- format(round(mean(x > 0), 2), nsmall = 2)
+  if (prob_pos < 0.01) {
+    prob_pos <- "<0.01"
   }
   return(prob_pos)
 }
@@ -714,7 +714,7 @@ convert_to_ref <- function(xi_med, xi_red, age_categs, racethnic_categs,
                                              get_prob_pos(xi_red[, j, i] - xi_red[, 1, i]))
     }
   }
-  beta[, 2] <- round(as.numeric(beta[, 2]), 3)
+  beta[, 2] <- round(as.numeric(beta[, 2]), 2)
   # Get significant entries
   pep_signif <- numeric(nrow(beta))
   # pep_signif <- ifelse(beta[, 4] == "<0.001", 1, 
