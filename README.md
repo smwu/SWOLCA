@@ -11,7 +11,7 @@ Two alternative methods are used for comparison in the simulation study: 1) an u
  * `Data_Code`: Code and raw data used to create the NHANES data application dataset. 
  * `Data`: Examples of simulated datasets, as well as the NHANES data application dataset. 
  * `Model_Code`: Code for the SWOLCA, SOLCA, and WOLCA models.
- * `Results`: Example MCMC and posterior results from running the models on the simulated data and the NHANES dataset.
  * `Analysis_Code`: Code used to summarize the MCMC output from the simulation study and create tables and figures.
 
+The `Results` folder, which contains MCMC and posterior results from running the models on simulated data and the NHANES dataset, is not uploaded due to file sizes being too large.
 
