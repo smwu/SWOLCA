@@ -461,6 +461,7 @@ plot_theta_probs <- function(res, model) {
 
 
 #=========== Plot Phi line plots, separately for each covariate ================
+# Line plots of Phi values for all covariates
 plot_Phi_line <- function(res, model, age_categs, racethnic_categs,
                           educ_categs, smoker_categs, physactive_categs) {
   if (model == "wsOFMM") {
@@ -558,6 +559,175 @@ plot_Phi_line <- function(res, model, age_categs, racethnic_categs,
             ncol = 4, widths = c(0.7, 1, 0.45, 0.45))
 }
 
+# Line plots of Phi values for all covariates, with confidence bands
+plot_Phi_line_cis <- function(res, model, age_categs, racethnic_categs,
+                              educ_categs, smoker_categs, physactive_categs) {
+  if (model == "wsOFMM") {
+    Phi_dfs <- convert_to_probs(res$analysis_adj$xi_med_adj)
+    lbs <- apply(res$analysis_adj$xi_red_adj, c(2, 3), 
+                 function(x) quantile(x, 0.025))
+    ubs <- apply(res$analysis_adj$xi_red_adj, c(2, 3), 
+                 function(x) quantile(x, 0.925))
+    Phi_lbs <- convert_to_probs(lbs)
+    Phi_ubs <- convert_to_probs(ubs)
+  } else {
+    Phi_dfs <- convert_to_probs(res$analysis$xi_med)
+  }
+  
+  # Create dataframes
+  # Age
+  Phi_age_est <- Phi_dfs$Phi_age %>% 
+    pivot_longer(cols = -Class, names_to = "Age", values_to = "Phi")
+  Phi_age_lbs <- Phi_lbs$Phi_age %>% 
+    pivot_longer(cols = -Class, names_to = "Age", values_to = "Phi_lbs")
+  Phi_age_ubs <- Phi_ubs$Phi_age %>% 
+    pivot_longer(cols = -Class, names_to = "Age", values_to = "Phi_ubs")
+  Phi_age <- Phi_age_est %>%
+    left_join(Phi_age_lbs, by = c("Class", "Age")) %>%
+    left_join(Phi_age_ubs, by = c("Class", "Age")) %>%
+    mutate(Age = factor(Age, levels = c("Age20", "Age40", "Age60"), 
+                        labels = age_categs))
+  # Race/Ethnicity
+  Phi_racethnic_est <- Phi_dfs$Phi_racethnic %>% 
+    pivot_longer(cols = -Class, names_to = "Race", values_to = "Phi")
+  Phi_racethnic_lbs <- Phi_lbs$Phi_racethnic %>% 
+    pivot_longer(cols = -Class, names_to = "Race", values_to = "Phi_lbs")
+  Phi_racethnic_ubs <- Phi_ubs$Phi_racethnic %>% 
+    pivot_longer(cols = -Class, names_to = "Race", values_to = "Phi_ubs")
+  Phi_racethnic <- Phi_racethnic_est %>%
+    left_join(Phi_racethnic_lbs, by = c("Class", "Race")) %>%
+    left_join(Phi_racethnic_ubs, by = c("Class", "Race")) %>%
+    mutate(Race = factor(Race, levels = c("NH_White", "NH_Black", "NH_Asian", 
+                                         "Hispanic", "Other"),
+                        labels = racethnic_categs))
+  # Smoking
+  Phi_smoker_est <- Phi_dfs$Phi_smoker %>% 
+    pivot_longer(cols = -Class, names_to = "Smoker", values_to = "Phi")
+  Phi_smoker_lbs <- Phi_lbs$Phi_smoker %>% 
+    pivot_longer(cols = -Class, names_to = "Smoker", values_to = "Phi_lbs")
+  Phi_smoker_ubs <- Phi_ubs$Phi_smoker %>% 
+    pivot_longer(cols = -Class, names_to = "Smoker", values_to = "Phi_ubs")
+  Phi_smoker <- Phi_smoker_est %>%
+    left_join(Phi_smoker_lbs, by = c("Class", "Smoker")) %>%
+    left_join(Phi_smoker_ubs, by = c("Class", "Smoker")) %>%
+    mutate(Smoker = factor(Smoker, levels = c("Non_smoker", "Smoker"),
+                        labels = smoker_categs))
+  # Physical Activity
+  Phi_phys_est <- Phi_dfs$Phi_phys %>% 
+    pivot_longer(cols = -Class, names_to = "Physactive", values_to = "Phi")
+  Phi_phys_lbs <- Phi_lbs$Phi_phys %>% 
+    pivot_longer(cols = -Class, names_to = "Physactive", values_to = "Phi_lbs")
+  Phi_phys_ubs <- Phi_ubs$Phi_phys %>% 
+    pivot_longer(cols = -Class, names_to = "Physactive", values_to = "Phi_ubs")
+  Phi_phys <- Phi_phys_est %>%
+    left_join(Phi_phys_lbs, by = c("Class", "Physactive")) %>%
+    left_join(Phi_phys_ubs, by = c("Class", "Physactive")) %>%
+    mutate(Physactive = factor(Physactive, levels = c("Inactive", "Active"),
+                        labels = physactive_categs))
+  
+  # Age
+  p1 <- Phi_age %>% 
+    ggplot(aes(x = Age, 
+               y = Phi, group = Class, col = Class)) + 
+    theme_bw() + 
+    scale_color_brewer(palette = "Set2", 
+                       labels = c("Multicultural", "Healthy American", "Western", 
+                                  "Restricted Vegetarian", "Restricted American")) +
+    labs(col = "Dietary Pattern") +
+    geom_line(linewidth = 0.7) + geom_point(size = 2) +
+    geom_ribbon(aes(ymin = Phi_lbs, ymax = Phi_ubs, fill = Class, colour = NA), 
+                alpha = 0.15, show.legend = FALSE) + 
+    scale_fill_brewer(palette = "Set2", 
+                      labels = c("Multicultural", "Healthy American", "Western", 
+                                 "Restricted Vegetarian", "Restricted American")) +
+    ylab("Probability of Hypertension") + xlab("Age") +
+    theme(text = element_text(size = 15),
+          axis.text.x = element_text(size = 11, color = "black"), 
+          axis.text.y = element_text(size = 11, color = "black"),
+          axis.title.x = element_text(size = 13, color = "black", face = "bold"),
+          axis.title.y = element_text(size = 13, color = "black", face = "bold"),
+          legend.title = element_text(size = 14, color = "black"),
+          legend.text = element_text(size = 13, color = "black")) +
+    theme(plot.margin = unit(c(0.2,0,0.2,0.2), 'lines'))
+  
+  # Race/Ethnicity
+  p2 <- Phi_racethnic %>%
+    ggplot(aes(x = Race, 
+               y = Phi, group = Class, col = Class)) + 
+    theme_bw() + 
+    scale_color_brewer(palette = "Set2", 
+                       labels = c("Multicultural", "Healthy American", "Western", 
+                                  "Restricted Vegetarian", "Restricted American")) +
+    labs(col = "Dietary Pattern") +
+    geom_line(linewidth = 0.7) + geom_point(size = 2) +    
+    geom_ribbon(aes(ymin = Phi_lbs, ymax = Phi_ubs, fill = Class, colour = NA), 
+                alpha = 0.15, show.legend = FALSE) + 
+    ylab("") + xlab("Race/Ethnicity") +
+    scale_fill_brewer(palette = "Set2", 
+                      labels = c("Multicultural", "Healthy American", "Western", 
+                                 "Restricted Vegetarian", "Restricted American")) +
+    theme(text = element_text(size = 15),
+          axis.text.x = element_text(size = 11, color = "black"), 
+          axis.text.y = element_text(size = 11, color = "black"),
+          axis.title.x = element_text(size = 13, color = "black", face = "bold"),
+          axis.title.y = element_text(size = 13, color = "black", face = "bold"),
+          legend.title = element_text(size = 14, color = "black"),
+          legend.text = element_text(size = 13, color = "black")) +
+    theme(plot.margin = unit(c(0.2,0,0.2,0.2), 'lines'))
+  # Smoking Status
+  p3 <- Phi_smoker %>% 
+    ggplot(aes(x = Smoker, 
+               y = Phi, group = Class, col = Class)) + 
+    theme_bw() + 
+    scale_color_brewer(palette = "Set2", 
+                       labels = c("Multicultural", "Healthy American", "Western", 
+                                  "Restricted Vegetarian", "Restricted American")) +
+    labs(col = "Dietary Pattern") +
+    geom_line(linewidth = 0.7) + geom_point(size = 2) +    
+    ylab("") + xlab("Smoking Status") +
+    geom_ribbon(aes(ymin = Phi_lbs, ymax = Phi_ubs, fill = Class, colour = NA), 
+                alpha = 0.15, show.legend = FALSE) + 
+    scale_fill_brewer(palette = "Set2", 
+                      labels = c("Multicultural", "Healthy American", "Western", 
+                                 "Restricted Vegetarian", "Restricted American")) +
+    theme(text = element_text(size = 15),
+          axis.text.x = element_text(size = 11, color = "black"), 
+          axis.text.y = element_text(size = 11, color = "black"),
+          axis.title.x = element_text(size = 13, color = "black", face = "bold"),
+          axis.title.y = element_text(size = 13, color = "black", face = "bold"),
+          legend.title = element_text(size = 14, color = "black"),
+          legend.text = element_text(size = 13, color = "black")) +
+    theme(plot.margin = unit(c(0.2,0,0.2,0.2), 'lines'))
+  # Physical Activity
+  p4 <- Phi_phys %>% 
+    ggplot(aes(x = Physactive, 
+               y = Phi, group = Class, col = Class)) + 
+    theme_bw() + 
+    scale_color_brewer(palette = "Set2", 
+                       labels = c("Multicultural", "Healthy American", "Western", 
+                                  "Restricted Vegetarian", "Restricted American")) +
+    labs(col = "Dietary Pattern") +
+    geom_line(linewidth = 0.7) + geom_point(size = 2) +    
+    ylab("") + xlab("Physical Activity") + 
+    geom_ribbon(aes(ymin = Phi_lbs, ymax = Phi_ubs, fill = Class, colour = NA), 
+                alpha = 0.15, show.legend = FALSE) + 
+    scale_fill_brewer(palette = "Set2", 
+                      labels = c("Multicultural", "Healthy American", "Western", 
+                                 "Restricted Vegetarian", "Restricted American")) +
+    theme(text = element_text(size = 15),
+          axis.text.x = element_text(size = 11, color = "black"), 
+          axis.text.y = element_text(size = 11, color = "black"),
+          axis.title.x = element_text(size = 13, color = "black", face = "bold"),
+          axis.title.y = element_text(size = 13, color = "black", face = "bold"),
+          legend.title = element_text(size = 14, color = "black"),
+          legend.text = element_text(size = 13, color = "black")) +
+    theme(plot.margin = unit(c(0.2,0,0.2,0.2), 'lines'))
+  ggarrange(p1, p2, p3, p4, common.legend = TRUE, legend = "top", nrow = 1, 
+            ncol = 4, widths = c(0.7, 1, 0.45, 0.45))
+  
+  
+} 
+
 
 #### Plot xi boxplots ~ age_cat + racethnic + educ + smoker + Phys_Active
 plot_xi_boxplots <- function(res, model, age_categs, racethnic_categs,
@@ -594,25 +764,25 @@ plot_xi_boxplots <- function(res, model, age_categs, racethnic_categs,
   p3_ref <- xi_red_plot %>% filter(Covariate == "Ref") %>%
     ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
     theme_bw() + scale_fill_brewer(palette="Set2") + 
-    geom_boxplot() + xlab("Reference")
+    geom_boxplot() + xlab("Reference") + ylab(expression(xi))
   p3_age <- xi_red_plot %>% filter(Covariate == "Age") %>%
     ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
     theme_bw() + scale_fill_brewer(palette="Set2") + 
-    geom_boxplot() + xlab("Age")
+    geom_boxplot() + xlab("Age") + ylab(expression(xi))
   p3_race <- xi_red_plot %>% filter(Covariate == "Race/Ethnicity") %>%
     ggplot(aes(x = factor(Covariate_Level, 
                           levels = c("NH Black", "NH Asian", "Hispanic/Latino", 
                                      "Other/Mixed")), y = value, fill = Class)) +
     theme_bw() + scale_fill_brewer(palette="Set2") + 
-    geom_boxplot() + xlab("Race/Ethnicity")
+    geom_boxplot() + xlab("Race/Ethnicity") + ylab(expression(xi))
   p3_smoke <- xi_red_plot %>% filter(Covariate == "Smoking") %>%
     ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
     theme_bw() + scale_fill_brewer(palette="Set2") + 
-    geom_boxplot() + xlab("Smoking")
+    geom_boxplot() + xlab("Smoking") + ylab(expression(xi))
   p3_physactive <- xi_red_plot %>% filter(Covariate == "Physical Activity") %>%
     ggplot(aes(x = Covariate_Level, y = value, fill = Class)) +
     theme_bw() + scale_fill_brewer(palette="Set2") + 
-    geom_boxplot() + xlab("Physical Activity")
+    geom_boxplot() + xlab("Physical Activity") + ylab(expression(xi))
   ggarrange(p3_ref, p3_age, p3_race, p3_smoke, p3_physactive, 
             common.legend = TRUE, legend = "right", ncol = 3, nrow = 2)
   

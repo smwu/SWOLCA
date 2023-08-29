@@ -827,6 +827,28 @@ analyze_results_WOLCA <- function(MCMC_out, post_MCMC_out, n, p, x_mat) {
   return(analysis)
 }
 
+# `manual_CI` manually calculates a Wald confidence interval using a t-dist
+# with df from the survey design. Used for WOLCA in the situation where svyglm 
+# produces negative residual df, calculated as design df plus one, minus the 
+# number of parameters estimated. Best if no cluster-level covariates in the 
+# regression model
+# Inputs:
+#   model_object: svyglm model fit object
+#   svy_df: survey design df
+#   ci: confidence interval level
+# Outputs: dataframe of confidence interval for all coefficients
+manual_CI <- function(model_object, svy_df, ci = 0.95){
+  a <- coef(summary(model_object))
+  mult <- qt((1 + ci) / 2, df = svy_df)
+  restab <- with(as.data.frame(a),
+                 cbind(est = Estimate,
+                       lwr =  Estimate - mult*`Std. Error`,
+                       upr = Estimate + mult*`Std. Error`))
+  rownames(restab) <- rownames(a)
+  return(data.frame(restab))
+}
+
+
 # `convert_ref_to_comb` converts a combination of factor variable and 
 # reference cell coding to purely reference cell coding
 # Inputs:

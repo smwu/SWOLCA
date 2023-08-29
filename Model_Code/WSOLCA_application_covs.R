@@ -203,8 +203,8 @@ WSOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, adj_path, stan_path,
 #===================== RUN MAIN WSOLCA FUNCTION =================================
 
 # Define directories
-wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/WSOLCA/"
-# wd <- "~/Documents/Github/WSOLCA/"
+wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/SWOLCA/"
+# wd <- "~/Documents/Github/SWOLCA/"
 data_dir <- "Data/"
 res_dir <- "Results/July6/"
 model_dir <- "Model_Code/"
@@ -275,6 +275,10 @@ plot_Phi_line(res, model = "wsOFMM", age_categs = age_categs,
               racethnic_categs = racethnic_categs,
               educ_categs = educ_categs, smoker_categs = smoker_categs, 
               physactive_categs = physactive_categs)
+plot_Phi_line_cis(res, model = "wsOFMM", age_categs = age_categs, 
+                  racethnic_categs = racethnic_categs,
+                  educ_categs = educ_categs, smoker_categs = smoker_categs, 
+                  physactive_categs = physactive_categs)
 
 # Output reference cell coefficients table for xi 
 convert_to_ref(xi_med = res$analysis_adj$xi_med_adj, 

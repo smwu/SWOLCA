@@ -162,7 +162,7 @@ WOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, res_path, save_res = TRUE
   if (all(is.na(ci))) {
     ci <- manual_CI(model_object = fit, svy_df = degf(svydes), ci = 0.95)[, -1]
   }
-  
+
   # Convert format to match WSOLCA and SOLCA
   xi_med <- xi_med_lb <- xi_med_ub <- matrix(NA, nrow = analysis$K_red, ncol = q)
   xi_med[1, ] <- coefs[c(1, (analysis$K_red + 1:(q-1)))]
@@ -202,8 +202,8 @@ WOLCA_app_covs_Rcpp <- function(data_vars, adapt_path, res_path, save_res = TRUE
 #===================== RUN MAIN WOLCA FUNCTION =================================
 
 # Define directories
-wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/WSOLCA/"
-# wd <- "~/Documents/Harvard/Research/Briana/supRPC/WSOLCA/"
+wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/SWOLCA/"
+# wd <- "~/Documents/Harvard/Research/Briana/supRPC/SWOLCA/"
 data_dir <- "Data/"
 res_dir <- "Results/July6/"
 model_dir <- "Model_Code/"
