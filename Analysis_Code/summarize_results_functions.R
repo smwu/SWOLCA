@@ -49,6 +49,25 @@ convert_combo_to_fv <- function(xi_combo) {
   return(xi_fv)
 }
 
+# Converts from combination coding to P(Y=1|-) conditional probabilities
+# Input: xi_comb: Matrix of xi parameter estimates. Kxq
+# Output: List containing the following objects
+#   Phi_age: Dataframe of hypertension probs for age categories. Kx3
+#   Phi_age: Dataframe of hypertension probs for race/ethnicity categories. Kx5
+#   Phi_smoker: Dataframe of hypertension probs for smoking categories. Kx2
+#   Phi_phys: Dataframe of hypertension probs for physical activity categories. Kx2
+convert_xi_to_Phi <- function(xi_comb_vec) {
+  # Assumes the following order for xi_comb_vec: 
+  # S=1,C=1; S=1,C=2; S=1,C=3; S=2,C=1; S=2,C=2; S=2,C=3
+  K <- 3
+  Phi_vec <- numeric(length(xi_comb_vec))
+  for (k in 1:K) {
+    Phi_vec[k] <- pnorm(xi_comb_vec[k])
+    Phi_vec[k + K] <- pnorm(xi_comb_vec[k] + xi_comb_vec[k + K])
+  }
+  return(Phi_vec)
+}
+
 #============== Get true population values =====================================
 
 # get_true_params returns the observed simulated population values for the 
@@ -793,7 +812,7 @@ save_scen_metrics <- function(scen_pop, scen_samp, WSOLCA = TRUE, SOLCA = TRUE,
                               WOLCA = TRUE, WSOLCA_name, SOLCA_name, WOLCA_name,
                               covs = NULL, save_name) {
   # Set parameters and paths
-  wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/"  # Working directory
+  wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/SWOLCA/"  # Working directory
   data_dir <- "Data/July6/"               # Simulated data directory
   res_dir <- "Results/July6/"             # Model results directory
   analysis_dir <- "Analysis_Code/"  # Analysis directory where metrics will be saved
@@ -1046,6 +1065,63 @@ plot_rmse_boxplot <- function(wd, analysis_dir, save_names, scenarios,
 }
 
 #================== Plot parameters across iterations ==========================
+# Get average Phi and pi over all 100 samples
+# If covs = NULL, obtains marginal Phi
+get_avg_over_samps <- function(wd, data_dir, scen_pop, iter_pop, scen_samp, 
+                               samp_n_seq, covs = NULL) {
+  # Load true population data
+  load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
+  # Obtain true observed population parameters
+  true_params <- get_true_params(sim_pop = sim_pop)  
+  load(paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop, 
+              "_samp", 1, ".RData"))
+  L <- length(samp_n_seq)
+  K <- 3
+  S <- 2
+  if (is.null(covs)) {
+    # Marginal scenario
+    samp_Phis <- array(NA, dim = c(length(samp_n_seq), dim(sim_data$true_Phi_mat)[1]))
+    samp_pis <- array(NA, dim = c(length(samp_n_seq), length(sim_data$true_pi)))
+    for (l in 1:L) { # For each sample iteration
+      samp_n = samp_n_seq[l]
+      load(paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop, 
+                  "_samp", samp_n, ".RData"))
+      true_Phi_mat <- matrix(NA, nrow=K, ncol=1)
+      for (k in 1:K) {
+          true_Phi_mat[k, ] <- sum(sim_data$Y_data==1 & sim_data$true_Ci==k) / 
+            sum(sim_data$true_Ci==k)
+      }
+      samp_Phis[l, ] <- true_Phi_mat
+      samp_pis[l, ] <- tabulate(sim_data$true_Ci) / length(sim_data$true_Ci)
+    }
+    avg_samp_Phi <- apply(samp_Phis, 2, function(x) mean(x, na.rm = TRUE))
+    avg_samp_pi <- apply(samp_pis, 2, function(x) mean(x, na.rm = TRUE))
+  } else {
+    # Conditional scenario
+    samp_Phis <- array(NA, dim = c(length(samp_n_seq), dim(sim_data$true_Phi_mat)))
+    samp_pis <- array(NA, dim = c(length(samp_n_seq), length(sim_data$true_pi)))
+    for (l in 1:L) { # For each sample iteration
+      samp_n = samp_n_seq[l]
+      load(paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop, 
+                  "_samp", samp_n, ".RData"))
+      true_Phi_mat <- matrix(NA, nrow=K, ncol=S)
+      for (k in 1:K) {
+        for (s in 1:S) {
+          true_Phi_mat[k, s] <- sum(sim_data$Y_data==1 & sim_data$true_Si==s & 
+                                      sim_data$true_Ci==k) / 
+            sum(sim_data$true_Si==s & sim_data$true_Ci==k)
+        }
+      }
+      samp_Phis[l, , ] <- true_Phi_mat
+      samp_pis[l, ] <- tabulate(sim_data$true_Ci) / length(sim_data$true_Ci)
+    }
+    avg_samp_Phi <- apply(samp_Phis, c(2,3), function(x) mean(x, na.rm = TRUE))
+    avg_samp_pi <- apply(samp_pis, 2, function(x) mean(x, na.rm = TRUE))
+  }
+  return(list(avg_samp_Phi = avg_samp_Phi, avg_samp_pi = avg_samp_pi))
+}
+
+
 # `theta_mode_plot` plots the modal theta patterns for each class across all 
 # simulation iterations, for a given model
 # Inputs: 
@@ -1095,7 +1171,7 @@ plot_theta_patterns <- function(wd, data_dir, analysis_dir,
     labs(fill = "Modal θ Level")
   p_SOLCA <- theta_mode_plot(metrics_all$metrics_s$theta_mode, "SOLCA Classes")
   p_WOLCA <- theta_mode_plot(metrics_all$metrics_unsup$theta_mode, "WOLCA Classes")
-  p_WSOLCA <- theta_mode_plot(metrics_all$metrics_ws$theta_mode, "WSOLCA Classes")
+  p_WSOLCA <- theta_mode_plot(metrics_all$metrics_ws$theta_mode, "SWOLCA Classes")
   p_comb <- ggarrange(p_true, 
                       p_SOLCA + theme(axis.title.y = element_blank()), 
                       p_WOLCA + theme(axis.title.y = element_blank()), 
@@ -1106,11 +1182,14 @@ plot_theta_patterns <- function(wd, data_dir, analysis_dir,
 
 # plot pi
 plot_pi_patterns <- function(wd, data_dir, analysis_dir, y_lim = c(0,1),
-                             scen_pop, iter_pop, scen_samp, scen_name) {
+                             scen_pop, iter_pop, scen_samp, scen_name,
+                             samp_params) {
   # Load true population data
   load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
   # Obtain true observed population parameters
   true_params <- get_true_params(sim_pop = sim_pop)  
+  true_pi <- true_params$true_pi
+  samp_pi <- samp_params$avg_samp_pi
   
   # Load simulated sample data
   load(paste0(wd, analysis_dir, scen_name, scen_samp, ".RData"))
@@ -1124,16 +1203,23 @@ plot_pi_patterns <- function(wd, data_dir, analysis_dir, y_lim = c(0,1),
                           rep("WSOLCA", times=L))
   pi_plot_data <- pi_plot_data %>% gather("pi_component", "value", -Model)
   ggplot(pi_plot_data, aes(x=pi_component, y=value, fill=Model)) +
-    theme_bw() + scale_fill_brewer(palette="RdYlBu") + 
+    theme_bw() + scale_fill_brewer(palette="Set2") + 
     geom_boxplot() +
     geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_pi[1],
-                             yend=true_params$true_pi[1]),color="#d7191c") +
+                             yend=true_params$true_pi[1]),color="red") +
     geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_pi[2],
-                             yend=true_params$true_pi[2]),color="#d7191c") +
+                             yend=true_params$true_pi[2]),color="red") +
     geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_pi[3],
-                             yend=true_params$true_pi[3]),color="#d7191c") +
+                             yend=true_params$true_pi[3]),color="red") +
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=samp_pi[1], yend=samp_pi[1]),
+                 color="red", linetype = "dashed") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=samp_pi[2], yend=samp_pi[2]),
+                 color="red", linetype = "dashed") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=samp_pi[3], yend=samp_pi[3]),
+                 color="red", linetype = "dashed") +
     # ggtitle(paste0("Parameter estimation for π across 100 samples")) + 
-    xlab("Latent Class") + ylab("π Value") + ylim(y_lim[1],y_lim[2])
+    xlab("Latent Class") + ylab("π Value") + 
+    theme(legend.position="top") 
 }
 
 # plot xi
@@ -1157,27 +1243,28 @@ plot_xi_patterns <- function(wd, data_dir, analysis_dir, y_lim = c(0,1),
                           rep("WSOLCA", times=L))
   xi_plot_data <- xi_plot_data %>% gather("xi_component", "value", -Model)
   ggplot(xi_plot_data, aes(x=xi_component, y=value, fill=Model)) +
-    theme_bw() + scale_fill_brewer(palette="RdYlBu") + 
+    theme_bw() + scale_fill_brewer(palette="Set2") + 
     geom_boxplot() +
     geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_xi[1,1],
-                             yend=true_params$true_xi[1,1]),color="#d7191c") +
+                             yend=true_params$true_xi[1,1]),color="red") +
     geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_xi[2,1],
-                             yend=true_params$true_xi[2,1]),color="#d7191c") +
+                             yend=true_params$true_xi[2,1]),color="red") +
     geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_xi[3,1],
-                             yend=true_params$true_xi[3,1]),color="#d7191c") +
+                             yend=true_params$true_xi[3,1]),color="red") +
     geom_segment(mapping=aes(x=3.5, xend=4.5, y=true_params$true_xi[1,2],
-                             yend=true_params$true_xi[1,2]),color="#d7191c") +
+                             yend=true_params$true_xi[1,2]),color="red") +
     geom_segment(mapping=aes(x=4.5, xend=5.5, y=true_params$true_xi[2,2],
-                             yend=true_params$true_xi[2,2]),color="#d7191c") +
+                             yend=true_params$true_xi[2,2]),color="red") +
     geom_segment(mapping=aes(x=5.5, xend=6.5, y=true_params$true_xi[3,2],
-                             yend=true_params$true_xi[3,2]),color="#d7191c") +
+                             yend=true_params$true_xi[3,2]),color="red") +
     # ggtitle(paste0("Parameter estimation for ξ across 100 samples")) + 
     xlab("Covariate Levels") + ylab("ξ Value") + ylim(y_lim[1],y_lim[2])
 }
 
 # Plot Phi
 plot_Phi_patterns <- function(wd, data_dir, analysis_dir, y_lim = c(0,1),
-                             scen_pop, iter_pop, scen_samp, scen_name) {
+                             scen_pop, iter_pop, scen_samp, scen_name,
+                             samp_params) {
   # Load true population data
   load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
   # Obtain true observed population parameters
@@ -1187,33 +1274,112 @@ plot_Phi_patterns <- function(wd, data_dir, analysis_dir, y_lim = c(0,1),
   load(paste0(wd, analysis_dir, scen_name, scen_samp, ".RData"))
   L <- length(metrics_all$metrics_ws$K_dist)
   
-  Phi_plot_data <- as.data.frame(rbind(pnorm(t(apply(metrics_all$metrics_s$xi_all, 1, c))),
-                                      pnorm(t(apply(metrics_all$metrics_unsup$xi_all, 1, c))),
-                                      pnorm(t(apply(metrics_all$metrics_ws$xi_all, 1, c)))))
+  Phi_plot_data <- as.data.frame(rbind(
+    t(apply(metrics_all$metrics_s$xi_all, 1, 
+            function(x) convert_xi_to_Phi(c(x)))),
+    t(apply(metrics_all$metrics_unsup$xi_all, 1, 
+            function(x) convert_xi_to_Phi(c(x)))),
+    t(apply(metrics_all$metrics_ws$xi_all, 1, 
+            function(x) convert_xi_to_Phi(c(x))))))
   colnames(Phi_plot_data) <- c("S=1\nC=1", "S=1\nC=2", "S=1\nC=3",
                                "S=2\nC=1", "S=2\nC=2", "S=2\nC=3")
   Phi_plot_data$Model <- c(rep("SOLCA", times=L), rep("WOLCA", times=L),
-                          rep("WSOLCA", times=L))
+                          rep("SWOLCA", times=L))
   Phi_plot_data <- Phi_plot_data %>% gather("Phi_component", "value", -Model)
   true_Phi <- true_params$true_Phi_mat
+  samp_Phi <- samp_params$avg_samp_Phi
   ggplot(Phi_plot_data, aes(x=Phi_component, y=value, fill=Model)) +
-    theme_bw() + scale_fill_brewer(palette="RdYlBu") + 
+    theme_bw() + scale_fill_brewer(palette="Set2") + 
     geom_boxplot() +
-    ylab("P(Y=1|S,C)") +
+    theme(legend.position = "top") + 
     geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_Phi[1,1],
-                             yend=true_Phi[1,1]),color="#d7191c") +
+                             yend=true_Phi[1,1]),color="red") +
     geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_Phi[2,1],
-                             yend=true_Phi[2,1]),color="#d7191c") +
+                             yend=true_Phi[2,1]),color="red") +
     geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_Phi[3,1],
-                             yend=true_Phi[3,1]),color="#d7191c") +
+                             yend=true_Phi[3,1]),color="red") +
     geom_segment(mapping=aes(x=3.5, xend=4.5, y=true_Phi[1,2],
-                             yend=true_Phi[1,2]),color="#d7191c") +
+                             yend=true_Phi[1,2]),color="red") +
     geom_segment(mapping=aes(x=4.5, xend=5.5, y=true_Phi[2,2],
-                             yend=true_Phi[2,2]),color="#d7191c") +
+                             yend=true_Phi[2,2]),color="red") +
     geom_segment(mapping=aes(x=5.5, xend=6.5, y=true_Phi[3,2],
-                             yend=true_Phi[3,2]),color="#d7191c") +
+                             yend=true_Phi[3,2]),color="red") +
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=samp_Phi[1,1],
+                             yend=samp_Phi[1,1]),color="red", 
+                 linetype = "dashed", linewidth = 1) +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=samp_Phi[2,1],
+                             yend=samp_Phi[2,1]),color="red", 
+                 linetype = "dashed", linewidth = 1) +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=samp_Phi[3,1],
+                             yend=samp_Phi[3,1]),color="red", 
+                 linetype = "dashed", linewidth = 1) +
+    geom_segment(mapping=aes(x=3.5, xend=4.5, y=samp_Phi[1,2],
+                             yend=samp_Phi[1,2]),color="red", 
+                 linetype = "dashed", linewidth = 1) +
+    geom_segment(mapping=aes(x=4.5, xend=5.5, y=samp_Phi[2,2],
+                             yend=samp_Phi[2,2]),color="red", 
+                 linetype = "dashed", linewidth = 1) +
+    geom_segment(mapping=aes(x=5.5, xend=6.5, y=samp_Phi[3,2],
+                             yend=samp_Phi[3,2]),color="red", 
+                 linetype = "dashed", linewidth = 1) +
     # ggtitle(paste0("Parameter estimation for outcome probabilities across 100 samples")) + 
-      xlab("Covariate Levels") + ylab("Outcome Probability") + ylim(y_lim[1],y_lim[2])
+      xlab("Covariate Levels") + ylab("Probability of Outcome") 
+}
+
+
+# Plot Phi for marginal association of interest
+# samp_params: Average sample values of Phi and pi across all iterations. Output
+# from 'get_avg_over_samps' function
+plot_Phi_patterns_marg <- function(wd, data_dir, analysis_dir, scen_pop, 
+                                   scen_samp, scen_name, iter_pop,
+                                   samp_params) {
+  # Load true population data
+  load(paste0(wd, data_dir, "simdata_scen", scen_pop,"_iter", iter_pop, ".RData"))
+  # Obtain true observed population parameters
+  true_params <- get_true_params(sim_pop = sim_pop)  
+  # Get marginal xi parameters
+  xi_fv <- convert_combo_to_fv(true_params$true_xi)
+  marg_xi_fv <- qnorm(as.matrix(get_marg_eff(xi_fv, 
+                                             sim_pop$true_pi_s, 
+                                             true_params$true_pi, 
+                                             sim_pop$N_s, sim_pop$N), 
+                                ncol = 1))
+  true_Phi <- pnorm(convert_fv_to_combo(marg_xi_fv))
+  samp_Phi <- samp_params$avg_samp_Phi
+  
+  # Load sample results
+  load(paste0(wd, analysis_dir, scen_name, scen_samp, ".RData"))
+  L <- length(metrics_all$metrics_ws$K_dist)
+  
+  # For marginal xi, the last dimension contains two duplicated columns, so 
+  # select only the first column
+  Phi_plot_data <- 
+    as.data.frame(rbind(pnorm(t(apply(metrics_all$metrics_s$xi_all[,,1], 1, c))),
+                        pnorm(t(apply(metrics_all$metrics_unsup$xi_all[,,1], 1, c))),
+                        pnorm(t(apply(metrics_all$metrics_ws$xi_all[,,1], 1, c)))))
+  colnames(Phi_plot_data) <- c("C=1", "C=2", "C=3")
+  Phi_plot_data$Model <- factor(c(rep("SOLCA", times=L), rep("WOLCA", times=L),
+                                  rep("SWOLCA", times=L)), 
+                                levels = c("SOLCA", "WOLCA", "SWOLCA"))
+  Phi_plot_data <- Phi_plot_data %>% gather("Phi_component", "value", -Model)
+  ggplot(Phi_plot_data, aes(x=Phi_component, y=value, fill=Model)) +
+    theme_bw() + scale_fill_brewer(palette="Set2") + 
+    geom_boxplot() +
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_Phi[1,1],
+                             yend=true_Phi[1,1]),color="red") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_Phi[2,1],
+                             yend=true_Phi[2,1]),color="red") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_Phi[3,1],
+                             yend=true_Phi[3,1]),color="red") +
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=samp_Phi[1], yend=samp_Phi[1]),
+                 color="red", linetype = "dashed") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=samp_Phi[2], yend=samp_Phi[2]),
+                 color="red", linetype = "dashed") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=samp_Phi[3], yend=samp_Phi[3]),
+                 color="red", linetype = "dashed") +
+    # ggtitle(paste0("Parameter estimation for outcome probabilities across 100 samples")) + 
+    xlab("Covariate Levels") + ylab("Probability of Outcome") + 
+    theme(legend.position = "top")
 }
 
 #============== Plot parameters, by latent class, across sampling designs ======
@@ -1274,11 +1440,11 @@ plot_pi_samp <- function(wd, analysis_dir, scen_pop, iter_pop = 1) {
     geom_boxplot() +
     facet_grid(~Sampling) + 
     geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_pi[1],
-                             yend=true_params$true_pi[1]),color="#d7191c") +
+                             yend=true_params$true_pi[1]),color="red") +
     geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_pi[2],
-                             yend=true_params$true_pi[2]),color="#d7191c") +
+                             yend=true_params$true_pi[2]),color="red") +
     geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_pi[3],
-                             yend=true_params$true_pi[3]),color="#d7191c") +
+                             yend=true_params$true_pi[3]),color="red") +
     # ggtitle(paste0("Parameter estimation for π across 100 samples")) + 
     xlab("Latent Class") + ylab("π Value") + 
     theme(legend.position="top")  + 
@@ -1336,17 +1502,17 @@ plot_xi_samp <- function(wd, analysis_dir, scen_pop, iter_pop = 1) {
     geom_boxplot() +
     facet_grid(~Sampling) + 
     geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_xi[1,1],
-                             yend=true_params$true_xi[1,1]),color="#d7191c") +
+                             yend=true_params$true_xi[1,1]),color="red") +
     geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_xi[2,1],
-                             yend=true_params$true_xi[2,1]),color="#d7191c") +
+                             yend=true_params$true_xi[2,1]),color="red") +
     geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_xi[3,1],
-                             yend=true_params$true_xi[3,1]),color="#d7191c") +
+                             yend=true_params$true_xi[3,1]),color="red") +
     geom_segment(mapping=aes(x=3.5, xend=4.5, y=true_params$true_xi[1,2],
-                             yend=true_params$true_xi[1,2]),color="#d7191c") +
+                             yend=true_params$true_xi[1,2]),color="red") +
     geom_segment(mapping=aes(x=4.5, xend=5.5, y=true_params$true_xi[2,2],
-                             yend=true_params$true_xi[2,2]),color="#d7191c") +
+                             yend=true_params$true_xi[2,2]),color="red") +
     geom_segment(mapping=aes(x=5.5, xend=6.5, y=true_params$true_xi[3,2],
-                             yend=true_params$true_xi[3,2]),color="#d7191c") +
+                             yend=true_params$true_xi[3,2]),color="red") +
     # ggtitle(paste0("Parameter estimation for ξ across 100 samples")) + 
     xlab("Covariate Levels") + ylab("ξ Value") + 
     theme(legend.position="top")  + 
@@ -1409,4 +1575,187 @@ create_app_tables <- function(wd, analysis_dir, save_names, scenarios,
     kable_classic() %>%
     kable_styling(full_width = FALSE)
 }
+
+
+#================= Plot pi, by latent class, over one iteration ================
+# Inputs:
+#   wd: String specifying working directory
+#   data_dir: String specifying directory where data are saved
+#   analysis_dir: String specifying analysis directory where summaries are saved
+#   scen_pop: Four-digit population scenario
+#   scen_samp: Six-digit sample scenario
+#   samp_n: Sample iteration
+#   WSOLCA_name: String with file name identifier for WSOLCA results
+#   SOLCA_name: String with file name identifier for SOLCA results
+#   WOLCA_name: String with file name identifier for WOLCA results
+# Output: ggplot plot object with pi boxplot for one iteration, with 
+# population line in green and sample line in red
+plot_pi_iter <- function(wd, data_dir, analysis_dir, scen_pop, scen_samp, 
+                         samp_n, WSOLCA_name, SOLCA_name, WOLCA_name) {
+  # Load population data
+  load(paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter",
+              iter_pop, ".RData"))
+  # Load sample data
+  load(paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop, "_samp", 
+              samp_n, ".RData"))
+  # Get population and sample pi's
+  true_params <- get_true_params(sim_pop = sim_pop)
+  samp_pi <- tabulate(sim_data$true_Ci) / length(sim_data$true_Ci)
+  
+  # Load model results
+  load(paste0(wd, res_dir, "wsOFMM", WSOLCA_name, scen_samp, "_samp", samp_n, ".RData"))
+  data_ws <- res$analysis_adj
+  names(data_ws) <- str_replace_all(names(data_ws), "_adj", "")
+  load(paste0(wd, res_dir, "sOFMM", SOLCA_name, scen_samp, "_samp", samp_n, ".RData"))
+  data_s <- res$analysis
+  load(paste0(wd, res_dir, "wOFMM", WOLCA_name, scen_samp, "_samp", samp_n, ".RData"))
+  data_w <- res$analysis
+  
+  ##### Get optimal ordering using theta_dist
+  order_ws <- get_theta_dist(est_theta = data_ws$theta_med, 
+                               true_theta = true_params$true_theta, 
+                               est_K = length(data_ws$pi_med), true_K = true_K, 
+                               subset = TRUE, dist_type = "mean_abs")$order
+  order_s <- get_theta_dist(est_theta = data_s$theta_med, 
+                             true_theta = true_params$true_theta, 
+                             est_K = length(data_s$pi_med), true_K = true_K, 
+                             subset = TRUE, dist_type = "mean_abs")$order
+  order_w <- get_theta_dist(est_theta = data_w$theta_med, 
+                             true_theta = true_params$true_theta, 
+                             est_K = length(data_w$pi_med), true_K = true_K, 
+                             subset = TRUE, dist_type = "mean_abs")$order
+
+  
+  # Create dataframe to analyze MCMC chains
+  df_ws <- data.frame(data_ws$pi_red[, order_ws])
+  df_s <- data.frame(data_s$pi_red[, order_s])
+  df_w <- data.frame(data_w$pi_red[, order_w])
+  
+  # Assuming all models have same number of components
+  pi_dim <- ncol(data_ws$pi_red)
+  colnames(df_ws) <- colnames(df_s) <- colnames(df_w) <- 1:3
+  combined_df <- rbind(df_s, df_w, df_ws)
+  combined_df$Model <- factor(c(rep("SOLCA", times=nrow(df_s)), 
+                                rep("WOLCA", times=nrow(df_w)), 
+                                rep("SWOLCA", times=nrow(df_ws))),
+                              levels = c("SOLCA", "WOLCA", "SWOLCA"))
+  reshape_df <- combined_df %>% gather("pi", "pi_value", 1:pi_dim)
+  
+  reshape_df %>% ggplot(aes(x=pi, y=pi_value, fill=Model)) + 
+    geom_boxplot() +
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_pi[1],
+                             yend=true_params$true_pi[1]),color="red") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_pi[2],
+                             yend=true_params$true_pi[2]),color="red") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_pi[3],
+                             yend=true_params$true_pi[3]),color="red") +
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=samp_pi[1], yend=samp_pi[1]),
+                 color="red", linetype = "dashed") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=samp_pi[2], yend=samp_pi[2]),
+                 color="red", linetype = "dashed") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=samp_pi[3], yend=samp_pi[3]),
+                 color="red", linetype = "dashed") + 
+    xlab("Latent Class") + ylab("π Value") + theme_bw() + 
+    scale_fill_brewer(palette="Set2") + 
+    theme(legend.position="top") 
+}
+
+
+
+# Plot Phi for marginal association of interest
+plot_Phi_iter_marg <- function(wd, data_dir, analysis_dir, scen_pop, 
+                               scen_samp, samp_n, WSOLCA_name, SOLCA_name, 
+                               WOLCA_name) {
+  # Load population data
+  load(paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter", 1, ".RData"))
+  # Load sample data
+  load(paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", 1, "_samp", 
+              samp_n, ".RData"))
+  # Get population and sample Phi's
+  true_params <- get_true_params(sim_pop = sim_pop)
+  xi_fv <- convert_combo_to_fv(true_params$true_xi)
+  marg_xi_fv <- qnorm(as.matrix(get_marg_eff(xi_fv, 
+                                             sim_pop$true_pi_s, 
+                                             true_params$true_pi, 
+                                             sim_pop$N_s, sim_pop$N), 
+                                ncol = 1))
+  true_Phi <- pnorm(convert_fv_to_combo(marg_xi_fv))
+  samp_Phi <- sapply(1:length(sim_data$true_pi), function(k) 
+    sum(sim_data$Y_data==1 & sim_data$true_Ci==k) / sum(sim_data$true_Ci==k))
+  
+  # Load model results
+  load(paste0(wd, res_dir, "wsOFMM", WSOLCA_name, scen_samp, "_samp", samp_n, ".RData"))
+  data_ws <- res$analysis_adj
+  names(data_ws) <- str_replace_all(names(data_ws), "_adj", "")
+  load(paste0(wd, res_dir, "sOFMM", SOLCA_name, scen_samp, "_samp", samp_n, ".RData"))
+  data_s <- res$analysis
+  load(paste0(wd, res_dir, "wOFMM", WOLCA_name, scen_samp, "_samp", samp_n, ".RData"))
+  data_w <- res$analysis
+  
+  ##### Get optimal ordering using theta_dist
+  true_K <- length(true_params$true_pi)
+  order_ws <- get_theta_dist(est_theta = data_ws$theta_med, 
+                             true_theta = true_params$true_theta, 
+                             est_K = length(data_ws$pi_med), true_K = true_K, 
+                             subset = TRUE, dist_type = "mean_abs")$order
+  order_s <- get_theta_dist(est_theta = data_s$theta_med, 
+                            true_theta = true_params$true_theta, 
+                            est_K = length(data_s$pi_med), true_K = true_K, 
+                            subset = TRUE, dist_type = "mean_abs")$order
+  order_w <- get_theta_dist(est_theta = data_w$theta_med, 
+                            true_theta = true_params$true_theta, 
+                            est_K = length(data_w$pi_med), true_K = true_K, 
+                            subset = TRUE, dist_type = "mean_abs")$order
+  
+  # Create dataframe to analyze MCMC chains
+  est_ws <- data_ws$xi_med[order_ws, ]
+  lb_ws <- apply(data_ws$xi_red[, order_ws, ], 2, 
+                 function(x) quantile(x, 0.025))
+  ub_ws <- apply(data_ws$xi_red[, order_ws, ], 2, 
+                 function(x) quantile(x, 0.975))
+  est_s <- data_s$xi_med[order_s, ]
+  lb_s <- apply(data_s$xi_red[, order_s, ], 2, 
+                 function(x) quantile(x, 0.025))
+  ub_s <- apply(data_s$xi_red[, order_s, ], 2, 
+                 function(x) quantile(x, 0.975))
+  est_w <- data_w$xi_med[order_w, ]
+  lb_w <- data_w$xi_med_lb[order_w, ]
+  ub_w <- data_w$xi_med_ub[order_w]
+
+  # Assuming all models have same number of components
+  K <- ncol(data_ws$pi_red)
+  combined_df <- data.frame("est" = pnorm(c(est_s, est_w, est_ws)),
+                            "lb" = pnorm(c(lb_s, lb_w, lb_ws)),
+                            "ub" = pnorm(c(ub_s, ub_w, ub_ws)))
+  combined_df$Class <- rep(c("C=1", "C=2", "C=3"), times = 3)
+  combined_df$Model <- factor(c(rep("SOLCA", each=K), 
+                                rep("WOLCA", each=K), 
+                                rep("SWOLCA", each=K)),
+                              levels = c("SOLCA", "WOLCA", "SWOLCA"))
+  
+  combined_df %>% ggplot(aes(x=Class, y=est, color=Model)) + 
+    geom_point(position = position_dodge(width = 0.5), stat = "identity") +
+    geom_errorbar(aes(ymin=lb, ymax=ub), position = position_dodge(width = 0.5)) + 
+    theme_bw() + scale_color_brewer(palette="Set2") + 
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_Phi[1,1],
+                             yend=true_Phi[1,1]),color="red") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_Phi[2,1],
+                             yend=true_Phi[2,1]),color="red") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_Phi[3,1],
+                             yend=true_Phi[3,1]),color="red") +
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=samp_Phi[1], yend=samp_Phi[1]),
+                 color="red", linetype = "dashed") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=samp_Phi[2], yend=samp_Phi[2]),
+                 color="red", linetype = "dashed") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=samp_Phi[3], yend=samp_Phi[3]),
+                 color="red", linetype = "dashed") +
+    xlab("Covariate Levels") + ylab("Probability of Outcome") + 
+    theme(legend.position = "top")
+}
+
+
+
+
+
+
 

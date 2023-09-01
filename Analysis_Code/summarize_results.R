@@ -4,7 +4,7 @@
 ## Last Updated: 2023/05/20
 #==================================
 
-setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/")
+setwd("/n/holyscratch01/stephenson_lab/Users/stephwu18/SWOLCA/")
 library(R.matlab)
 library(stringr)
 library(abind)
@@ -95,9 +95,9 @@ save_scen_metrics(scen_pop = 1112, scen_samp = 111211, WSOLCA = TRUE,
 
 #================ TABLE METRICS SUMMARY ========================================
 
-wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/" # Working directory
-data_dir <- "Data/June22/"               # Simulated data directory
-res_dir <- "Results/July3/"             # Model results directory
+wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/SWOLCA/" # Working directory
+data_dir <- "Data/July6/"               # Simulated data directory
+res_dir <- "Results/July6/"             # Model results directory
 analysis_dir <- "Analysis_Code/"  # Analysis directory where metrics are saved
 
 create_table1(wd = wd, analysis_dir = analysis_dir, format = "latex")
@@ -208,7 +208,7 @@ samp_xi
 
 
 #============== Create Appendix Tables =========================================
-wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/wsOFMM/" # Working directory
+wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/SWOLCA/" # Working directory
 analysis_dir <- "Analysis_Code/"  # Analysis directory where metrics are saved
 
 # Sampling scenarios
@@ -343,7 +343,26 @@ plot_cov %>%  ggplot(aes(x=param, y=coverage, fill=model)) +
   facet_grid(~sampling)
 
 
-#================= Plot pi over 100 iterations ==============================
+#================= Plot params over 100 iterations =============================
+# Stratified marginal, xi
+samp_params <- get_avg_over_samps(wd = wd, data_dir = data_dir, scen_pop = 1122,
+                                  scen_samp = 112211, iter_pop = 1, 
+                                  samp_n_seq = 1:100, covs = NULL)
+plot_Phi_patterns_marg(wd = wd, data_dir = data_dir, analysis_dir = analysis_dir, 
+                       scen_pop = 1122, scen_samp = 112211, iter_pop = 1,
+                       scen_name = "metrics_marg_scen", samp_params = samp_params)
+
+# Stratified default, pi and xi
+samp_params <- get_avg_over_samps(wd = wd, data_dir = data_dir, scen_pop = 1112,
+                                  scen_samp = 111211, iter_pop = 1, 
+                                  samp_n_seq = 1:100, covs = "true_Si")
+plot_pi_patterns(wd = wd, data_dir = data_dir, analysis_dir = analysis_dir,
+                 scen_pop = 1112, iter_pop = 1, scen_samp = 111211,
+                 scen_name = "metrics_scen", samp_params = samp_params)
+plot_Phi_patterns(wd = wd, data_dir = data_dir, analysis_dir = analysis_dir,
+                 scen_pop = 1112, iter_pop = 1, scen_samp = 111211,
+                 scen_name = "metrics_scen", samp_params = samp_params)
+
 
 # Stratified sampling
 p1 <- plot_pi_patterns(wd = wd, data_dir = data_dir, analysis_dir = analysis_dir,
@@ -456,6 +475,18 @@ plot_bias_boxplot <- function(wd, analysis_dir, save_names, scenarios,
   return(p)
 }
 
+#================== Plot params for one iteration ==============================
+# load(paste0(wd, analysis_dir, "metrics_scen", scen_samp, ".RData"))
+# which.min(metrics_all$metrics_ws$pi_dist)
+plot_pi_iter(wd = wd, data_dir = data_dir, analysis_dir = analysis_dir, 
+             scen_pop = 1112, scen_samp = 111211, samp_n = 91, 
+             WSOLCA_name = "_results_comb_adjRcpp_scen", 
+             SOLCA_name = "_results_scen", WOLCA_name = "_results_wt_scen")
+
+plot_Phi_iter_marg(wd = wd, data_dir = data_dir, analysis_dir = analysis_dir,
+                   scen_pop = 1122, scen_samp = 112211, samp_n = 31,
+                   WSOLCA_name = "_results_comb_adjRcpp_scen", 
+                   SOLCA_name = "_results_scen", WOLCA_name = "_results_wt_scen")
 
 #================== OLD CODE ===================================================
 # plot_pi_cov <- data.frame(
