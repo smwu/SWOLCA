@@ -57,7 +57,6 @@ mat mvrnorm_cpp2(const int& n, const vec& mu, const mat& sigma) {
 mat mvrnorm_cpp3(const int& n, const rowvec& mu, const mat& sigma) {
   Environment pkg = Environment::namespace_env("LaplacesDemon");
   Function f("rmvn");
-  int ncols = sigma.n_cols;
   // NumericMatrix temp = f(_["n"] = 1, _["mu"] = mu, _["Sigma"] = sigma);
   mat temp = as<arma::mat>(f(1, _["mu"] = mu, _["Sigma"] = sigma));
   return temp;

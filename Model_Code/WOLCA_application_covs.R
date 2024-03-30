@@ -253,9 +253,25 @@ racethnic_categs <- c("NH White", "NH Black", "NH Asian", "Hispanic/Latino", "Ot
 smoker_categs <- c("Non-Smoker", "Smoker")
 physactive_categs <- c("Inactive", "Active")
 
+# Reorder classes
+new_order <- c(3, 2, 5, 4, 1)
+# new_order <- c(5, 2, 4, 1, 3)
+res <- reorder_classes(res = res, model = "wOFMM", new_order = new_order)
+
 plot_theta_modes(res, model = "wOFMM")
+plot_theta_probs(res, model = "wOFMM")
 plot_Phi_line(res, model = "wOFMM", age_categs = age_categs, 
               racethnic_categs = racethnic_categs,
               educ_categs = educ_categs, smoker_categs = smoker_categs, 
-              physactive_categs = physactive_categs)
+              physactive_categs = physactive_categs, ymax = 0.9)
 plot_pi_boxplots(res, model = "wOFMM")
+
+# Output reference cell coefficients table for xi 
+convert_to_ref_wolca(xi_med = res$analysis$xi_med, 
+                     xi_med_lb = res$analysis$xi_med_lb,
+                     xi_med_ub = res$analysis$xi_med_ub,
+                     age_categs = age_categs, racethnic_categs = racethnic_categs, 
+                     smoker_categs = smoker_categs, 
+                     physactive_categs = physactive_categs, format = "latex")
+
+

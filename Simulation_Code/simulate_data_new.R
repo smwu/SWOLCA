@@ -2,7 +2,7 @@
 # Simulate data with stratum-specific class-membership probabilities
 # Informative sampling: strata variable influences class and outcome
 # Programmer: SM Wu
-# Date updated: 2023/04/10
+# Date updated: 2024/03/05
 #===================================================================
 
 library(LaplacesDemon) # Sample from distributions
@@ -521,14 +521,27 @@ convert_ref_to_mix <- function(K, Q, est_beta, ci_beta = NULL) {
   # return(beta_comb)
 }
 
-### Equivalent way for categorical variable
-# pi_s <- matrix(c(0.3, 0.5, 0.2, 
-#                  0.1, 0.6, 0.3), nrow = 2, byrow = TRUE)
-# s_all <- V$s_all
-# c_all <- numeric(N)
-# for (i in 1:N) {
-#   c_all[i] <- rcat(n = 1, p = pi_s[s_all[i], ])
-# }
+#' Convert from mixture reference coding to reference cell coding
+#' 
+#' @description
+#' Convert regression estimates \eqn{\xi} from mixture reference coding, a 
+#' combination of factor variable and reference cell coding, to standard 
+#' reference cell coding.
+#' 
+#' @param est_xi Matrix of xi parameter estimates in mixture reference coding. KxQ
+#' @return Returns vector `est_beta` of the probit regression coefficients
+#' converted into reference cell coding with interactions. (K*Q)x1
+#' 
+#' @keywords internal
+#' @export
+convert_mix_to_ref <- function(est_xi) {
+  est_beta <- est_xi
+  for (i in 2:nrow(est_xi)) {
+    est_beta[i, ] <- est_xi[i, ] - est_xi[1, ]
+  }
+  est_beta <- c(est_beta)
+  return(est_beta)
+}
 
 
 #' Create and save simulated population data
@@ -797,13 +810,20 @@ simulate_pop <- function(N = 80000, S = 2, J = 30, K = 3, R = 4,
   clust_mode <- modal_theta_prob
   non_mode <- (1 - clust_mode) / (R - 1)
   
-  #================ Create S_i variable ==========================================
-  # Create strata
-  s_all <- unlist(sapply(1:S, function(x) rep(x, times = N_s[x])))
-  # Dataframe of strata and additional variables
+  #================ Create S_i variable ========================================
+  # If variables in V_additional, create s_all if necessary and append to other 
+  # variables
   if (!is.null(V_additional)) {
+    if (!("s_all" %in% colnames(V_additional))) {
+      # Create strata
+      s_all <- unlist(sapply(1:S, function(x) rep(x, times = N_s[x])))
+    } 
     V <- data.frame(s_all = as.factor(s_all), V_additional)
+    
+  # If no variables in V_additional, create s_all
   } else {
+    # Create strata
+    s_all <- unlist(sapply(1:S, function(x) rep(x, times = N_s[x])))
     V <- data.frame(s_all = as.factor(s_all))
   }
   
@@ -1301,23 +1321,332 @@ simulate_samp <- function(sim_pop, samp_prop = 0.05, samp_size = NULL,
 # source("~/Documents/GitHub/baysc/R/utilities.R")
 
 # Define directories
-wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/WSOLCA/"
-wd <- "~/Documents/Github/SWOLCA/"
-setwd(wd)
-data_dir <- "Data/Mar5/"
+wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/SWOLCA/"
+# wd <- "~/Documents/Github/SWOLCA/"
+# setwd(wd)
+data_dir <- "Data/Mar17/"
 
 # Population size and strata dimensions
-N = 80000; H = 2; N_s = c(60000, 20000)
+N = 80000; S = 2; N_s = c(20000, 60000)
 
-#### Default scenario with overlapping patterns and S influencing C, X, Y
+#========= Baseline patterns, stratified and stratified cluster ================
 
 # Generate C ~ S
 K <- 3
 formula_c <- "~ s_all"
-V_unique <- data.frame(s_all = as.factor(1:H))
+V_unique <- data.frame(s_all = as.factor(1:S))
+pi_mat <- matrix(c(0.2, 0.4, 0.4, # class membership probs for S=1
+                   0.7, 0.2, 0.1), # class membership probs for S=2
+                 byrow = TRUE, nrow = S, ncol = K)
+beta_mat_c <- get_betas_c(pi_mat = pi_mat, formula_c = formula_c,
+                          V_unique = V_unique)
+
+# Generate X ~ C 
+J <- 30; R <- 4
+formula_x <- "~ c_all"
+V_unique <- data.frame(c_all = as.factor(1:K))
+# Baseline setting
+profiles <- as.matrix(data.frame(C1 = c(rep(1, times = 0.5 * J),
+                                        rep(3, times = 0.5 * J)),
+                                 C2 = c(rep(4, times = 0.2 * J),
+                                        rep(2, times = 0.8 * J)),
+                                 C3 = c(rep(3, times = 0.3 * p), 
+                                        rep(4, times = 0.4 * p), 
+                                        rep(1, times = 0.3 * p))))
+modal_theta_prob <- 0.85
+beta_list_x <- get_betas_x(profiles = profiles, R = R,
+                           modal_theta_prob = modal_theta_prob,
+                           formula_x = formula_x, V_unique = V_unique)
+
+# Generate Y ~ C + S + C:S
+formula_y <- "~ c_all * s_all"
+# Corresponds to xi of 1.0, 0.3, -0.5, -0.5, -1.0, -0.8, by column
+beta_vec_y <- c(1, -0.7, -1.5, -0.5, -0.5, -0.3)
+cluster_size <- 80
+
+# Simulate population
+iter_pop <- 1 # Set seed
+scenario <- 1112
+pop_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                        iter_pop, ".RData") 
+sim_pop <- simulate_pop(N = N, J = J, K = K, R = R, N_s = N_s,
+                        modal_theta_prob = modal_theta_prob,
+                        formula_c = formula_c, formula_x = formula_x,
+                        formula_y = formula_y, beta_mat_c = beta_mat_c,
+                        beta_list_x = beta_list_x, beta_vec_y = beta_vec_y,
+                        cluster_size = cluster_size,
+                        pop_seed = iter_pop, save_res = TRUE, 
+                        save_path = pop_data_path,
+                        save_path_full = TRUE)
+# Get samples
+samp_n_seq <- 1:100
+# Stratified 
+scenario <- 111211
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.05, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = FALSE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
+# Stratified cluster
+scenario <- 111212
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.05, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = TRUE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
+
+#========= Overlapping patterns, stratified cluster, S influencing C and Y =====
+
+# Generate C ~ S
+K <- 3
+formula_c <- "~ s_all"
+V_unique <- data.frame(s_all = as.factor(1:S))
+pi_mat <- matrix(c(0.2, 0.4, 0.4, # class membership probs for S=1
+                   0.7, 0.2, 0.1), # class membership probs for S=2
+                 byrow = TRUE, nrow = S, ncol = K)
+beta_mat_c <- get_betas_c(pi_mat = pi_mat, formula_c = formula_c,
+                          V_unique = V_unique)
+
+# Generate X ~ C 
+J <- 30; R <- 4
+formula_x <- "~ c_all"
+V_unique <- data.frame(c_all = as.factor(1:K))
+# Overlap setting
+profiles <- as.matrix(data.frame(C1 = c(rep(1, times = 0.5 * J),
+                                        rep(3, times = 0.5 * J)),
+                                 C2 = c(rep(4, times = 0.2 * J),
+                                        rep(2, times = 0.8 * J)),
+                                 C3 = c(rep(4, times = 0.1 * J),
+                                        rep(1, times = 0.4 * J),
+                                        rep(3, times = 0.5 * J))))
+modal_theta_prob <- 0.85
+beta_list_x <- get_betas_x(profiles = profiles, R = R,
+                                modal_theta_prob = modal_theta_prob,
+                                formula_x = formula_x, V_unique = V_unique)
+
+# Generate Y ~ C + S + C:S
+formula_y <- "~ c_all * s_all"
+# Corresponds to xi of 1.0, 0.3, -0.5, -0.5, -1.0, -0.8, by column
+beta_vec_y <- c(1, -0.7, -1.5, -0.5, -0.5, -0.3)
+cluster_size <- 80
+
+# Simulate population
+iter_pop <- 1 # Set seed
+scenario <- 1212
+pop_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                        iter_pop, ".RData") 
+sim_pop <- simulate_pop(N = N, J = J, K = K, R = R, N_s = N_s,
+                        modal_theta_prob = modal_theta_prob,
+                        formula_c = formula_c, formula_x = formula_x,
+                        formula_y = formula_y, beta_mat_c = beta_mat_c,
+                        beta_list_x = beta_list_x, beta_vec_y = beta_vec_y,
+                        cluster_size = cluster_size,
+                        pop_seed = iter_pop, save_res = TRUE, 
+                        save_path = pop_data_path,
+                        save_path_full = TRUE)
+# Get samples
+samp_n_seq <- 1:100
+# Stratified cluster
+scenario <- 121212
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.05, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = TRUE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
+
+#========= Overlapping patterns, stratified, marginal S influencing Y ==========
+
+# Generate C ~ 1
+K <- 3
+formula_c <- "~ 1"
+V_unique <- data.frame(s_all = as.factor(1:S))
+pi_mat <- matrix(c(0.2, 0.4, 0.4, # class membership probs for S=1
+                   0.2, 0.4, 0.4), # class membership probs for S=2
+                 byrow = TRUE, nrow = S, ncol = K)
+beta_mat_c <- get_betas_c(pi_mat = pi_mat, formula_c = formula_c,
+                          V_unique = V_unique)
+
+# Generate Y ~ C + S + C:S
+cluster_size <- 1
+
+# Simulate population
+iter_pop <- 1 # Set seed
+scenario <- 1221
+pop_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                        iter_pop, ".RData") 
+sim_pop <- simulate_pop(N = N, J = J, K = K, R = R, N_s = N_s,
+                        modal_theta_prob = modal_theta_prob,
+                        formula_c = formula_c, formula_x = formula_x,
+                        formula_y = formula_y, beta_mat_c = beta_mat_c,
+                        beta_list_x = beta_list_x, beta_vec_y = beta_vec_y,
+                        cluster_size = cluster_size,
+                        pop_seed = iter_pop, save_res = TRUE, 
+                        save_path = pop_data_path,
+                        save_path_full = TRUE)
+# Get samples
+samp_n_seq <- 1:100
+# Stratified 
+scenario <- 122111
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.05, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = FALSE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
+
+
+#========= Baseline patterns, stratified cluster, S influencing C, X and Y =====
+
+# Generate C ~ S
+K <- 3
+formula_c <- "~ s_all"
+V_unique <- data.frame(s_all = as.factor(1:S))
+pi_mat <- matrix(c(0.2, 0.4, 0.4, # class membership probs for S=1
+                   0.7, 0.2, 0.1), # class membership probs for S=2
+                 byrow = TRUE, nrow = S, ncol = K)
+beta_mat_c <- get_betas_c(pi_mat = pi_mat, formula_c = formula_c,
+                          V_unique = V_unique)
+
+# Generate X ~ C + S
+J <- 30; R <- 4
+formula_x_temp <- "~ c_all"
+V_unique <- data.frame(c_all = as.factor(1:K))
+# Baseline setting
+profiles <- as.matrix(data.frame(C1 = c(rep(1, times = 0.5 * J),
+                                        rep(3, times = 0.5 * J)),
+                                 C2 = c(rep(4, times = 0.2 * J),
+                                        rep(2, times = 0.8 * J)),
+                                 C3 = c(rep(3, times = 0.3 * p), 
+                                        rep(4, times = 0.4 * p), 
+                                        rep(1, times = 0.3 * p))))
+modal_theta_prob <- 0.85
+beta_list_x_temp <- get_betas_x(profiles = profiles, R = R,
+                                modal_theta_prob = modal_theta_prob,
+                                formula_x = formula_x_temp, V_unique = V_unique)
+formula_x <- "~ c_all + s_all"
+# for those with s_all == 1, level 2 twice as likely and level 3,4 50% as likely
+beta_list_x <- lapply(1:J, function(j) cbind(beta_list_x_temp[[j]],
+                                             s_all = c(0, 0.7, -0.7, -0.7)))
+get_categ_probs(beta_mat = beta_list_x[[20]], formula = formula_x, V_unique =
+                  as.data.frame(expand.grid(c_all = factor(1:K), s_all = factor(1:S))))
+
+# Generate Y ~ C + S + C:S
+formula_y <- "~ c_all * s_all"
+# Corresponds to xi of 1.0, 0.3, -0.5, -0.5, -1.0, -0.8, by column
+beta_vec_y <- c(1, -0.7, -1.5, -0.5, -0.5, -0.3)
+cluster_size <- 80
+
+# Simulate population
+iter_pop <- 1 # Set seed
+scenario <- 3112
+pop_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                        iter_pop, ".RData") 
+sim_pop <- simulate_pop(N = N, J = J, K = K, R = R, N_s = N_s,
+                        modal_theta_prob = modal_theta_prob,
+                        formula_c = formula_c, formula_x = formula_x,
+                        formula_y = formula_y, beta_mat_c = beta_mat_c,
+                        beta_list_x = beta_list_x, beta_vec_y = beta_vec_y,
+                        cluster_size = cluster_size,
+                        pop_seed = iter_pop, save_res = TRUE, 
+                        save_path = pop_data_path,
+                        save_path_full = TRUE)
+# Get samples
+samp_n_seq <- 1:100
+# Stratified 
+scenario <- 311211
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.05, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = FALSE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
+# Stratified cluster
+scenario <- 311212
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.05, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = TRUE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
+
+
+#================= Baseline weak patterns, stratified cluster ==================
+
+# Generate X ~ C
+modal_theta_prob <- 0.55
+formula_x <- "~ c_all"
+beta_list_x <- get_betas_x(profiles = profiles, R = R,
+                                modal_theta_prob = modal_theta_prob,
+                                formula_x = formula_x, V_unique = V_unique)
+
+# Simulate population
+iter_pop <- 1 # Set seed
+scenario <- 2112
+pop_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                        iter_pop, ".RData") 
+sim_pop <- simulate_pop(N = N, J = J, K = K, R = R, N_s = N_s,
+                        modal_theta_prob = modal_theta_prob,
+                        formula_c = formula_c, formula_x = formula_x,
+                        formula_y = formula_y, beta_mat_c = beta_mat_c,
+                        beta_list_x = beta_list_x, beta_vec_y = beta_vec_y,
+                        cluster_size = cluster_size,
+                        pop_seed = iter_pop, save_res = TRUE, 
+                        save_path = pop_data_path,
+                        save_path_full = TRUE)
+# Get samples, stratified cluster
+scenario <- 211212
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.05, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = TRUE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
+
+
+#================= ADDITIONAL MISC SCENARIOS ===================================
+#================= Overlapping patterns and S influencing C, X, Y ==============
+
+# Population size and strata dimensions
+N = 80000; S = 2; N_s = c(60000, 20000)
+
+# Generate C ~ S
+K <- 3
+formula_c <- "~ s_all"
+V_unique <- data.frame(s_all = as.factor(1:S))
 pi_mat <- matrix(c(0.3, 0.4, 0.3, # class membership probs for S=1
                    0.7, 0.2, 0.1), # class membership probs for S=2
-                 byrow = TRUE, nrow = H, ncol = K)
+                 byrow = TRUE, nrow = S, ncol = K)
 beta_mat_c <- get_betas_c(pi_mat = pi_mat, formula_c = formula_c,
                           V_unique = V_unique)
 
@@ -1342,7 +1671,7 @@ formula_x <- "~ c_all + s_all"
 beta_list_x <- lapply(1:J, function(j) cbind(beta_list_x_temp[[j]],
                                              s_all = c(0, 0.7, -0.7, -0.7)))
 get_categ_probs(beta_mat = beta_list_x[[20]], formula = formula_x, V_unique =
-               as.data.frame(expand.grid(c_all = factor(1:K), s_all = factor(1:H))))
+               as.data.frame(expand.grid(c_all = factor(1:K), s_all = factor(1:S))))
 
 # Generate Y ~ C + S + C:S
 formula_y <- "~ c_all * s_all"
@@ -1402,16 +1731,210 @@ for (samp_n in samp_n_seq) {
                             save_path_full = TRUE)
   save(sim_data, file = samp_data_path)
 }
+# Sample size 10%
+scenario <- 321221
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.1, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = FALSE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
+# Sample size 1%
+scenario <- 321231
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.01, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = FALSE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
 
 
-#### Marginal scenario with overlapping patterns and S influencing Y only
+
+#================= Weak patterns, overlap setting, X~S =========================
+
+# Generate X ~ C + S
+modal_theta_prob <- 0.55
+beta_list_x_temp <- get_betas_x(profiles = profiles, R = R,
+                                modal_theta_prob = modal_theta_prob,
+                                formula_x = formula_x_temp, V_unique = V_unique)
+formula_x <- "~ c_all + s_all"
+# for those with s_all == 1, level 2 twice as likely and level 3,4 50% as likely
+beta_list_x <- lapply(1:J, function(j) cbind(beta_list_x_temp[[j]],
+                                             s_all = c(0, 0.4, -0.4, -0.4)))
+get_categ_probs(beta_mat = beta_list_x[[20]], formula = formula_x, V_unique =
+                  as.data.frame(expand.grid(c_all = factor(1:K), s_all = factor(1:S))))
+
+# Simulate population
+iter_pop <- 1 # Set seed
+scenario <- 3242
+pop_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                        iter_pop, ".RData") 
+sim_pop <- simulate_pop(N = N, J = J, K = K, R = R, N_s = N_s,
+                        modal_theta_prob = modal_theta_prob,
+                        formula_c = formula_c, formula_x = formula_x,
+                        formula_y = formula_y, beta_mat_c = beta_mat_c,
+                        beta_list_x = beta_list_x, beta_vec_y = beta_vec_y,
+                        cluster_size = cluster_size,
+                        pop_seed = iter_pop, save_res = TRUE, 
+                        save_path = pop_data_path,
+                        save_path_full = TRUE)
+# Get samples, stratified sampling
+scenario <- 324211
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.05, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = FALSE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
+
+
+#================= No clustering in data, overlap setting, X~S =================
+
+# Generate X ~ C + S
+modal_theta_prob <- 0.85
+beta_list_x_temp <- get_betas_x(profiles = profiles, R = R,
+                                modal_theta_prob = modal_theta_prob,
+                                formula_x = formula_x_temp, V_unique = V_unique)
+formula_x <- "~ c_all + s_all"
+# for those with s_all == 1, level 2 twice as likely and level 3,4 50% as likely
+beta_list_x <- lapply(1:J, function(j) cbind(beta_list_x_temp[[j]],
+                                             s_all = c(0, 0.7, -0.7, -0.7)))
+
+# Generate Y ~ C + S + C:S
+cluster_size <- 1
+
+# Simulate population
+iter_pop <- 1 # Set seed
+scenario <- 3252
+pop_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                        iter_pop, ".RData") 
+sim_pop <- simulate_pop(N = N, J = J, K = K, R = R, N_s = N_s,
+                        modal_theta_prob = modal_theta_prob,
+                        formula_c = formula_c, formula_x = formula_x,
+                        formula_y = formula_y, beta_mat_c = beta_mat_c,
+                        beta_list_x = beta_list_x, beta_vec_y = beta_vec_y,
+                        cluster_size = cluster_size,
+                        pop_seed = iter_pop, save_res = TRUE, 
+                        save_path = pop_data_path,
+                        save_path_full = TRUE)
+# Get samples, stratified sampling
+scenario <- 325211
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.05, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = FALSE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
+
+
+#==== Additional confounders A and B influencing Y =============================
+set.seed(1)
+# Create dataframe of strata and additional variables A and B
+# Stratum S variable
+s_all <- unlist(sapply(1:length(N_s), function(x) rep(x, times = N_s[x])))
+# A is continuous and not associated with S
+a_all <- stats::rnorm(n = N, mean = 0, sd = 5)
+# B is binary and is associated with S
+prob_B <- c(0.7, 0.3)
+b_all <- as.factor(stats::rbinom(n = N, size = 1, prob = prob_B[s_all]) + 1)
+V_additional <- data.frame(s_all = as.factor(s_all), a_all, b_all)
+
+# Generate C ~ S + A + B
+K <- 3
+formula_c_temp <- "~ s_all"
+V_unique <- unique(V_additional)
+pi_mat <- matrix(c(0.3, 0.5, 0.2, # class membership probs for S=1
+                   0.1, 0.6, 0.3), # class membership probs for S=2
+                 byrow = TRUE, nrow = S, ncol = K)
+beta_mat_temp <- get_betas_c(pi_mat = pi_mat, formula_c = formula_c_temp,
+                             V_unique = V_unique)
+formula_c <- "~ s_all + a_all + b_all"  # add in association with A and B
+beta_mat_c <- cbind(beta_mat_temp, a_all = c(0, 0.1, 0.1), b_all = c(0, -0.1, -0.1))
+summary(get_categ_probs(beta_mat = beta_mat_c, formula = formula_c, 
+                        V_unique = V_unique))
+
+# Generate X ~ C + S
+modal_theta_prob <- 0.85
+formula_x_temp <- "~ c_all"
+V_unique <- data.frame(c_all = as.factor(1:K))
+beta_list_x_temp <- get_betas_x(profiles = profiles, R = R,
+                                modal_theta_prob = modal_theta_prob,
+                                formula_x = formula_x_temp, V_unique = V_unique)
+formula_x <- "~ c_all + s_all"  # add in association with S
+# for those with s_all == 1, level 2 twice as likely and level 3,4 50% as likely
+beta_list_x <- lapply(1:J, function(j) cbind(beta_list_x_temp[[j]],
+                                             s_all = c(0, 0.7, -0.7, -0.7)))
+get_categ_probs(beta_mat = beta_list_x[[20]], formula = formula_x, V_unique =
+                  as.data.frame(expand.grid(c_all = factor(1:K), s_all = factor(1:S))))
+
+# Generate Y ~ C + S + A + B + C:S + C:A + C:B
+formula_y <- "~ c_all * (s_all + a_all + b_all)"
+# xi1*I(C=1) + xi2*I(C=1,S=2) + xi3*I(C=1,A=2) + xi4*I(C=1)B
+# + xi5*I(C=2) + xi6*I(C=2,S=2) + xi7*I(C=2,A=2) + xi8*I(C=2)B
+# + xi9*I(C=3) + xi10*I(C=3,S=2) + xi11*I(C=3,A=2) + xi12*I(C=3)B
+xi_mat_y <- matrix(c(1, -0.5, 0.4, -0.04,
+                    0.3, -1, -0.3, 0.05,
+                    -0.5, -0.8, -0.2, 0.04), nrow = 3, byrow = TRUE)
+cluster_size <- 80
+
+# Simulate population
+iter_pop <- 1 # Set seed
+scenario <- 3232
+pop_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                        iter_pop, ".RData") 
+sim_pop <- simulate_pop(N = N, J = J, K = K, R = R, N_s = N_s,
+                        V_additional = V_additional,
+                        modal_theta_prob = modal_theta_prob,
+                        formula_c = formula_c, formula_x = formula_x,
+                        formula_y = formula_y, beta_mat_c = beta_mat_c,
+                        beta_list_x = beta_list_x, xi_mat_y = xi_mat_y,
+                        cluster_size = cluster_size,
+                        pop_seed = iter_pop, save_res = TRUE, 
+                        save_path = pop_data_path,
+                        save_path_full = TRUE)
+cor(sim_pop$true_Ai, sim_pop$true_Ci)
+cor(as.numeric(sim_pop$true_Bi), sim_pop$true_Ci)
+cor(sim_pop$true_Ai, sim_pop$Y_data)
+cor(as.numeric(sim_pop$true_Bi), sim_pop$Y_data)
+
+# Get samples, stratified sampling
+scenario <- 323211
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.05, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = FALSE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
+
+
+#==== Marginal scenario with overlapping patterns and S influencing Y only =====
 # Generate C ~ 1
 K <- 3
 formula_c <- "~ 1"
-V_unique <- data.frame(s_all = as.factor(1:H))
+V_unique <- data.frame(s_all = as.factor(1:S))
 pi_mat <- matrix(c(0.2, 0.4, 0.4, # class membership probs for S=1
                    0.2, 0.4, 0.4), # class membership probs for S=2
-                 byrow = TRUE, nrow = H, ncol = K)
+                 byrow = TRUE, nrow = S, ncol = K)
 beta_mat_c <- get_betas_c(pi_mat = pi_mat, formula_c = formula_c,
                           V_unique = V_unique)
 # Generate X ~ C 
@@ -1430,8 +1953,15 @@ modal_theta_prob <- 0.85
 beta_list_x <- get_betas_x(profiles = profiles, R = R,
                            modal_theta_prob = modal_theta_prob,
                            formula_x = formula_x, V_unique = V_unique)
+
+# Generate Y ~ C + S + C:S
+formula_y <- "~ c_all * s_all"
+# Corresponds to xi of 1.0, 0.3, -0.5, -0.5, -1.0, -0.8, by column
+beta_vec_y <- c(1, -0.7, -1.5, -0.5, -0.5, -0.3)
+cluster_size <- 80
+
+# Simulate population
 iter_pop <- 1 # Set seed
-# Default scenario with overlapping patterns and S influencing C, X, Y
 scenario <- 3222
 pop_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
                         iter_pop, ".RData") 
@@ -1444,15 +1974,24 @@ sim_pop <- simulate_pop(N = N, J = J, K = K, R = R, N_s = N_s,
                         pop_seed = iter_pop, save_res = TRUE, 
                         save_path = pop_data_path,
                         save_path_full = TRUE)
+# Get samples
+samp_n_seq <- 1:100
+# Stratified 
+scenario <- 322211
+for (samp_n in samp_n_seq) {
+  samp_data_path <- paste0(wd, data_dir, "simdata_scen", scenario, "_iter", 
+                           iter_pop, "_samp", samp_n, ".RData") 
+  sim_data <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.05, strat = TRUE,
+                            strat_dist = c(0.5, 0.5), clust = FALSE,
+                            samp_seed = samp_n, save_res = TRUE, 
+                            save_path = samp_data_path,
+                            save_path_full = TRUE)
+  save(sim_data, file = samp_data_path)
+}
 
-# Get sample, with no clustering
-sim_samp <- simulate_samp(sim_pop = sim_pop, samp_prop = 0.05, strat = TRUE,
-                          strat_dist = c(0.5, 0.5), clust = FALSE,
-                          samp_seed = 101, save_res = TRUE, 
-                          save_path = "Data/simdata_scen311211_iter1_samp1.RData",
-                          save_path_full = TRUE)
-sim_data <- sim_samp
-save(sim_data, file = "Data/simdata_scen311211_iter1_samp1.RData")
+
+
+
 
 
 # # Test data: X ~ C 

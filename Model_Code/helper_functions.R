@@ -263,11 +263,40 @@ post_process <- function(MCMC_out, p, d, q) {
   distMat <- hamming.distance(t(MCMC_out$c_all_MCMC))
   dendrogram <- hclust(as.dist(distMat), method = "complete") # Hierarchical clustering dendrogram
   red_c_all <- cutree(dendrogram, k = K_med)                  # Group individuals into K_med classes
+  # Modify classes if any classes are less than the cutoff percentage
+  class_prop <- prop.table(table(red_c_all))
+  if (any(class_prop < 0.05)) {
+    small <- which(class_prop < 0.05)
+    red_c_all_temp <- cutree(dendrogram, k = K_med + length(small))
+    red_c_all <- red_c_all_temp
+    class_prop_temp <- prop.table(table(red_c_all_temp))
+    small_temp <- sort(which(class_prop_temp < 0.05))
+    for (small_c in 1:length(small_temp)) {
+      c_ind <- small_temp[small_c]
+      class_small <- which(red_c_all_temp == c_ind)
+      # Get nearest class
+      inds <- 1:length(class_prop_temp)
+      class_dist <- sapply(inds, function(x) 
+        mean(distMat[class_small, which(red_c_all_temp == x)]))
+      # Set small class distance to Inf
+      class_dist[small_temp] <- Inf
+      nearest <- which.min(class_dist[-c_ind])
+      red_c_all[red_c_all_temp == c_ind] <- nearest
+    }
+    class_prop <- prop.table(table(red_c_all))
+    K_med <- length(class_prop)
+    # # Check class sizes
+    # prop.table(table(red_c_all))
+  }
+  # Get unique reduced classes to aid relabeling
+  unique_red_classes <- unique(red_c_all)
+  
   # For each iteration, relabel new classes using the most common old class assignment
   relabel_red_classes <- matrix(NA, nrow = M, ncol = K_med)   # Apply new classes to each iteration
   for (k in 1:K_med) {
-    relabel_red_classes[, k] <- apply(as.matrix(MCMC_out$c_all_MCMC[, red_c_all == k]), 
-                                      1, get_mode)
+    red_class <- unique_red_classes[k]
+    relabel_red_classes[, k] <- 
+      apply(as.matrix(MCMC_out$c_all_MCMC[, red_c_all == red_class]), 1, get_mode)
   }
   
   # Reduce and reorder parameter estimates using new classes
@@ -546,11 +575,18 @@ var_adjust <- function(mod_stan, analysis, K, p, d, n, q, x_mat, y_all, V, w_all
   rep_temp <- withReplicates(design = svyrep, theta = grad_par, 
                              stan_mod = mod_stan, stan_data = data_stan, 
                              par_stan = par_stan, u_pars = unc_par_hat)
-  J_hat <- vcov(rep_temp)
   
   # Compute adjustment
+  J_hat <- vcov(rep_temp)
   H_inv <- solve(H_hat)
   V1 <- H_inv %*% J_hat %*% H_inv
+  # Check for errors in the matrix inversion
+  if (any(is.na(V1))) {
+    stop(paste0("NaNs created during variance adjustment, likely due to lack of ",
+                "smoothness in the posterior. Consider running the sampler for ",
+                "more iterations, changing the random seed, or proceeding without ",
+                "the variance adjustment."))
+  }
   
   # Check for issues with negative diagonals
   if (min(diag(V1)) < 0) {
@@ -572,8 +608,15 @@ var_adjust <- function(mod_stan, analysis, K, p, d, n, q, x_mat, y_all, V, w_all
   if (min(Re(eigen(H_inv)$values)) < 0) {
     H_inv_pd <- nearPD(H_inv)
     R2_inv <- chol(H_inv_pd$mat)
+    H_inv_pd_diff <- sum(abs(eigen(H_inv)$values - eigen(H_inv_pd$mat)$values))
     print(paste0("H_inv: absolute eigenvalue difference to nearest p.d. matrix: ", 
-                 sum(abs(eigen(H_inv)$values - eigen(H_inv_pd$mat)$values))))
+                 H_inv_pd_diff))
+    if (H_inv_pd_diff > 5) {
+      stop(paste0("NaNs created during variance adjustment, likely due to lack of ",
+                  "smoothness in the posterior. Consider running the sampler for ",
+                  "more iterations, changing the random seed, or proceeding without ",
+                  "the variance adjustment."))
+    }
   } else {
     R2_inv <- chol(H_inv)
   }
@@ -591,17 +634,24 @@ var_adjust <- function(mod_stan, analysis, K, p, d, n, q, x_mat, y_all, V, w_all
   pi_red_adj <- matrix(NA, nrow=M, ncol=K)
   theta_red_adj <- array(NA, dim=c(M, p, K, d))
   xi_red_adj <- array(NA, dim=c(M, K, q))
-  for (i in 1:M) {
-    constr_pars <- constrain_pars(out_stan, par_adj[i,])
-    pi_red_adj[i, ] <- constr_pars$pi
-    theta_red_adj[i,,,] <- constr_pars$theta
-    xi_red_adj[i,,] <- constr_pars$xi
-  }
+  tryCatch({
+    for (i in 1:M) {
+        constr_pars <- constrain_pars(out_stan, par_adj[i,])
+        pi_red_adj[i, ] <- constr_pars$pi
+        theta_red_adj[i,,,] <- constr_pars$theta
+        xi_red_adj[i,,] <- constr_pars$xi
+    }
+  }, error=function(e){
+    stop(paste("ERROR : Unstable estimates in variance adjustment. Consider running the",
+    "sampler for more iterations, changing the random seed, or proceeding without",
+    "the variance adjustment.", "\n"))
+  }) 
+  #error=function(e){cat("ERROR :", conditionMessage(e), "\n")})
   
   #=============== Output adjusted parameters ==================================
-  pi_med_adj <- apply(pi_red_adj, 2, median)
-  theta_med_adj <- apply(theta_red_adj, c(2,3,4), median)
-  xi_med_adj <- apply(xi_red_adj, c(2,3), median)
+  pi_med_adj <- apply(pi_red_adj, 2, median, na.rm = TRUE)
+  theta_med_adj <- apply(theta_red_adj, c(2,3,4), median, na.rm = TRUE)
+  xi_med_adj <- apply(xi_red_adj, c(2,3), median, na.rm = TRUE)
   
   # Update Phi_med using adjusted xi estimate
   c_all <- analysis$c_all

@@ -192,6 +192,7 @@ data_dir <- "Data/"
 res_dir <- "Results/July6/"
 model_dir <- "Model_Code/"
 model <- "sOFMM"
+source(paste0(wd, model_dir, "app_helper_functions.R"))
 
 # Define paths
 data_path <- paste0(wd, data_dir, "nhanes1518_adult_low_f_12jul2023.csv")   # Input dataset
@@ -253,7 +254,7 @@ p2 + theme(legend.position = "top")
 plot_Phi_line(res, model = "sOFMM", age_categs = age_categs, 
               racethnic_categs = racethnic_categs,
               educ_categs = educ_categs, smoker_categs = smoker_categs, 
-              physactive_categs = physactive_categs)
+              physactive_categs = physactive_categs, ymax=0.9)
 
 # Output reference cell coefficients table for xi 
 convert_to_ref(xi_med = res$analysis$xi_med, 

@@ -274,7 +274,7 @@ plot_xi_boxplots(res, model = "wsOFMM", age_categs = age_categs,
 plot_Phi_line(res, model = "wsOFMM", age_categs = age_categs, 
               racethnic_categs = racethnic_categs,
               educ_categs = educ_categs, smoker_categs = smoker_categs, 
-              physactive_categs = physactive_categs)
+              physactive_categs = physactive_categs, ymax = 0.9)
 plot_Phi_line_cis(res, model = "wsOFMM", age_categs = age_categs, 
                   racethnic_categs = racethnic_categs,
                   educ_categs = educ_categs, smoker_categs = smoker_categs, 

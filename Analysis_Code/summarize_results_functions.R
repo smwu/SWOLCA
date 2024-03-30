@@ -805,16 +805,22 @@ get_metrics <- function(pop_data_path, sim_data_path, sim_res_path, model,
 #   SOLCA_name: String with file name identifier for SOLCA results
 #   WOLCA_name: String with file name identifier for WOLCA results
 #   covs: String vector of covariates to include in probit model. Default = NULL 
+#   wd: Working directory
+#   data_dir: Simulated data directory
+#   res_dir: Model results directory
 # Default is FALSE
 #   save_name: String with main file name for saving all metrics
 # Outputs: Saves 'metrics_all' list with all metrics in an .RData file
 save_scen_metrics <- function(scen_pop, scen_samp, WSOLCA = TRUE, SOLCA = TRUE,
                               WOLCA = TRUE, WSOLCA_name, SOLCA_name, WOLCA_name,
-                              covs = NULL, save_name) {
+                              covs = NULL, save_name, wd = NULL, data_dir = NULL, 
+                              res_dir = NULL) {
   # Set parameters and paths
-  wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/SWOLCA/"  # Working directory
-  data_dir <- "Data/July6/"               # Simulated data directory
-  res_dir <- "Results/July6/"             # Model results directory
+  if (all(is.null(c(wd, data_dir, res_dir)))) {
+    wd <- "/n/holyscratch01/stephenson_lab/Users/stephwu18/SWOLCA/"  # Working directory
+    data_dir <- "Data/July6/"               # Simulated data directory
+    res_dir <- "Results/July6/"             # Model results directory
+  }
   analysis_dir <- "Analysis_Code/"  # Analysis directory where metrics will be saved
   iter_pop <- 1                     # Population iteration
   samp_n_seq <- 1:100               # Vector of sample iterations to summarize over
@@ -883,7 +889,7 @@ save_scen_metrics <- function(scen_pop, scen_samp, WSOLCA = TRUE, SOLCA = TRUE,
 #   format: String specifying kable table format. Must be "latex", "html", 
 # "pipe", "simple", or "rst". Default is "latex"
 # Output: Formatted table with absolute bias, CI width, and coverage
-create_table1 <- function(wd, analysis_dir, format) {
+create_table1 <- function(wd, analysis_dir, format, digits = 3) {
   metrics_summ <- as.data.frame(matrix(NA, nrow = 9, ncol = 12))
   colnames(metrics_summ) <- c("Sampling Scheme", "Model", 
                               "$K$ Abs Bias", "$\\pi$ Abs Bias",  
@@ -940,7 +946,7 @@ create_table1 <- function(wd, analysis_dir, format) {
                                 mean(metrics_all$metrics_ws$xi_cover_avg))
   
   metrics_summ %>% 
-    kbl(digits = 4, align = "rrrrrrrrrrrr", booktabs = TRUE, format = format,
+    kbl(digits = digits, align = "rrrrrrrrrrrr", booktabs = TRUE, format = format,
         caption = "Summary of mean absolute bias, 95% credible interval width, and coverage for simulations based on posterior samples.") %>%
     kable_classic() %>%
     kable_styling(full_width = FALSE)
@@ -1536,7 +1542,8 @@ plot_xi_samp <- function(wd, analysis_dir, scen_pop, iter_pop = 1) {
 # "pipe", "simple", or "rst". Default is "latex"
 # Output: Formatted table with absolute bias, CI width, and coverage
 create_app_tables <- function(wd, analysis_dir, save_names, scenarios, 
-                              scen_names, overall_name, format = "latex") {
+                              scen_names, overall_name, format = "latex", 
+                              digits = 3) {
   num_scen <- length(scenarios)
   
   metrics_summ <- as.data.frame(matrix(NA, nrow = 3*length(scenarios), 
@@ -1570,7 +1577,7 @@ create_app_tables <- function(wd, analysis_dir, save_names, scenarios,
   }
   
   metrics_summ %>% 
-    kbl(digits = 4, align = "rrrrrrrrrrrr", booktabs = TRUE, format = format,
+    kbl(digits = digits, align = "rrrrrrrrrrrr", booktabs = TRUE, format = format,
         caption = "Summary of mean absolute bias, 95% credible interval width, and coverage for simulations based on posterior samples.") %>%
     kable_classic() %>%
     kable_styling(full_width = FALSE)
@@ -1754,6 +1761,75 @@ plot_Phi_iter_marg <- function(wd, data_dir, analysis_dir, scen_pop,
 }
 
 
+plot_theta_iter_j <- function(wd, data_dir, analysis_dir, scen_pop, scen_samp, 
+                         samp_n, WSOLCA_name, SOLCA_name, WOLCA_name) {
+  # Load population data
+  load(paste0(wd, data_dir, "simdata_scen", scen_pop, "_iter",
+              iter_pop, ".RData"))
+  # Load sample data
+  load(paste0(wd, data_dir, "simdata_scen", scen_samp, "_iter", iter_pop, "_samp", 
+              samp_n, ".RData"))
+  # Get population and sample pi's
+  true_params <- get_true_params(sim_pop = sim_pop)
+  samp_pi <- tabulate(sim_data$true_Ci) / length(sim_data$true_Ci)
+  
+  # Load model results
+  load(paste0(wd, res_dir, "wsOFMM", WSOLCA_name, scen_samp, "_samp", samp_n, ".RData"))
+  data_ws <- res$analysis_adj
+  names(data_ws) <- str_replace_all(names(data_ws), "_adj", "")
+  load(paste0(wd, res_dir, "sOFMM", SOLCA_name, scen_samp, "_samp", samp_n, ".RData"))
+  data_s <- res$analysis
+  load(paste0(wd, res_dir, "wOFMM", WOLCA_name, scen_samp, "_samp", samp_n, ".RData"))
+  data_w <- res$analysis
+  
+  ##### Get optimal ordering using theta_dist
+  order_ws <- get_theta_dist(est_theta = data_ws$theta_med, 
+                             true_theta = true_params$true_theta, 
+                             est_K = length(data_ws$pi_med), true_K = true_K, 
+                             subset = TRUE, dist_type = "mean_abs")$order
+  order_s <- get_theta_dist(est_theta = data_s$theta_med, 
+                            true_theta = true_params$true_theta, 
+                            est_K = length(data_s$pi_med), true_K = true_K, 
+                            subset = TRUE, dist_type = "mean_abs")$order
+  order_w <- get_theta_dist(est_theta = data_w$theta_med, 
+                            true_theta = true_params$true_theta, 
+                            est_K = length(data_w$pi_med), true_K = true_K, 
+                            subset = TRUE, dist_type = "mean_abs")$order
+  
+  
+  # Create dataframe to analyze MCMC chains
+  df_ws <- data.frame(data_ws$pi_red[, order_ws])
+  df_s <- data.frame(data_s$pi_red[, order_s])
+  df_w <- data.frame(data_w$pi_red[, order_w])
+  
+  # Assuming all models have same number of components
+  pi_dim <- ncol(data_ws$pi_red)
+  colnames(df_ws) <- colnames(df_s) <- colnames(df_w) <- 1:3
+  combined_df <- rbind(df_s, df_w, df_ws)
+  combined_df$Model <- factor(c(rep("SOLCA", times=nrow(df_s)), 
+                                rep("WOLCA", times=nrow(df_w)), 
+                                rep("SWOLCA", times=nrow(df_ws))),
+                              levels = c("SOLCA", "WOLCA", "SWOLCA"))
+  reshape_df <- combined_df %>% gather("pi", "pi_value", 1:pi_dim)
+  
+  reshape_df %>% ggplot(aes(x=pi, y=pi_value, fill=Model)) + 
+    geom_boxplot() +
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=true_params$true_pi[1],
+                             yend=true_params$true_pi[1]),color="red") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=true_params$true_pi[2],
+                             yend=true_params$true_pi[2]),color="red") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=true_params$true_pi[3],
+                             yend=true_params$true_pi[3]),color="red") +
+    geom_segment(mapping=aes(x=0.5, xend=1.5, y=samp_pi[1], yend=samp_pi[1]),
+                 color="red", linetype = "dashed") +
+    geom_segment(mapping=aes(x=1.5, xend=2.5, y=samp_pi[2], yend=samp_pi[2]),
+                 color="red", linetype = "dashed") +
+    geom_segment(mapping=aes(x=2.5, xend=3.5, y=samp_pi[3], yend=samp_pi[3]),
+                 color="red", linetype = "dashed") + 
+    xlab("Latent Class") + ylab("π Value") + theme_bw() + 
+    scale_fill_brewer(palette="Set2") + 
+    theme(legend.position="top") 
+}
 
 
 

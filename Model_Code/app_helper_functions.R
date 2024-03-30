@@ -152,6 +152,12 @@ reorder_classes <- function(res, model, new_order) {
       res_new$analysis$c_all[res$analysis$c_all == new_order[i]] <- i
     }
   }
+  # Relabel confidence intervals for wolca
+  if (model == "wOFMM") {
+    res_new$analysis$xi_med_lb <- res$analysis$xi_med_lb[new_order, ]
+    res_new$analysis$xi_med_ub <- res$analysis$xi_med_ub[new_order, ]
+  }
+
   return(res_new)
 }
 
@@ -403,7 +409,7 @@ plot_theta_modes <- function(res, model) {
           axis.title.x = element_text(size = 13, color = "black", face = "bold"),
           legend.title = element_text(size = 13, color = "black", face = "bold"),
           legend.text = element_text(size = 11, color = "black"),
-          legend.position = "right", legend.box.spacing = unit(0.2, "pt"))
+          legend.position = "top", legend.box.spacing = unit(0.2, "pt"))
   
 }
 
@@ -454,16 +460,17 @@ plot_theta_probs <- function(res, model) {
           axis.title.y = element_text(size = 13, color = "black", face = "bold"),
           legend.title = element_text(size = 13, color = "black", face = "bold"),
           legend.text = element_text(size = 11, color = "black"),
-          legend.position = "right", legend.box.spacing = unit(0, "pt"),
+          legend.position = "top", legend.box.spacing = unit(0, "pt"),
           strip.text = element_text(size = 9),
-          strip.background = element_rect(fill = "gray90"))
+          strip.background = element_rect(fill = "gray95"))
 }
 
 
 #=========== Plot Phi line plots, separately for each covariate ================
 # Line plots of Phi values for all covariates
 plot_Phi_line <- function(res, model, age_categs, racethnic_categs,
-                          educ_categs, smoker_categs, physactive_categs) {
+                          educ_categs, smoker_categs, physactive_categs, 
+                          ymax = 1) {
   if (model == "wsOFMM") {
     Phi_dfs <- convert_to_probs(res$analysis_adj$xi_med_adj)
   } else {
@@ -490,7 +497,7 @@ plot_Phi_line <- function(res, model, age_categs, racethnic_categs,
           axis.title.y = element_text(size = 13, color = "black", face = "bold"),
           legend.title = element_text(size = 14, color = "black"),
           legend.text = element_text(size = 13, color = "black")) +
-    theme(plot.margin = unit(c(0.2,0,0.2,0.2), 'lines'))
+    theme(plot.margin = unit(c(0.2,0,0.2,0.2), 'lines')) + ylim(0, ymax)
   # Race/Ethnicity
   p2 <- Phi_dfs$Phi_racethnic %>% 
     pivot_longer(cols = -Class, names_to = "Race", values_to = "Phi") %>%
@@ -512,7 +519,7 @@ plot_Phi_line <- function(res, model, age_categs, racethnic_categs,
           axis.title.y = element_text(size = 13, color = "black", face = "bold"),
           legend.title = element_text(size = 14, color = "black"),
           legend.text = element_text(size = 13, color = "black")) +
-    theme(plot.margin = unit(c(0.2,0,0.2,0), 'lines'))
+    theme(plot.margin = unit(c(0.2,0,0.2,0), 'lines')) + ylim(0, ymax)
   # Smoking Status
   p3 <- Phi_dfs$Phi_smoker %>% 
     pivot_longer(cols = -Class, names_to = "Smoker", values_to = "Phi") %>%
@@ -533,7 +540,7 @@ plot_Phi_line <- function(res, model, age_categs, racethnic_categs,
           axis.title.y = element_text(size = 13, color = "black", face = "bold"),
           legend.title = element_text(size = 14, color = "black"),
           legend.text = element_text(size = 13, color = "black")) +
-    theme(plot.margin = unit(c(0.2,0,0.2,0), 'lines'))
+    theme(plot.margin = unit(c(0.2,0,0.2,0), 'lines')) + ylim(0, ymax)
   # Physical Activity
   p4 <- Phi_dfs$Phi_phys %>% 
     pivot_longer(cols = -Class, names_to = "Physactive", values_to = "Phi") %>%
@@ -554,9 +561,13 @@ plot_Phi_line <- function(res, model, age_categs, racethnic_categs,
           axis.title.y = element_text(size = 13, color = "black", face = "bold"),
           legend.title = element_text(size = 14, color = "black"),
           legend.text = element_text(size = 13, color = "black")) +
-    theme(plot.margin = unit(c(0.2,0.2,0.2,0), 'lines'))
-  ggarrange(p1, p2, p3, p4, common.legend = TRUE, legend = "top", nrow = 1, 
-            ncol = 4, widths = c(0.7, 1, 0.45, 0.45))
+    theme(plot.margin = unit(c(0.2,0.2,0.2,0), 'lines')) + ylim(0, ymax)
+  ggarrange(p1, 
+            p2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()), 
+            p3 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()), 
+            p4 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()), 
+            common.legend = TRUE, legend = "top", nrow = 1, 
+            ncol = 4, widths = c(0.7, 1, 0.4, 0.4))
 }
 
 # Line plots of Phi values for all covariates, with confidence bands
@@ -795,11 +806,17 @@ plot_pi_boxplots <- function(res, model) {
   } else {
     pi_red <- as.data.frame(res$analysis$pi_red)
   }
-  colnames(pi_red) <- paste0("pi_", 1:(dim(pi_red)[2]))
+  colnames(pi_red) <- 1:(dim(pi_red)[2])
   pi_red_plot <- pi_red %>% pivot_longer(cols = everything(), names_to = "pi_comp", 
                                          values_to = "value")
   pi_red_plot %>% ggplot(aes(x = pi_comp, y = value, fill = pi_comp)) + 
-    theme_bw() + scale_fill_brewer(palette="Set2") + 
+    theme_bw() + 
+    scale_fill_brewer(palette = "Set2", 
+                      labels = c("Multicultural", "Healthy American", "Western", 
+                                 "Restricted Vegetarian", "Restricted American")) +
+    scale_x_discrete(labels=c("1" = "1\nMulticultural", "2" = "2\nHealthy\nAmerican",
+                              "3" = "3\nWestern", "4" = "4\nRestricted\nVegetarian",
+                              "5" = "5\nRestricted\nAmerican")) + 
     geom_boxplot() + 
     ggtitle(as.expression(bquote("Parameter estimation for "~pi~" "))) +
     xlab("Latent Class") + ylab(as.expression(bquote(~pi~"Value"))) + ylim(0,0.5)
@@ -893,6 +910,91 @@ convert_to_ref <- function(xi_med, xi_red, age_categs, racethnic_categs,
     kable(format = format, booktabs = TRUE) %>%
     kable_styling() %>%
     column_spec(2:4, bold = ifelse(pep_signif == 1, TRUE, FALSE))
+}
+
+
+convert_to_ref_wolca <- function(res) {
+  data_vars <- res$data_vars
+  x_mat <- data_vars$x_mat
+  y_all <- data_vars$y_all
+  s_all <- data_vars$s_all
+  clus_id_all <- data_vars$clus_id_all
+  n <- dim(x_mat)[1]
+  sample_wt <- data_vars$sample_wt
+  V <- data_vars$V
+  kappa <- sum(sample_wt) / n  
+  w_all <- c(sample_wt / kappa) 
+  svy_data <- data.frame(s = factor(s_all),
+                         clus = clus_id_all,
+                         x = x_mat,
+                         y = y_all, 
+                         wts = w_all,
+                         c = factor(res$analysis$c_all),
+                         age_cat = data_vars$V_data$age_cat,
+                         racethnic = data_vars$V_data$racethnic,
+                         smoker = data_vars$V_data$smoker,
+                         physactive = data_vars$V_data$physactive)
+  svydes <- svydesign(ids = ~clus, strata = ~s, weights = ~wts, data = svy_data)
+  fit <- svyglm(y ~ c + age_cat + racethnic + smoker + physactive + 
+                  c:age_cat + c:racethnic + c:smoker + c:physactive, 
+                design = svydes, family = quasibinomial(link = "probit")) 
+  coefs <- fit$coefficients
+  ci <- manual_CI(model_object = fit, svy_df = degf(svydes), ci = 0.95)[, -1]
+  
+  beta <- as.data.frame(matrix(NA, nrow = 45, ncol = 3))
+  colnames(beta) <- c("Covariate", "Median", "95% Confidence Interval")
+  cov_categs <- c(age_categs[-1], racethnic_categs[-1], smoker_categs[-1], 
+                  physactive_categs[-1])
+  beta[, 1] <- c("Reference", "Class2", "Class3", "Class4", "Class5",
+                 cov_categs,
+                 sapply(cov_categs, function(x) paste0(x, ":Class", 2:5)))
+  beta[, 2] <- round(coefs, 2)
+  beta[, 3] <- sapply(1:nrow(ci), function(x) 
+    paste0("(", round(ci$lwr[x], 2), ", ", round(ci$upr[x], 2), ")"))
+  beta %>% 
+    kable(format = format, booktabs = TRUE) %>%
+    kable_styling()
+}
+
+
+# Converts from combination coding to reference cell coding for WOLCA
+convert_to_ref_wolca <- function(xi_med, xi_med_lb, xi_med_ub, 
+                           age_categs, racethnic_categs,
+                           smoker_categs, physactive_categs, format = "latex") {
+  # Assumes the following column order for xi_comb: 
+  # Intercept + Age40 + Age60 + NH_Black + NH_Asian + Hispanic + Other + Smoker + Inactive
+  K <- nrow(xi_med)
+  q <- ncol(xi_med)
+  beta <- as.data.frame(matrix(NA, nrow = 45, ncol = 3))
+  colnames(beta) <- c("Covariate", "Median", "95% Confidence Interval")
+  cov_categs <- c(age_categs[-1], racethnic_categs[-1], smoker_categs[-1], 
+                  physactive_categs[-1])
+  beta[, 1] <- c("Reference", "Class2", "Class3", "Class4", "Class5",
+                 cov_categs,
+                 sapply(cov_categs, function(x) paste0(x, ":Class", 2:5)))
+  beta[1, -1] <- c(xi_med[1, 1], paste0("(", round(xi_med_lb[1, 1], 2), ", ", 
+                                        round(xi_med_ub[1, 1], 2), ")"))
+  for (i in 2:K) {
+    beta[i, -1] <- c(xi_med[i, 1] - xi_med[1, 1], 
+       paste0("(", round(xi_med_lb[i, 1] - xi_med_lb[1, 1], 2), ", ", 
+              round(xi_med_ub[i, 1] - xi_med_ub[1, 1], 2), ")"))
+  }
+  for (i in 2:q) {
+    beta[K + (i-1), -1] <- c(xi_med[1, i], 
+                             paste0("(", round(xi_med_lb[1, i], 2), ", ", 
+                                    round(xi_med_ub[1, i], 2), ")"))
+  }
+  for (i in 2:q) {
+    for (j in 2:K) {
+      beta[q + (i-1)*(K-1) + (j-1), -1] <- c(xi_med[j, i] - xi_med[1, i],
+        paste0("(", round(xi_med_lb[j, i] - xi_med_lb[1, i], 2), ", ",
+               round(xi_med_ub[j, i] - xi_med_ub[1, i], 2), ")"))
+    }
+  }
+  beta[, 2] <- round(as.numeric(beta[, 2]), 2)
+  beta %>% 
+    kable(format = format, booktabs = TRUE) %>%
+    kable_styling()
 }
 
 #================ Plot colored dendrogram ======================================
