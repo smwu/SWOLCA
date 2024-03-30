@@ -266,12 +266,3 @@ plot_Phi_line(res, model = "wOFMM", age_categs = age_categs,
               physactive_categs = physactive_categs, ymax = 0.9)
 plot_pi_boxplots(res, model = "wOFMM")
 
-# Output reference cell coefficients table for xi 
-convert_to_ref_wolca(xi_med = res$analysis$xi_med, 
-                     xi_med_lb = res$analysis$xi_med_lb,
-                     xi_med_ub = res$analysis$xi_med_ub,
-                     age_categs = age_categs, racethnic_categs = racethnic_categs, 
-                     smoker_categs = smoker_categs, 
-                     physactive_categs = physactive_categs, format = "latex")
-
-
