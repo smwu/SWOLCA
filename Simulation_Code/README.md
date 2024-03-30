@@ -7,3 +7,5 @@ Simulated population scenarios are specified with a four-digit number. The first
 ### Simulated samples
 100 independent samples are drawn from the population for each sample scenario, specified with a six-digit number. The first four digits carry over from the population scenario. The fifth digit specifies sample size (1\%, 5\%, or 10%). The sixth digit specifies sampling design (simple random sample, stratified sampling, or stratified cluster sampling).
 
+### `Old_Code` folder
+This folder includes the `simulate_data_new.R` file, which contains old code that simulates data for various extraneous experiments.
