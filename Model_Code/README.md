@@ -24,3 +24,4 @@ This folder contains old code for implementing SWOLCA in Stan and in R (without 
 * `stan_batch_submit.sh`: Bash script for submitting the Stan implementation as a cluster job array to run over multiple simulation iterations
 * `WSOLCA_main.R`: Runs SWOLCA completely in R without any interface with C++
 * `troubleshooting.R`: Testing congruence of R and Rcpp implementations
+* `WSOLCA_main_Rcpp_noajd.R`: Runs SWOLCA in Rcpp but does not apply variance adjustment
