@@ -649,9 +649,20 @@ var_adjust <- function(mod_stan, analysis, K, p, d, n, q, x_mat, y_all, V, w_all
   #error=function(e){cat("ERROR :", conditionMessage(e), "\n")})
   
   #=============== Output adjusted parameters ==================================
+  # Re-normalize pi and theta for each iteration
+  pi_red_adj = pi_red_adj / rowSums(pi_red_adj)  
+  theta_red_adj <- plyr::aaply(theta_red_adj, c(1, 2, 3), function(x) x / sum(x),
+                               .drop = FALSE) 
+  
+  # Get posterior median estimates
   pi_med_adj <- apply(pi_red_adj, 2, median, na.rm = TRUE)
   theta_med_adj <- apply(theta_red_adj, c(2,3,4), median, na.rm = TRUE)
   xi_med_adj <- apply(xi_red_adj, c(2,3), median, na.rm = TRUE)
+  
+  # Renormalize posterior median estimates for pi and theta to sum to 1
+  pi_med_adj <- pi_med_adj / sum(pi_med_adj)  
+  theta_med_adj <- plyr::aaply(theta_med_adj, c(1, 2), function(x) x / sum(x),
+                               .drop = FALSE)  # Re-normalize
   
   # Update Phi_med using adjusted xi estimate
   c_all <- analysis$c_all
